@@ -1,0 +1,149 @@
+/* =========================================================================
+   Atlantic Packaging — Brand Design Tokens
+   ---------------------------------------------------------------------------
+   Drop-in CSS custom properties for HTML and React output. Import at the
+   root of your document or application and reference via var(--ap-blue).
+   Source of truth: Atlantic Packaging Brand Guide, 2026.
+   ========================================================================= */
+
+:root {
+  /* ---- Colors ----------------------------------------------------------- */
+  --ap-blue:   #459ED8;  /* Pantone 7688 C — primary accent */
+  --ap-green:  #B4D259;  /* Pantone 367 — secondary accent */
+  --ap-navy:   #0B233F;  /* Pantone 289 C — dark backgrounds, formal */
+  --ap-black:  #212121;  /* Pantone Black C — body text */
+  --ap-dgray:  #4A4A4B;  /* Pantone Cool Gray 11 — secondary text */
+  --ap-lgray:  #EBEBEB;  /* Pantone 663 C — subtle backgrounds */
+  --ap-white:  #FFFFFF;
+
+  /* Semantic aliases (use these in component code for easier refactoring) */
+  --ap-text-primary:    var(--ap-black);
+  --ap-text-secondary:  var(--ap-dgray);
+  --ap-text-on-dark:    var(--ap-white);
+  --ap-bg-page:         var(--ap-white);
+  --ap-bg-subtle:       var(--ap-lgray);
+  --ap-bg-inverse:      var(--ap-navy);
+  --ap-accent-primary:  var(--ap-blue);
+  --ap-accent-success:  var(--ap-green);
+  --ap-border:          var(--ap-lgray);
+  --ap-border-strong:   var(--ap-dgray);
+
+  /* ---- Gradients -------------------------------------------------------- */
+  --ap-gradient-marketing: linear-gradient(135deg, var(--ap-blue) 0%, var(--ap-green) 100%);
+
+  /* ---- Typography ------------------------------------------------------- */
+  --ap-font-family: "Gotham", "Montserrat", system-ui, -apple-system,
+                    "Segoe UI", Roboto, Arial, sans-serif;
+
+  --ap-weight-book:   400;
+  --ap-weight-bold:   700;
+  --ap-weight-black:  900;
+
+  /* Type scale (web defaults — see typography.md for print sizes) */
+  --ap-text-display:  3rem;     /* 48px */
+  --ap-text-h1:       2rem;     /* 32px */
+  --ap-text-h2:       1.5rem;   /* 24px */
+  --ap-text-h3:       1.25rem;  /* 20px */
+  --ap-text-body:     1rem;     /* 16px */
+  --ap-text-caption:  0.875rem; /* 14px */
+  --ap-text-small:    0.75rem;  /* 12px */
+
+  --ap-line-height-body:    1.5;
+  --ap-line-height-heading: 1.2;
+  --ap-letter-spacing-caps: 0.1em;
+
+  /* ---- Spacing / radius / shadow (utility defaults) --------------------- */
+  --ap-radius-sm: 4px;
+  --ap-radius-md: 8px;
+  --ap-radius-lg: 16px;
+
+  --ap-shadow-sm: 0 1px 2px rgba(33, 33, 33, 0.08);
+  --ap-shadow-md: 0 4px 12px rgba(33, 33, 33, 0.12);
+}
+
+/* =========================================================================
+   Base element styling — opt-in by adding `class="ap-theme"` to a container
+   ========================================================================= */
+
+.ap-theme {
+  font-family: var(--ap-font-family);
+  color: var(--ap-text-primary);
+  background-color: var(--ap-bg-page);
+  line-height: var(--ap-line-height-body);
+}
+
+.ap-theme h1,
+.ap-theme h2,
+.ap-theme h3 {
+  color: var(--ap-navy);
+  font-weight: var(--ap-weight-bold);
+  line-height: var(--ap-line-height-heading);
+}
+
+.ap-theme h1 { font-size: var(--ap-text-h1); font-weight: var(--ap-weight-black); }
+.ap-theme h2 { font-size: var(--ap-text-h2); }
+.ap-theme h3 { font-size: var(--ap-text-h3); }
+
+.ap-theme a {
+  color: var(--ap-blue);
+  text-decoration: none;
+}
+.ap-theme a:hover { text-decoration: underline; }
+
+.ap-theme .ap-caps {
+  text-transform: uppercase;
+  letter-spacing: var(--ap-letter-spacing-caps);
+}
+
+/* ---- Buttons (drop-in) --------------------------------------------------- */
+
+.ap-btn {
+  font-family: var(--ap-font-family);
+  font-weight: var(--ap-weight-bold);
+  font-size: var(--ap-text-body);
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--ap-radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.ap-btn-primary {
+  background-color: var(--ap-blue);
+  color: var(--ap-white);
+}
+.ap-btn-primary:hover { background-color: #3A87B8; }
+
+.ap-btn-secondary {
+  background-color: var(--ap-white);
+  color: var(--ap-navy);
+  border: 1px solid var(--ap-navy);
+}
+.ap-btn-secondary:hover { background-color: var(--ap-lgray); }
+
+/* ---- Table (drop-in) ----------------------------------------------------- */
+
+.ap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--ap-font-family);
+  font-size: var(--ap-text-body);
+}
+
+.ap-table thead th {
+  background-color: var(--ap-blue);
+  color: var(--ap-white);
+  font-weight: var(--ap-weight-bold);
+  text-align: left;
+  padding: 0.75rem 1rem;
+}
+
+.ap-table tbody td {
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--ap-border);
+  color: var(--ap-text-primary);
+}
+
+.ap-table tbody tr:nth-child(even) {
+  background-color: var(--ap-lgray);
+}
