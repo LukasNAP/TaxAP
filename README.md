@@ -15,7 +15,7 @@ TaxAP is an internal sales and use tax rate monitoring application for Atlantic 
 - Audit evidence for the source, time checked, effective date, and decision
 - No automatic A+ changes
 
-The repository contains a working local MVP, not a tax calculation system. The map-based workflow was retired on August 25, 2026. The application now opens on a rate-change dashboard backed by a validated aggregate North Carolina fallback snapshot, with production refresh intentionally reserved for a separate supervised step. No customer names, addresses, invoice numbers, or other record-level data are stored in the application or repository.
+The repository contains a working MVP, not a tax calculation system. An owner-only private preview is hosted at `https://taxap-atlantic.atlantic-pac-7667.chatgpt.site`. The hosted preview uses the validated offline snapshot and cannot contact A+, save shared reviews, or authenticate Ana and Liv through Entra ID. The map-based workflow was retired on August 25, 2026. No customer names, addresses, invoice numbers, or other record-level data are stored in the application or repository.
 
 ## Working application
 

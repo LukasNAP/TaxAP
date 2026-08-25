@@ -21,7 +21,7 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 
 - Ana and Liv will be the primary users.
 - Microsoft Entra ID sign-in will be added later using their Microsoft 365 work accounts.
-- Authentication, hosting, deployment, and Azure resources are intentionally deferred. Source control is the private `LukasNAP/TaxAP` GitHub repository.
+- The owner-only private preview is hosted through Sites. Shared access, Entra ID authentication, production connectivity, and Azure resources remain deferred. Source control is the private `LukasNAP/TaxAP` GitHub repository.
 - TaxAP must never guess an official rate when a source is unavailable, incomplete, ambiguous, or fails validation.
 - TaxAP must not write to A+ in the current phase.
 - Customer names, addresses, invoice details, credentials, and tokens must not be sent to the browser.
@@ -32,6 +32,8 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 ## Current verified state
 
 - Local app preview: `http://localhost:3000`
+- Owner-only hosted preview: `https://taxap-atlantic.atlantic-pac-7667.chatgpt.site`
+- The hosted preview is offline-only: no A+ connector, shared review persistence, or Entra ID access is enabled.
 - The preview was started with `NEXT_PUBLIC_TAXAP_OFFLINE_MODE=true` and `npm run dev:web`.
 - The read-only connector was intentionally not started and no production database or live `/api/aplus/*` endpoint was contacted during the redesign.
 - Production build passes.
@@ -190,7 +192,7 @@ Do not assume the same source format across these states. Research and validate 
 - A+ tax-body-to-official-jurisdiction mapping outside NC is validated for Georgia via the boundary reconciliation; CA, TX, and FL currently expose official inventory only and are not yet compared with A+.
 - Review storage is local SQLite, not yet a shared hosted database.
 - The Ana/Liv selector is temporary and not authenticated.
-- Entra ID sign-in, Docker packaging, hosting, deployment, and Azure resources remain deferred.
+- Entra ID sign-in, shared review persistence, production connector hosting, Docker packaging, and Azure resources remain deferred.
 - Automatic A+ updates are out of scope.
 - Nationwide monitoring still requires a validated official-source adapter and jurisdiction reconciliation for each additional state.
 
