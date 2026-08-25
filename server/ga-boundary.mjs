@@ -301,6 +301,19 @@ export function matchGeorgiaAddress(dataset, address, asOfDate) {
     return { tier: "unmatched", reason: "boundary rows exist for this ZIP but none are active as of the comparison date" };
   }
 
+  // Some ZIP5s are published in the archive only as a set of ZIP+4 sub-ranges, with no broader
+  // ZIP5-level (Z-type) row at all — an address with no +4 on file (or one that didn't land in a
+  // specific sub-range above) would otherwise report a false "no coverage." When every ZIP+4
+  // sub-range under this 5-digit ZIP agrees on the same jurisdiction, that agreement is itself a
+  // safe basis for a match; when they disagree, this reports ambiguous rather than guessing.
+  const allZip9ForZip5 = dataset.zip9Ranges.get(zip.zip5) || [];
+  if (allZip9ForZip5.length > 0) {
+    const resolved = resolveActiveRows(allZip9ForZip5, asOfDate);
+    if (resolved.tier === "matched") return { tier: "zip5FromZip9", jurisdiction: resolved.jurisdiction };
+    if (resolved.tier === "ambiguous") return { tier: "ambiguous", reason: "ZIP+4 sub-ranges for this ZIP disagree on jurisdiction" };
+    return { tier: "unmatched", reason: "boundary rows exist for this ZIP but none are active as of the comparison date" };
+  }
+
   return { tier: "unmatched", reason: "no boundary row in the archive covers this ZIP code" };
 }
 
@@ -333,7 +346,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
   let matchedCount = 0;
   let unmatchedCount = 0;
   let ambiguousCount = 0;
-  const tierCounts = { address: 0, zip9: 0, zip5: 0 };
+  const tierCounts = { address: 0, zip9: 0, zip5: 0, zip5FromZip9: 0 };
   // Aggregate-only breakdown of why an address didn't match — counts and reason strings, never the
   // ship-to address itself, so this stays within the same privacy boundary as everything else here.
   const unmatchedReasons = new Map();

@@ -171,6 +171,42 @@ test("falls back to ZIP+4 then ZIP-5 when no address-level record is retained or
   assert.deepEqual(matchGeorgiaAddress(dataset, zip5Address, "20260818"), { tier: "zip5", jurisdiction: { fipsCounty: "888", fipsPlace: null, specialCode: null } });
 });
 
+test("prefers an explicit ZIP-5 row over agreeing ZIP+4 sub-ranges, even without a +4 on the address", () => {
+  // Real case (30720/Whitfield County): an explicit Z-type row always outranks inferring from
+  // ZIP+4 agreement, so a plain 5-digit ZIP still gets the file's authoritative answer, not a guess.
+  const csv = [
+    boundaryRow({ type: "4", zipLow: "30606", zipExtLow: "6000", zipHigh: "30606", zipExtHigh: "6999", fipsCounty: "219" }),
+    boundaryRow({ type: "Z", zipLow: "30606", zipHigh: "30606", fipsCounty: "888" }),
+  ].join("\n");
+  const dataset = parseBoundaryCsv(csv, {});
+  const noPlusFour = { streetLine: "500 UNKNOWN AVE", secondaryLine: "", city: "ATHENS", zip: "30606" };
+  assert.deepEqual(matchGeorgiaAddress(dataset, noPlusFour, "20260818"), { tier: "zip5", jurisdiction: { fipsCounty: "888", fipsPlace: null, specialCode: null } });
+});
+
+test("resolves a ZIP with no ZIP-5 row when every ZIP+4 sub-range agrees on jurisdiction", () => {
+  // The real 30720 case: the archive publishes only ZIP+4 sub-ranges for this ZIP (no Z-type row),
+  // but every sub-range agrees on the same county, so a plain 5-digit ZIP can resolve safely.
+  const csv = [
+    boundaryRow({ type: "4", zipLow: "30720", zipExtLow: "0001", zipHigh: "30720", zipExtHigh: "4999", fipsCounty: "313" }),
+    boundaryRow({ type: "4", zipLow: "30720", zipExtLow: "5000", zipHigh: "30720", zipExtHigh: "9999", fipsCounty: "313" }),
+  ].join("\n");
+  const dataset = parseBoundaryCsv(csv, {});
+  const noPlusFour = { streetLine: "1 UNKNOWN LN", secondaryLine: "", city: "DALTON", zip: "30720" };
+  assert.deepEqual(matchGeorgiaAddress(dataset, noPlusFour, "20260818"), { tier: "zip5FromZip9", jurisdiction: { fipsCounty: "313", fipsPlace: null, specialCode: null } });
+});
+
+test("reports ambiguous, not a guess, when a ZIP's ZIP+4 sub-ranges disagree and no ZIP-5 row exists", () => {
+  const csv = [
+    boundaryRow({ type: "4", zipLow: "30720", zipExtLow: "0001", zipHigh: "30720", zipExtHigh: "4999", fipsCounty: "313" }),
+    boundaryRow({ type: "4", zipLow: "30720", zipExtLow: "5000", zipHigh: "30720", zipExtHigh: "9999", fipsCounty: "999" }),
+  ].join("\n");
+  const dataset = parseBoundaryCsv(csv, {});
+  const noPlusFour = { streetLine: "1 UNKNOWN LN", secondaryLine: "", city: "DALTON", zip: "30720" };
+  const result = matchGeorgiaAddress(dataset, noPlusFour, "20260818");
+  assert.equal(result.tier, "ambiguous");
+  assert.match(result.reason, /disagree on jurisdiction/);
+});
+
 test("reports ambiguous rather than guessing when active boundary rows disagree", () => {
   const csv = [
     boundaryRow({ type: "Z", zipLow: "30606", zipHigh: "30606", fipsCounty: "219", begin: "20220101", end: "29991231" }),

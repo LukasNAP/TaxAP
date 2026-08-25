@@ -101,7 +101,7 @@ type GaBoundaryReconciliation = {
   rateSourceHash: string;
   asOfDate: string;
   totals: { activeShipTos: number; matched: number; unmatched: number; ambiguous: number };
-  matchTierCounts: { address: number; zip9: number; zip5: number };
+  matchTierCounts: { address: number; zip9: number; zip5: number; zip5FromZip9: number };
   taxBodyFindings: GaBoundaryTaxBodyFinding[];
   excludedForNoAplusRate: number;
   unmatchedReasons: { reason: string; count: number }[];
@@ -1304,7 +1304,7 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
         <div><span>Ambiguous</span><strong>{totals.ambiguous.toLocaleString()}</strong></div>
       </div>
       <p className="official-boundary-note">
-        Matched by address: {matchTierCounts.address.toLocaleString()} · ZIP+4: {matchTierCounts.zip9.toLocaleString()} · ZIP-5: {matchTierCounts.zip5.toLocaleString()}.
+        Matched by address: {matchTierCounts.address.toLocaleString()} · ZIP+4: {matchTierCounts.zip9.toLocaleString()} · ZIP-5: {matchTierCounts.zip5.toLocaleString()} · ZIP+4 sub-ranges in agreement (no ZIP-5 row published): {matchTierCounts.zip5FromZip9.toLocaleString()}.
         Unmatched and ambiguous ship-tos are reported, not guessed.
         {excludedForNoAplusRate > 0 && ` ${excludedForNoAplusRate} tax ${excludedForNoAplusRate === 1 ? "body" : "bodies"} excluded from the rows below for having no A+ rate configured (retired, DO NOT USE, or a blank 0% definition).`}
       </p>
