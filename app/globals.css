@@ -587,6 +587,9 @@ footer { display: flex; justify-content: space-between; padding: 26px 2px 0; col
 .rate-warning { color: var(--ap-blue); font-weight: var(--ap-weight-black); }
 .drawer-refresh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 8px; }
 .drawer-refresh-row small { color: var(--ap-dgray); font-size: 9px; }
+.unmatched-reason-list { list-style: none; margin: 0; padding: 4px 17px 17px; display: flex; flex-direction: column; gap: 6px; }
+.unmatched-reason-list li { font-size: 9px; color: var(--ap-dgray); }
+.unmatched-reason-list strong { color: var(--ap-navy); }
 .state-tax-body-anomalies { border-color: var(--ap-blue); }
 .state-tax-body-anomalies .state-table-heading strong { color: var(--ap-blue); }
 .state-tax-body-anomalies .drawer-lede { margin: 0; padding: 0 17px 14px; font-size: 10px; }

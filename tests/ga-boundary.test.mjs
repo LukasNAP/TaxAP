@@ -233,6 +233,27 @@ test("reconciles matched, unmatched, and ambiguous ship-tos to the live A+ total
   assert.equal(finding.aplusRate, 7.5);
   assert.equal(finding.hasDifference, true);
   assert.equal(reconciliation.excludedForNoAplusRate, 0);
+  assert.deepEqual(reconciliation.unmatchedReasons, [{ reason: "no boundary row in the archive covers this ZIP code", count: 1 }]);
+});
+
+test("distinguishes a ZIP entirely absent from the archive from one whose rows are just out of date", () => {
+  const csv = [
+    boundaryRow({ type: "Z", zipLow: "30606", zipHigh: "30606", fipsCounty: "219", begin: "20200101", end: "20211231" }),
+  ].join("\n");
+  const addresses = [
+    // 30606 exists in the archive, but only for a window that ended before the comparison date.
+    { streetLine: "1 UNKNOWN LN", secondaryLine: "", city: "ATHENS", zip: "30606", taxBody: "GA219" },
+    // 30099 never appears in the archive at all.
+    { streetLine: "1 UNKNOWN LN", secondaryLine: "", city: "NOTOWN", zip: "30099", taxBody: "GA219" },
+  ];
+  const boundaryDataset = parseBoundaryCsv(csv, {});
+  const rateSnapshot = { stateRate: 4, rates: [] };
+  const reconciliation = reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnapshot, taxBodyRates: new Map(), asOfDate: "20260818" });
+
+  assert.equal(reconciliation.totals.unmatched, 2);
+  const reasons = Object.fromEntries(reconciliation.unmatchedReasons.map((row) => [row.reason, row.count]));
+  assert.equal(reasons["boundary rows exist for this ZIP but none are active as of the comparison date"], 1);
+  assert.equal(reasons["no boundary row in the archive covers this ZIP code"], 1);
 });
 
 test("excludes tax bodies with no A+ rate configured, and counts what was excluded", () => {

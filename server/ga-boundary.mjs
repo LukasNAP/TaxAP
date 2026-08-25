@@ -296,9 +296,12 @@ export function matchGeorgiaAddress(dataset, address, asOfDate) {
     const resolved = resolveActiveRows(zip5Candidates, asOfDate);
     if (resolved.tier === "matched") return { tier: "zip5", jurisdiction: resolved.jurisdiction };
     if (resolved.tier === "ambiguous") return { tier: "ambiguous", reason: "conflicting ZIP-5 boundary rows" };
+    // resolved.tier === "unmatched": rows exist for this ZIP, but none cover the comparison date —
+    // a staleness gap, distinct from the ZIP being absent from the archive entirely below.
+    return { tier: "unmatched", reason: "boundary rows exist for this ZIP but none are active as of the comparison date" };
   }
 
-  return { tier: "unmatched", reason: "no active boundary record covers this address" };
+  return { tier: "unmatched", reason: "no boundary row in the archive covers this ZIP code" };
 }
 
 function officialRateForJurisdiction(jurisdiction, rateSnapshot) {
@@ -331,6 +334,10 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
   let unmatchedCount = 0;
   let ambiguousCount = 0;
   const tierCounts = { address: 0, zip9: 0, zip5: 0 };
+  // Aggregate-only breakdown of why an address didn't match — counts and reason strings, never the
+  // ship-to address itself, so this stays within the same privacy boundary as everything else here.
+  const unmatchedReasons = new Map();
+  const ambiguousReasons = new Map();
 
   for (const address of addresses) {
     const taxBody = address.taxBody || "(unassigned)";
@@ -342,11 +349,13 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     if (result.tier === "unmatched") {
       unmatchedCount++;
       bucket.unmatched++;
+      unmatchedReasons.set(result.reason, (unmatchedReasons.get(result.reason) ?? 0) + 1);
       continue;
     }
     if (result.tier === "ambiguous") {
       ambiguousCount++;
       bucket.ambiguous++;
+      ambiguousReasons.set(result.reason, (ambiguousReasons.get(result.reason) ?? 0) + 1);
       continue;
     }
     matchedCount++;
@@ -391,11 +400,17 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     .sort((a, b) => b.activeShipTos - a.activeShipTos || a.taxBody.localeCompare(b.taxBody));
   const excludedForNoAplusRate = allTaxBodyFindings.length - taxBodyFindings.length;
 
+  const sortReasons = (reasons) => [...reasons.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => ({ reason, count }));
+
   return {
     asOfDate,
     excludedForNoAplusRate,
     totals: { activeShipTos: addresses.length, matched: matchedCount, unmatched: unmatchedCount, ambiguous: ambiguousCount },
     matchTierCounts: tierCounts,
+    unmatchedReasons: sortReasons(unmatchedReasons),
+    ambiguousReasons: sortReasons(ambiguousReasons),
     taxBodyFindings,
   };
 }

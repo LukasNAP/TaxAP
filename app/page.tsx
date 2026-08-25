@@ -104,6 +104,8 @@ type GaBoundaryReconciliation = {
   matchTierCounts: { address: number; zip9: number; zip5: number };
   taxBodyFindings: GaBoundaryTaxBodyFinding[];
   excludedForNoAplusRate: number;
+  unmatchedReasons: { reason: string; count: number }[];
+  ambiguousReasons: { reason: string; count: number }[];
 };
 type StateDrawerCacheEntry = {
   stateDetail: StateDetail | null;
@@ -1306,6 +1308,19 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
         Unmatched and ambiguous ship-tos are reported, not guessed.
         {excludedForNoAplusRate > 0 && ` ${excludedForNoAplusRate} tax ${excludedForNoAplusRate === 1 ? "body" : "bodies"} excluded from the rows below for having no A+ rate configured (retired, DO NOT USE, or a blank 0% definition).`}
       </p>
+      {(reconciliation.unmatchedReasons.length > 0 || reconciliation.ambiguousReasons.length > 0) && (
+        <details className="official-rate-details">
+          <summary>Why {totals.unmatched.toLocaleString()} unmatched{totals.ambiguous > 0 ? ` and ${totals.ambiguous.toLocaleString()} ambiguous` : ""} ship-tos didn&apos;t resolve</summary>
+          <ul className="unmatched-reason-list">
+            {reconciliation.unmatchedReasons.map((row) => (
+              <li key={row.reason}><strong>{row.count.toLocaleString()}</strong> unmatched — {row.reason}</li>
+            ))}
+            {reconciliation.ambiguousReasons.map((row) => (
+              <li key={row.reason}><strong>{row.count.toLocaleString()}</strong> ambiguous — {row.reason}</li>
+            ))}
+          </ul>
+        </details>
+      )}
       <details className="official-rate-details">
         <summary>View {taxBodyFindings.length} tax-body reconciliation rows{differences.length > 0 ? ` (${differences.length} with a rate difference)` : ""}</summary>
         <div className="table-scroll"><table className="coverage-table official-rate-table"><thead><tr><th>Tax body</th><th>Ship-tos</th><th>Matched</th><th>Unmatched</th><th>Ambiguous</th><th>Official rate</th><th>A+ rate</th></tr></thead><tbody>
