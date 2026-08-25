@@ -232,4 +232,29 @@ test("reconciles matched, unmatched, and ambiguous ship-tos to the live A+ total
   assert.equal(finding.officialRate, 7);
   assert.equal(finding.aplusRate, 7.5);
   assert.equal(finding.hasDifference, true);
+  assert.equal(reconciliation.excludedForNoAplusRate, 0);
+});
+
+test("excludes tax bodies with no A+ rate configured, and counts what was excluded", () => {
+  const csv = [
+    boundaryRow({ type: "A", low: "1", high: "99", oddEven: "O", name: "MAIN", suffix: "ST", city: "ATHENS", zip5: "30606", fipsCounty: "219" }),
+  ].join("\n");
+  const addresses = [
+    // GA219 has a real, non-zero A+ rate: kept.
+    { streetLine: "1 MAIN ST", secondaryLine: "", city: "ATHENS", zip: "30606", taxBody: "GA219" },
+    // NORATE has no XATXBD row at all (absent from taxBodyRates) — no A+ rate set up.
+    { streetLine: "3 MAIN ST", secondaryLine: "", city: "ATHENS", zip: "30606", taxBody: "NORATE" },
+    // ZERORATE has a real row, but it was configured at 0% — treated the same as unset.
+    { streetLine: "5 MAIN ST", secondaryLine: "", city: "ATHENS", zip: "30606", taxBody: "ZERORATE" },
+  ];
+  const wanted = buildWantedAddressKeys(addresses);
+  const boundaryDataset = parseBoundaryCsv(csv, { wantedAddressKeys: wanted });
+  const rateSnapshot = { stateRate: 4, rates: [{ jurisdictionType: "county", jurisdictionCode: "219", componentRate: 3 }] };
+  const taxBodyRates = new Map([["GA219", 7.5], ["ZERORATE", 0]]);
+  const reconciliation = reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnapshot, taxBodyRates, asOfDate: "20260818" });
+
+  assert.deepEqual(reconciliation.taxBodyFindings.map((row) => row.taxBody), ["GA219"]);
+  assert.equal(reconciliation.excludedForNoAplusRate, 2);
+  // Ship-to totals are unaffected by the exclusion — only the rate-comparison rows are filtered.
+  assert.equal(reconciliation.totals.activeShipTos, 3);
 });

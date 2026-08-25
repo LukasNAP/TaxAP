@@ -103,6 +103,7 @@ type GaBoundaryReconciliation = {
   totals: { activeShipTos: number; matched: number; unmatched: number; ambiguous: number };
   matchTierCounts: { address: number; zip9: number; zip5: number };
   taxBodyFindings: GaBoundaryTaxBodyFinding[];
+  excludedForNoAplusRate: number;
 };
 type StateDrawerCacheEntry = {
   stateDetail: StateDetail | null;
@@ -1289,7 +1290,7 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
   if (status === "error" || !reconciliation) {
     return <div className="state-detail-message state-detail-error" role="alert">The Georgia boundary-match reconciliation is unavailable or failed validation. No jurisdiction was guessed.</div>;
   }
-  const { totals, matchTierCounts, taxBodyFindings } = reconciliation;
+  const { totals, matchTierCounts, taxBodyFindings, excludedForNoAplusRate } = reconciliation;
   const differences = taxBodyFindings.filter((row) => row.hasDifference);
   return (
     <section className="official-state-panel" aria-labelledby="ga-boundary-title">
@@ -1303,6 +1304,7 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
       <p className="official-boundary-note">
         Matched by address: {matchTierCounts.address.toLocaleString()} · ZIP+4: {matchTierCounts.zip9.toLocaleString()} · ZIP-5: {matchTierCounts.zip5.toLocaleString()}.
         Unmatched and ambiguous ship-tos are reported, not guessed.
+        {excludedForNoAplusRate > 0 && ` ${excludedForNoAplusRate} tax ${excludedForNoAplusRate === 1 ? "body" : "bodies"} excluded from the rows below for having no A+ rate configured (retired, DO NOT USE, or a blank 0% definition).`}
       </p>
       <details className="official-rate-details">
         <summary>View {taxBodyFindings.length} tax-body reconciliation rows{differences.length > 0 ? ` (${differences.length} with a rate difference)` : ""}</summary>

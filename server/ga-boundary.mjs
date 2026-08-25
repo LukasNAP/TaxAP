@@ -356,7 +356,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     bucket.jurisdictionCounts.get(key).count++;
   }
 
-  const taxBodyFindings = [...perTaxBody.values()].map((bucket) => {
+  const allTaxBodyFindings = [...perTaxBody.values()].map((bucket) => {
     const jurisdictions = [...bucket.jurisdictionCounts.values()].sort((a, b) => b.count - a.count);
     const majority = jurisdictions[0] ?? null;
     const consistent = jurisdictions.length <= 1;
@@ -376,10 +376,24 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
       rateDifference,
       hasDifference: rateDifference !== null && Math.abs(rateDifference) >= 0.01,
     };
-  }).sort((a, b) => b.activeShipTos - a.activeShipTos || a.taxBody.localeCompare(b.taxBody));
+  });
+
+  // Per instruction: drop tax bodies with no real A+ rate configured. `aplusRate === null` already
+  // covers both "no XATXBD row exists" and "the only row is retired/DO NOT USE" — the caller
+  // (readGeorgiaBoundaryReconciliation) excludes retired definitions from taxBodyRates before this
+  // function ever sees them, so a retired-only tax body arrives here as null, not a stale rate.
+  // `aplusRate === 0` covers a real, non-retired row whose rate was simply never assigned — no
+  // active Georgia jurisdiction actually charges 0%, so a configured 0 reads as unset, not exempt.
+  // Never silently drop the ship-to counts alongside it: totals/matched/unmatched above are
+  // unaffected, and the exclusion count is reported so a reviewer can see what was left out.
+  const taxBodyFindings = allTaxBodyFindings
+    .filter((finding) => finding.aplusRate !== null && finding.aplusRate !== 0)
+    .sort((a, b) => b.activeShipTos - a.activeShipTos || a.taxBody.localeCompare(b.taxBody));
+  const excludedForNoAplusRate = allTaxBodyFindings.length - taxBodyFindings.length;
 
   return {
     asOfDate,
+    excludedForNoAplusRate,
     totals: { activeShipTos: addresses.length, matched: matchedCount, unmatched: unmatchedCount, ambiguous: ambiguousCount },
     matchTierCounts: tierCounts,
     taxBodyFindings,
