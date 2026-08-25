@@ -585,6 +585,8 @@ footer { display: flex; justify-content: space-between; padding: 26px 2px 0; col
 .state-coverage-table th, .state-coverage-table td { padding: 10px 11px; }
 .definition-missing { background: rgba(235,235,235,.55); }
 .rate-warning { color: var(--ap-blue); font-weight: var(--ap-weight-black); }
+.drawer-refresh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 8px; }
+.drawer-refresh-row small { color: var(--ap-dgray); font-size: 9px; }
 .state-tax-body-anomalies { border-color: var(--ap-blue); }
 .state-tax-body-anomalies .state-table-heading strong { color: var(--ap-blue); }
 .state-tax-body-anomalies .drawer-lede { margin: 0; padding: 0 17px 14px; font-size: 10px; }

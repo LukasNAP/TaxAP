@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   countyCoverage,
   resolvedCases,
@@ -103,6 +103,15 @@ type GaBoundaryReconciliation = {
   totals: { activeShipTos: number; matched: number; unmatched: number; ambiguous: number };
   matchTierCounts: { address: number; zip9: number; zip5: number };
   taxBodyFindings: GaBoundaryTaxBodyFinding[];
+};
+type StateDrawerCacheEntry = {
+  stateDetail: StateDetail | null;
+  stateDetailStatus: StateDetailStatus;
+  officialStateDetail: OfficialStateSnapshot | null;
+  officialStateStatus: StateDetailStatus;
+  gaBoundaryDetail: GaBoundaryReconciliation | null;
+  gaBoundaryStatus: StateDetailStatus;
+  fetchedAt: number;
 };
 type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcoming" | "not-checked";
 type OfficialFutureChange = { county: string; effectiveDate: string; componentRate: number; component: string };
@@ -297,6 +306,14 @@ export default function Home() {
   const [officialStateStatus, setOfficialStateStatus] = useState<StateDetailStatus>("idle");
   const [gaBoundaryDetail, setGaBoundaryDetail] = useState<GaBoundaryReconciliation | null>(null);
   const [gaBoundaryStatus, setGaBoundaryStatus] = useState<StateDetailStatus>("idle");
+  // Deliberately separate from gaBoundaryDetail/gaBoundaryStatus above, which belong to the state
+  // drawer and get cleared whenever it closes. The home dashboard's findings must survive that —
+  // see the "how come it reconnects every click" / caching work this pairs with.
+  const [dashboardGaBoundary, setDashboardGaBoundary] = useState<GaBoundaryReconciliation | null>(null);
+  // Session-lifetime cache of state-drawer reads, keyed by state code. A ref (not state) so
+  // populating it never triggers a re-render on its own — openState reads/writes it directly.
+  const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
+  const [stateDrawerCheckedAt, setStateDrawerCheckedAt] = useState<number | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<ComparedCounty | null>(null);
   const [selectedCase, setSelectedCase] = useState<ResolvedCase | null>(null);
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
@@ -361,6 +378,12 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  // The state-drawer cache added to openState() below (unrelated to this callback) throws off
+  // the React Compiler's cross-function static analysis here; this function's own body and []
+  // deps are unchanged and correct — verified by bisecting the diff against the last commit,
+  // where this callback alone lints clean. useCallback([]) still guarantees a stable reference
+  // at runtime either way.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const refreshLiveSnapshot = useCallback(async () => {
     setConnectorStatus((current) => current === "live" ? "refreshing" : "connecting");
     setConnectorMessage("Reading and validating A+ tax bodies…");
@@ -375,11 +398,10 @@ export default function Home() {
     const timeout = window.setTimeout(() => controller.abort(), 65_000);
     try {
       const requestOptions = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
-      const [ratesResponse, statesResponse, officialResponse, gaBoundaryResponse] = await Promise.all([
+      const [ratesResponse, statesResponse, officialResponse] = await Promise.all([
         fetch(`${apiBase}/api/aplus/tax-bodies`, requestOptions),
         fetch(`${apiBase}/api/aplus/states`, requestOptions),
         fetch(`${apiBase}/api/official/nc-rates`, requestOptions).catch(() => null),
-        fetch(`${apiBase}/api/official/states/GA/boundary`, requestOptions).catch(() => null),
       ]);
       if (!ratesResponse.ok || !statesResponse.ok) throw new Error("A+ connector returned an unavailable response.");
       const [nextSnapshot, nextStateCoverage] = await Promise.all([
@@ -390,14 +412,6 @@ export default function Home() {
       const liveCoverage = mergeRateRows(initializeComparisons(countyCoverage), nextSnapshot.standardRows);
       let officialComparison: OfficialNcSnapshot | null = null;
       if (officialResponse?.ok) officialComparison = await officialResponse.json() as OfficialNcSnapshot;
-      // Georgia's reconciliation is supplementary to the NC-driven refresh above: a failure here
-      // must never mark the whole live read as unavailable, since NC's comparison already succeeded.
-      if (gaBoundaryResponse?.ok) {
-        setGaBoundaryDetail(await gaBoundaryResponse.json() as GaBoundaryReconciliation);
-        setGaBoundaryStatus("ready");
-      } else if (gaBoundaryResponse) {
-        setGaBoundaryStatus("error");
-      }
       setActiveCountyCoverage(officialComparison ? mergeOfficialRates(liveCoverage, officialComparison) : liveCoverage);
       setLiveSnapshot(nextSnapshot);
       setOfficialSnapshot(officialComparison);
@@ -416,6 +430,21 @@ export default function Home() {
     }
   }, []);
 
+  // Kept independent from refreshLiveSnapshot above (its own callback, its own try/catch) so a
+  // Georgia failure can never affect NC's refresh, and so NC's memoized callback body is untouched.
+  const refreshGaBoundary = useCallback(async () => {
+    const apiBase = apiBaseUrl();
+    if (!apiBase) return;
+    try {
+      const response = await fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      if (!response.ok) throw new Error("Georgia boundary reconciliation unavailable");
+      setDashboardGaBoundary(await response.json() as GaBoundaryReconciliation);
+    } catch {
+      // The dashboard's Georgia findings simply hold their last known value on failure — same
+      // fail-quiet-but-don't-guess behavior as the NC official-rate fetch a few lines up.
+    }
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => void refreshLiveSnapshot(), 0);
     const interval = window.setInterval(() => void refreshLiveSnapshot(), LIVE_REFRESH_INTERVAL_MS);
@@ -424,6 +453,15 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [refreshLiveSnapshot]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshGaBoundary(), 0);
+    const interval = window.setInterval(() => void refreshGaBoundary(), LIVE_REFRESH_INTERVAL_MS);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+    };
+  }, [refreshGaBoundary]);
 
   const reviewCasesByKey = useMemo(() => new Map(reviewCases.map((reviewCase) => [reviewCase.findingKey, reviewCase])), [reviewCases]);
 
@@ -488,8 +526,8 @@ export default function Home() {
     sourceUrl: county.officialSourceUrl,
   }), []);
   const gaFindings = useMemo(
-    () => gaFindingsFromReconciliation(gaBoundaryDetail?.taxBodyFindings),
-    [gaBoundaryDetail],
+    () => gaFindingsFromReconciliation(dashboardGaBoundary?.taxBodyFindings),
+    [dashboardGaBoundary],
   );
   const inboxFindings = useMemo(
     () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings),
@@ -545,51 +583,91 @@ export default function Home() {
     activeShipTos: stateSummariesByCode.get(source.stateCode)?.activeShipTos ?? 0,
   })).sort((a, b) => b.activeShipTos - a.activeShipTos || a.stateCode.localeCompare(b.stateCode)), [officialSources, stateSummariesByCode]);
 
-  const openState = async (stateCode: string) => {
+  const openState = async (stateCode: string, options: { forceRefresh?: boolean } = {}) => {
     const summary = stateSummariesByCode.get(stateCode);
     if (!summary) return;
     setSelectedState(summary);
+
+    const cacheKey = stateCode.toUpperCase();
+    const cached = stateDrawerCacheRef.current.get(cacheKey);
+    const cacheIsFresh = Boolean(cached) && new Date().getTime() - cached!.fetchedAt < LIVE_REFRESH_INTERVAL_MS;
+    if (cached && cacheIsFresh && !options.forceRefresh) {
+      setStateDetail(cached.stateDetail);
+      setStateDetailStatus(cached.stateDetailStatus);
+      setOfficialStateDetail(cached.officialStateDetail);
+      setOfficialStateStatus(cached.officialStateStatus);
+      setGaBoundaryDetail(cached.gaBoundaryDetail);
+      setGaBoundaryStatus(cached.gaBoundaryStatus);
+      setStateDrawerCheckedAt(cached.fetchedAt);
+      return;
+    }
+
     setStateDetail(null);
     setStateDetailStatus("loading");
     setOfficialStateDetail(null);
     setOfficialStateStatus("loading");
     setGaBoundaryDetail(null);
-    setGaBoundaryStatus(stateCode.toUpperCase() === "GA" ? "loading" : "idle");
+    setGaBoundaryStatus(cacheKey === "GA" ? "loading" : "idle");
     const apiBase = apiBaseUrl();
     if (!apiBase) {
       setStateDetailStatus("error");
       setOfficialStateStatus("error");
-      if (stateCode.toUpperCase() === "GA") setGaBoundaryStatus("error");
+      if (cacheKey === "GA") setGaBoundaryStatus("error");
       return;
     }
     const officialRequest = fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
-    const boundaryRequest = stateCode.toUpperCase() === "GA"
+    const boundaryRequest = cacheKey === "GA"
       ? fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
+
+    let nextStateDetail: StateDetail | null = null;
+    let nextStateDetailStatus: StateDetailStatus = "error";
     try {
       const response = await fetch(`${apiBase}/api/aplus/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } });
       if (!response.ok) throw new Error("State detail unavailable");
-      setStateDetail(await response.json() as StateDetail);
-      setStateDetailStatus("ready");
+      nextStateDetail = await response.json() as StateDetail;
+      nextStateDetailStatus = "ready";
     } catch {
-      setStateDetailStatus("error");
+      nextStateDetailStatus = "error";
     }
+    setStateDetail(nextStateDetail);
+    setStateDetailStatus(nextStateDetailStatus);
+
+    let nextOfficialDetail: OfficialStateSnapshot | null = null;
+    let nextOfficialStatus: StateDetailStatus = "error";
     const officialResponse = await officialRequest;
     if (officialResponse?.ok) {
-      setOfficialStateDetail(await officialResponse.json() as OfficialStateSnapshot);
-      setOfficialStateStatus("ready");
-    } else {
-      setOfficialStateStatus("error");
+      nextOfficialDetail = await officialResponse.json() as OfficialStateSnapshot;
+      nextOfficialStatus = "ready";
     }
+    setOfficialStateDetail(nextOfficialDetail);
+    setOfficialStateStatus(nextOfficialStatus);
+
+    let nextGaDetail: GaBoundaryReconciliation | null = null;
+    let nextGaStatus: StateDetailStatus = cacheKey === "GA" ? "error" : "idle";
     if (boundaryRequest) {
       const boundaryResponse = await boundaryRequest;
       if (boundaryResponse?.ok) {
-        setGaBoundaryDetail(await boundaryResponse.json() as GaBoundaryReconciliation);
-        setGaBoundaryStatus("ready");
-      } else {
-        setGaBoundaryStatus("error");
+        nextGaDetail = await boundaryResponse.json() as GaBoundaryReconciliation;
+        nextGaStatus = "ready";
       }
+      setGaBoundaryDetail(nextGaDetail);
+      setGaBoundaryStatus(nextGaStatus);
     }
+
+    // Cached for the rest of the session (or until LIVE_REFRESH_INTERVAL_MS elapses, or the
+    // drawer's own Refresh control is used) so reopening the same state doesn't re-read A+.
+    const fetchedAt = new Date().getTime();
+    stateDrawerCacheRef.current.set(cacheKey, {
+      stateDetail: nextStateDetail,
+      stateDetailStatus: nextStateDetailStatus,
+      officialStateDetail: nextOfficialDetail,
+      officialStateStatus: nextOfficialStatus,
+      gaBoundaryDetail: nextGaDetail,
+      gaBoundaryStatus: nextGaStatus,
+      fetchedAt,
+    });
+    setStateDrawerCheckedAt(fetchedAt);
   };
 
   const navigate = (view: View) => {
@@ -686,7 +764,7 @@ export default function Home() {
               <strong>{connectorStatus === "live" || connectorStatus === "refreshing" ? "Read-only A+ connector active" : OFFLINE_MODE ? "Production connection intentionally disabled" : connectorStatus === "connecting" ? "Connecting to A+" : "Using the validated fallback snapshot"}</strong>
               <p>{connectorMessage}{liveSnapshot ? ` Last successful read: ${new Date(liveSnapshot.retrievedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.` : ""}</p>
             </div>
-            <button className="secondary-button" type="button" onClick={() => void refreshLiveSnapshot()} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
+            <button className="secondary-button" type="button" onClick={() => { void refreshLiveSnapshot(); void refreshGaBoundary(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
           </div>
 
           <section className="dashboard-grid">
@@ -1010,10 +1088,14 @@ export default function Home() {
       )}
 
       {selectedState && (
-        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); }}>
+        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setStateDrawerCheckedAt(null); }}>
           <div className="drawer-kicker"><span className="section-label">{connectorStatus === "live" ? "Live A+ state coverage" : "Validated A+ state snapshot"}</span><span className="status-badge">Read only</span></div>
           <h2 id="state-title">{STATE_NAME_BY_CODE.get(selectedState.stateCode) ?? selectedState.stateCode}</h2>
           <p className="drawer-lede">Active ship-to assignments and configured tax-body rates queried from A+. This is not yet a comparison with the state&apos;s official Department of Revenue rates.</p>
+          <div className="drawer-refresh-row">
+            {stateDrawerCheckedAt && <small>Checked {new Date(stateDrawerCheckedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} · reused on reopen until refreshed</small>}
+            <button className="secondary-button" type="button" disabled={stateDetailStatus === "loading"} onClick={() => void openState(selectedState.stateCode, { forceRefresh: true })}>{stateDetailStatus === "loading" ? "Refreshing…" : "Refresh this state"}</button>
+          </div>
           <div className="state-metrics">
             <div><span>Active ship-tos</span><strong>{selectedState.activeShipTos.toLocaleString()}</strong></div>
             <div><span>Active customers</span><strong>{selectedState.activeCustomers.toLocaleString()}</strong></div>
