@@ -14,6 +14,7 @@ import {
 } from "./tax-data";
 import { validateXatxbdCsv, type APlusImportResult, type ImportedTaxBody } from "./aplus-import";
 import { matchesJurisdictionFilters, type EffectiveFilter, type ReviewFilter, type SourceFilter } from "./jurisdiction-filters";
+import { combineFindings, gaFindingsFromReconciliation, type JurisdictionFinding } from "./dashboard-findings";
 import { describesOtherJurisdiction, isRetiredTaxBody, STATE_NAME_BY_CODE } from "./tax-body-policy";
 import { ReviewAuditTrail, ReviewDecisionPanel, reviewStatusLabels, type ReviewCase, type ReviewStatus } from "./review-workflow";
 
@@ -374,10 +375,11 @@ export default function Home() {
     const timeout = window.setTimeout(() => controller.abort(), 65_000);
     try {
       const requestOptions = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
-      const [ratesResponse, statesResponse, officialResponse] = await Promise.all([
+      const [ratesResponse, statesResponse, officialResponse, gaBoundaryResponse] = await Promise.all([
         fetch(`${apiBase}/api/aplus/tax-bodies`, requestOptions),
         fetch(`${apiBase}/api/aplus/states`, requestOptions),
         fetch(`${apiBase}/api/official/nc-rates`, requestOptions).catch(() => null),
+        fetch(`${apiBase}/api/official/states/GA/boundary`, requestOptions).catch(() => null),
       ]);
       if (!ratesResponse.ok || !statesResponse.ok) throw new Error("A+ connector returned an unavailable response.");
       const [nextSnapshot, nextStateCoverage] = await Promise.all([
@@ -388,6 +390,14 @@ export default function Home() {
       const liveCoverage = mergeRateRows(initializeComparisons(countyCoverage), nextSnapshot.standardRows);
       let officialComparison: OfficialNcSnapshot | null = null;
       if (officialResponse?.ok) officialComparison = await officialResponse.json() as OfficialNcSnapshot;
+      // Georgia's reconciliation is supplementary to the NC-driven refresh above: a failure here
+      // must never mark the whole live read as unavailable, since NC's comparison already succeeded.
+      if (gaBoundaryResponse?.ok) {
+        setGaBoundaryDetail(await gaBoundaryResponse.json() as GaBoundaryReconciliation);
+        setGaBoundaryStatus("ready");
+      } else if (gaBoundaryResponse) {
+        setGaBoundaryStatus("error");
+      }
       setActiveCountyCoverage(officialComparison ? mergeOfficialRates(liveCoverage, officialComparison) : liveCoverage);
       setLiveSnapshot(nextSnapshot);
       setOfficialSnapshot(officialComparison);
@@ -457,6 +467,43 @@ export default function Home() {
     [activeCountyCoverage],
   );
   const resolvedReviewCases = useMemo(() => reviewCases.filter((reviewCase) => reviewCase.status === "resolved" || reviewCase.status === "not_applicable"), [reviewCases]);
+
+  // NC's own comparisonStatus/ComparedCounty pipeline above is untouched. This just adapts its
+  // output — and Georgia's separately-fetched boundary reconciliation — into the shared shape the
+  // generalized rate-change inbox renders, so a state doesn't need a bespoke inbox to appear in it.
+  const toNcFinding = useCallback((county: ComparedCounty): JurisdictionFinding => ({
+    id: `NC-${county.taxBody}`,
+    reviewFindingKey: reviewFindingKey(county),
+    stateCode: "NC",
+    jurisdictionLabel: `${county.county} County`,
+    taxBody: county.taxBody,
+    officialRate: county.officialRate,
+    aplusRate: county.currentRate,
+    rateDifference: county.rateDifference,
+    activeShipTos: county.activeShipTos,
+    comparisonStatus: county.comparisonStatus,
+    confidence: "confirmed",
+    confidenceNote: null,
+    effectiveDate: county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? null,
+    sourceUrl: county.officialSourceUrl,
+  }), []);
+  const gaFindings = useMemo(
+    () => gaFindingsFromReconciliation(gaBoundaryDetail?.taxBodyFindings),
+    [gaBoundaryDetail],
+  );
+  const inboxFindings = useMemo(
+    () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings),
+    [gaFindings, openFindings, toNcFinding, upcomingFindings],
+  );
+  const needsAttentionCount = openFindings.length + gaFindings.length;
+  const openFinding = (finding: JurisdictionFinding) => {
+    if (finding.stateCode === "NC") {
+      const county = activeCountyCoverage.find((candidate) => candidate.taxBody === finding.taxBody);
+      if (county) setSelectedCounty(county);
+      return;
+    }
+    void openState(finding.stateCode);
+  };
 
   const saveCountyReview = async (county: ComparedCounty, status: ReviewStatus, actor: "Ana" | "Liv", note: string) => {
     const apiBase = apiBaseUrl();
@@ -626,9 +673,9 @@ export default function Home() {
           </div>
 
           <SummaryStats
-            openCount={openFindings.length}
+            openCount={needsAttentionCount}
             upcomingCount={upcomingFindings.length}
-            affectedShipTos={[...openFindings, ...upcomingFindings].reduce((total, county) => total + county.activeShipTos, 0)}
+            affectedShipTos={inboxFindings.reduce((total, finding) => total + finding.activeShipTos, 0)}
             connectedSources={officialSources.filter((source) => source.status === "connected").length}
             lastRefresh={officialSnapshot?.retrievedAt ?? null}
           />
@@ -659,20 +706,21 @@ export default function Home() {
               </div>
               <div className="priority-table-wrap">
                 <table className="priority-table">
-                  <thead><tr><th>Effective</th><th>Jurisdiction</th><th>Published rate</th><th>A+ rate</th><th>Ship-tos</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead>
+                  <thead><tr><th>Effective</th><th>State</th><th>Jurisdiction</th><th>Published rate</th><th>A+ rate</th><th>Ship-tos</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead>
                   <tbody>
-                    {[...openFindings, ...upcomingFindings].length > 0 ? [...openFindings, ...upcomingFindings].slice(0, 6).map((county) => (
-                      <tr key={county.taxBody}>
-                        <td>{county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? "Current"}</td>
-                        <td><button className="table-link" type="button" onClick={() => setSelectedCounty(county)}><strong>{county.county} County</strong><small>NC · {county.taxBody}</small></button></td>
-                        <td>{county.officialRate === null ? "Unavailable" : formatRate(county.officialRate)}</td>
-                        <td>{formatRate(county.currentRate)}</td>
-                        <td>{county.activeShipTos.toLocaleString()}</td>
-                        <td><ComparisonPill status={county.comparisonStatus} /></td>
-                        <td><button className="icon-button" type="button" onClick={() => setSelectedCounty(county)} aria-label={`Open ${county.county} County`}>›</button></td>
+                    {inboxFindings.length > 0 ? inboxFindings.slice(0, 6).map((finding) => (
+                      <tr key={finding.id}>
+                        <td>{finding.effectiveDate ?? "Current"}</td>
+                        <td>{finding.stateCode}</td>
+                        <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{finding.jurisdictionLabel}</strong><small>{finding.taxBody}</small></button></td>
+                        <td>{finding.officialRate === null ? "Unavailable" : formatRate(finding.officialRate)}</td>
+                        <td>{finding.aplusRate === null ? "Unavailable" : formatRate(finding.aplusRate)}</td>
+                        <td>{finding.activeShipTos.toLocaleString()}</td>
+                        <td><ComparisonPill status={finding.comparisonStatus} />{finding.confidence === "unverified" && <span className="rate-warning" title={finding.confidenceNote ?? undefined}> !</span>}</td>
+                        <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${finding.jurisdictionLabel}`}>›</button></td>
                       </tr>
                     )) : (
-                      <tr><td colSpan={7}><div className="inbox-empty"><span aria-hidden="true">✓</span><div><strong>No confirmed differences or upcoming changes</strong><p>{officialSnapshot ? "Every validated current NC rate matches A+." : "The last validated snapshot has no open findings. Connect official sources during supervised validation to check for newer publications."}</p></div></div></td></tr>
+                      <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">✓</span><div><strong>No confirmed differences or upcoming changes</strong><p>{officialSnapshot ? "Every validated current NC rate matches A+, and Georgia's boundary reconciliation has no unresolved rate difference." : "The last validated snapshot has no open findings. Connect official sources during supervised validation to check for newer publications."}</p></div></div></td></tr>
                     )}
                   </tbody>
                 </table>
@@ -688,17 +736,17 @@ export default function Home() {
               <div className="card-heading alert-heading">
                 <div>
                   <span className="section-label">Review activity</span>
-                  <h2>{openFindings.length > 0 ? `${openFindings.length} rate ${openFindings.length === 1 ? "difference" : "differences"}` : upcomingFindings.length > 0 ? `${upcomingFindings.length} upcoming ${upcomingFindings.length === 1 ? "change" : "changes"}` : "No open findings"}</h2>
+                  <h2>{needsAttentionCount > 0 ? `${needsAttentionCount} rate ${needsAttentionCount === 1 ? "difference" : "differences"}` : upcomingFindings.length > 0 ? `${upcomingFindings.length} upcoming ${upcomingFindings.length === 1 ? "change" : "changes"}` : "No open findings"}</h2>
                 </div>
-                <span className={`count-pill ${openFindings.length === 0 ? "quiet" : ""}`}>{openFindings.length + upcomingFindings.length}</span>
+                <span className={`count-pill ${inboxFindings.length === 0 ? "quiet" : ""}`}>{inboxFindings.length}</span>
               </div>
-              {openFindings.length === 0 && upcomingFindings.length === 0 ? (
-                <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>The approval queue is clear</strong><p>{officialSnapshot ? "Every current NC county rate in A+ matches the validated NCDOR table." : "The official NCDOR comparison is not currently available."}</p></div></div>
-              ) : [...openFindings, ...upcomingFindings].slice(0, 4).map((county) => (
-                <button className="alert-row" type="button" key={county.taxBody} onClick={() => setSelectedCounty(county)}>
-                  <span className={`alert-icon comparison-${county.comparisonStatus}`} aria-hidden="true">{county.comparisonStatus === "mismatch" ? "!" : "↗"}</span>
-                  <span className="alert-copy"><strong>{county.county} County</strong><span>A+ {formatRate(county.currentRate)} · NCDOR {county.officialRate === null ? "pending" : formatRate(county.officialRate)}</span><small>{comparisonLabels[county.comparisonStatus]}</small></span>
-                  <span className="shipto-count"><strong>{county.activeShipTos.toLocaleString()}</strong><small>ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
+              {inboxFindings.length === 0 ? (
+                <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>The approval queue is clear</strong><p>{officialSnapshot ? "Every current NC county rate in A+ matches the validated NCDOR table, and Georgia's boundary reconciliation has no unresolved difference." : "The official NCDOR comparison is not currently available."}</p></div></div>
+              ) : inboxFindings.slice(0, 4).map((finding) => (
+                <button className="alert-row" type="button" key={finding.id} onClick={() => openFinding(finding)}>
+                  <span className={`alert-icon comparison-${finding.comparisonStatus}`} aria-hidden="true">{finding.comparisonStatus === "mismatch" ? "!" : "↗"}</span>
+                  <span className="alert-copy"><strong>{finding.jurisdictionLabel}</strong><span>{finding.stateCode} · A+ {finding.aplusRate === null ? "pending" : formatRate(finding.aplusRate)} · Official {finding.officialRate === null ? "pending" : formatRate(finding.officialRate)}</span><small>{comparisonLabels[finding.comparisonStatus]}{finding.confidence === "unverified" ? " · unverified jurisdiction match" : ""}</small></span>
+                  <span className="shipto-count"><strong>{finding.activeShipTos.toLocaleString()}</strong><small>ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
                 </button>
               ))}
                <div className="recent-heading"><span>Most recent resolution</span><button type="button" onClick={() => navigate("history")}>View history</button></div>
