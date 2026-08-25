@@ -1,4 +1,4 @@
-# TaxAP Claude Code handoff
+# TaxAP project handoff
 
 Last updated: August 25, 2026 (dashboard-first redesign completed in offline production-safe mode)
 
@@ -21,13 +21,13 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 
 - Ana and Liv will be the primary users.
 - Microsoft Entra ID sign-in will be added later using their Microsoft 365 work accounts.
-- Authentication, hosting, repository publishing, and Azure resources are intentionally deferred.
+- Authentication, hosting, deployment, and Azure resources are intentionally deferred. Source control is the private `LukasNAP/TaxAP` GitHub repository.
 - TaxAP must never guess an official rate when a source is unavailable, incomplete, ambiguous, or fails validation.
 - TaxAP must not write to A+ in the current phase.
 - Customer names, addresses, invoice details, credentials, and tokens must not be sent to the browser.
 - Review decisions belong to TaxAP, not A+.
 - Do not commit, push, deploy, reset, stash, or discard existing work unless Lukas explicitly asks.
-- The worktree is intentionally dirty and contains the complete local MVP.
+- The dashboard redesign and nationwide-source milestone are committed on `main`.
 
 ## Current verified state
 
@@ -38,7 +38,7 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 - ESLint passes.
 - `git diff --check` passes; Git may emit expected LF-to-CRLF warnings on Windows.
 - Test suite: 42 passing tests, including dashboard filter coverage plus the existing A+, source, boundary, review, safety, build, and rendered-interface tests.
-- No commit, push, deployment, A+ write, or external account change has been performed.
+- The dashboard redesign was committed and pushed to the private GitHub repository. No deployment, A+ write, or external account change has been performed.
 
 Live results verified on August 18, 2026:
 
@@ -190,7 +190,7 @@ Do not assume the same source format across these states. Research and validate 
 - A+ tax-body-to-official-jurisdiction mapping outside NC is validated for Georgia via the boundary reconciliation; CA, TX, and FL currently expose official inventory only and are not yet compared with A+.
 - Review storage is local SQLite, not yet a shared hosted database.
 - The Ana/Liv selector is temporary and not authenticated.
-- Entra ID sign-in, Docker packaging, hosting, Azure resources, and repository publishing remain deferred.
+- Entra ID sign-in, Docker packaging, hosting, deployment, and Azure resources remain deferred.
 - Automatic A+ updates are out of scope.
 - Nationwide monitoring still requires a validated official-source adapter and jurisdiction reconciliation for each additional state.
 
@@ -265,6 +265,6 @@ After meaningful changes, append a concise project update to the current dated l
 
 Record outcomes, important decisions, validation results, and useful links. Do not include secrets, credentials, raw logs, or routine low-value activity.
 
-## Suggested first Claude Code prompt
+## Suggested continuation prompt
 
 > Read `CLAUDE-HANDOFF.md`, `README.md`, `server/ga-boundary.mjs`, `server/aplus-connector.mjs`, `app/page.tsx`, and the relevant tests. Work only from snapshots, fixtures, mocks, and automated tests. Do not contact A+, DWStage, SQL03, APLUS, production databases, or live `/api/aplus/*` routes. Do not start the connector, commit, push, deploy, or write to A+. Use the A+ ERP skill before changing SQL or ERP behavior. Continue the dashboard-first monitoring workflow by researching and fixture-testing the next official state source; do not claim a source is connected until its schema and jurisdiction mapping are validated. Keep customer-level address data off the browser, run the complete offline validation suite, and report unknowns without guessing.
