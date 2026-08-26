@@ -1,6 +1,8 @@
 # TaxAP project handoff
 
-Last updated: August 25, 2026 (dashboard-first redesign completed in offline production-safe mode)
+Last updated: August 26, 2026 (South Carolina official-source adapter shipped; two multi-agent source-verification passes ran against all 42 non-connected states)
+
+**This is the single shared handoff doc for this project, regardless of which AI coding assistant you're using (Claude Code or ChatGPT/Codex).** Update it at the end of every session — whichever assistant you used — so the next session (with either tool) starts from the same accurate picture. Don't keep a separate per-assistant copy; this file replaces the earlier split between `CLAUDE-HANDOFF.md` (Claude-side) and `HANDOFF.md` (ChatGPT-side).
 
 ## Objective
 
@@ -32,17 +34,17 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 ## Current verified state
 
 - Local app preview: `http://localhost:3000`
-- Owner-only hosted preview: `https://taxap-atlantic.atlantic-pac-7667.chatgpt.site`
-- The hosted preview is offline-only: no A+ connector, shared review persistence, or Entra ID access is enabled.
-- The preview was started with `NEXT_PUBLIC_TAXAP_OFFLINE_MODE=true` and `npm run dev:web`.
-- The read-only connector was intentionally not started and no production database or live `/api/aplus/*` endpoint was contacted during the redesign.
+- Owner-only hosted preview (OpenAI Sites): `https://taxap-atlantic.atlantic-pac-7667.chatgpt.site` — access is owner-only for Lukas; hosting metadata lives in `.openai/hosting.json`.
+- The hosted preview is offline-only, using the validated built-in aggregate snapshot: it cannot contact A+, DWStage, SQL03, or APLUS; cannot call live `/api/aplus/*` routes; cannot persist shared Ana/Liv review decisions; and cannot authenticate Ana/Liv through Microsoft Entra ID. Do not describe hosted-preview data as a current live check.
+- Local preview was started with `NEXT_PUBLIC_TAXAP_OFFLINE_MODE=true` and `npm run dev:web` for production-safe UI work.
+- The read-only connector is intentionally not started outside an explicitly approved, supervised live-validation step (see "User decisions and constraints" above).
 - Production build passes.
 - ESLint passes.
 - `git diff --check` passes; Git may emit expected LF-to-CRLF warnings on Windows.
-- Test suite: 42 passing tests, including dashboard filter coverage plus the existing A+, source, boundary, review, safety, build, and rendered-interface tests.
-- The dashboard redesign was committed and pushed to the private GitHub repository. No deployment, A+ write, or external account change has been performed.
+- Test suite: 60 passing tests as of 2026-08-26 (grows most sessions — check `npm test` output rather than trusting this number for long).
+- Work through 2026-08-26 is committed and pushed to the private GitHub repository (`LukasNAP/TaxAP`, `main`). No deployment, A+ write, or external account change has been performed.
 
-Live results verified on August 18, 2026:
+Live results verified on August 18, 2026 (still the most recent live A+ check as of 2026-08-26 — re-verify before trusting these numbers if much time has passed):
 
 - 51 state/DC codes have active A+ ship-to coverage.
 - North Carolina: 5,516 active ship-tos and 100 validated official county rates.
@@ -50,8 +52,10 @@ Live results verified on August 18, 2026:
 - Georgia official records contain one state rate, 159 county components, six city components, and four special-jurisdiction components.
 - Georgia state rate: 4%.
 - North Carolina A+ versus NCDOR: zero current differences.
-- Recent verified NC case: Mecklenburg changed from 7.25% to 8.25% effective July 1, 2026; A+ now matches.
+- Recent verified NC case: Mecklenburg changed from 7.25% to 8.25% effective July 1, 2026; A+ now matches. Re-confirmed live again on 2026-08-25 with the same result.
 - Retired definitions such as `DO NOT USE`, `INACTIVE`, `OBSOLETE`, `NCUSE`, and `NC060XXX` are suppressed.
+
+South Carolina, added 2026-08-26 (`server/sc-rates.mjs`): official ST-575 rate table is parsed and validated (46/46 counties, 294 municipalities, 340 total rows) by shelling out to `pdftotext -table` (poppler-utils) rather than hand-rolling a PDF parser — **this is the one adapter with a runtime dependency on a system binary, not just npm packages; the connector's host needs poppler-utils installed or `/api/official/states/SC` returns 503.** A+ tax-body matching for SC is not yet built. Full findings: `references/states/sc.md` in the local `taxap-dev` Claude Code skill (see "Where deeper research findings live" below — this is outside the repo, Claude-only today).
 
 ## Architecture
 
@@ -134,6 +138,15 @@ Connected adapters:
 - Texas: quarterly Comptroller control file plus published combined city/local totals.
 - Florida: current Department of Revenue 67-county workbook.
 - Pennsylvania: official statewide/local add-on rules normalized across all 67 Census counties.
+- South Carolina (official source only, added 2026-08-26): ST-575 PDF parsed via `pdftotext -table`. No A+ jurisdiction matching yet — see the note above about the poppler-utils runtime dependency.
+
+**Full research status for every other state (all 42 not connected) was independently verified against live sources on 2026-08-26** — this replaced a lot of earlier unverified guesswork with confirmed facts (real URLs re-fetched, not assumed). Read `docs/roadmap-50-states.md` in this repo before starting work on any new state; do not re-derive this from scratch or trust an older summary of it. Headline corrections from that pass, worth knowing before you go further:
+
+- Of the "20 states with a reusable Streamlined Sales Tax format" this doc used to claim, **only Arkansas and Wyoming are actually drop-in.** 5 states (IN, KY, MI, RI, WV) have a real file with 0-1 rows instead of one-per-county (they're flat or no-local-tax states) and need special-casing. 11 states (IA, KS, MN, ND, NE, NV, OK, SD, UT, VT, WA) publish their current file as a `.zip`, which `server/sst-rates.mjs`'s file-discovery regex can't find — this needs a real code change before any of those 11 can be wired in. New Jersey's claimed SST file is 8+ years stale.
+- 5 states (AL, AZ, CO, LA, MO) have a newly-confirmed real, machine-readable (CSV/XLSX) official source with no adapter built yet — good next targets.
+- Hawaii and New Mexico have a structural red flag: HI's tax is legally a General Excise Tax on business receipts, not a buyer-facing sales tax; NM taxes sellers via Gross Receipts Tax. Get a product decision from Ana/Liv before treating either like a normal per-address sales-tax comparison.
+- Delaware, Montana, New Hampshire, and Oregon genuinely have no general sales tax at all — confirmed, not a research gap. Don't build an adapter for them; ask Ana/Liv how their ship-tos should be surfaced instead.
+- Several official state tax-agency domains (azdor.gov, tax.colorado.gov, mass.gov, revenue.nh.gov, otr.cfo.dc.gov) block the automated `WebFetch` tool with a 403 even when the page is genuinely live — verify with a direct `curl` and a browser User-Agent before concluding a government source is dead.
 
 Current source links:
 
@@ -143,9 +156,10 @@ Current source links:
 - Streamlined boundary directory: `https://www.streamlinedsalestax.org/ratesandboundry/Boundary/`
 - Census 2025 Gazetteer page: `https://www.census.gov/geographies/reference-files/2025/geo/gazetter-file.html`
 - Pennsylvania Department of Revenue: `https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax`
-- Illinois machine-readable files: `https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html`
-- Virginia locality lookup: `https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup`
-- Maryland sales and use tax FAQ: `https://services.marylandcomptroller.gov/taxes/en/sales-and-use-tax-faqs?id=kb_article_view&sysparm_article=KB0010157`
+- Illinois machine-readable files: `https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html` (confirmed real 2026-08-26; files are fixed-width `.txt`, not CSV/XLSX — check IDOR's "Addendum Address Files" before building a separate boundary-matching layer)
+- Virginia locality lookup: `https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup` (confirmed real 2026-08-26; the workbook itself is ~3 years stale — re-confirm no newer regional-rate change before trusting it)
+- Maryland: no scrapable source exists (its FAQ page is a JS-rendered SPA); use the PDF rate chart instead: `https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/Tax_rate_chart.pdf` — confirms a flat 6% statewide rate with no local tax at all, so MD needs no ongoing scraping, just a hardcoded rate
+- South Carolina ST-575: `https://dor.sc.gov/sites/dor/files/forms/ST575.pdf` (connected, see `server/sc-rates.mjs`)
 
 ## Completed milestone: Georgia address-boundary matching
 
@@ -170,7 +184,7 @@ Not done / worth knowing for the next session:
 
 Prioritize adapters by current active A+ ship-to counts:
 
-1. South Carolina: 1,924
+1. South Carolina: 1,924 — **official source connected 2026-08-26** (`server/sc-rates.mjs`); A+ matching (Step 1/2 against live `XATXBD`) still needed, findings so far in the taxap-dev skill's `references/states/sc.md`
 2. Texas: 1,909
 3. California: 1,576
 4. Florida: 1,480
@@ -181,11 +195,11 @@ Prioritize adapters by current active A+ ship-to counts:
 9. Virginia: 827
 10. Maryland: 735
 
-Do not assume the same source format across these states. Research and validate each authority independently. States with Streamlined files should reuse the generic rate/boundary framework; other states need state-specific adapters.
+Do not assume the same source format across these states. Research and validate each authority independently. States with Streamlined files should reuse the generic rate/boundary framework **once it has ZIP-extraction support — most don't have a usable bare-.csv file today, see `docs/roadmap-50-states.md`**; other states need state-specific adapters.
 
 ## Known limitations
 
-- Official-rate adapters are connected for NC, GA, CA, TX, FL, PA, OH, and TN. IL and VA machine sources are identified; SC and MD official documents are identified, but their validated parsers/locality models are intentionally still pending.
+- Official-rate adapters are connected for NC, GA, CA, TX, FL, PA, OH, TN, and (as of 2026-08-26) SC. IL and VA machine sources are confirmed real but not yet built into adapters; MD has no scrapable source and should just be hardcoded at a flat 6%. All other states' sources were verified 2026-08-26 — see `docs/roadmap-50-states.md` before assuming any state's status.
 - The dashboard currently uses the validated August 18 aggregate fallback in offline mode. It must not describe that evidence as a current live check.
 - Georgia address-boundary matching is implemented and reconciled by tax body, but has not been run end to end against live A+ (see "Not done" above); the rate-file table's own `totalGeneralRate` column still shows city/special components as `null` since a single component doesn't know which ship-tos it applies to without the boundary reconciliation.
 - Georgia codes `05000` and `17780` are not present in the current Census place Gazetteer and therefore retain safe code-based fallback labels.
@@ -259,14 +273,20 @@ Expected current Georgia results:
 - Preserve the read-only language wherever a control could be mistaken for an A+ write.
 - Do not perform browser screenshots or visual QA unless Lukas asks.
 
+## Where deeper research findings live
+
+Detailed per-state research (NC and SC's full Step 1/2 findings, the reusable `XATXBD` query template, known A+ data-quality gotchas like `SASHST` not being a clean state code) currently lives in a **Claude Code skill** at `C:\Users\lukasn\.claude\skills\taxap-dev\`, not in this repository. That's fine for Claude Code sessions (the skill loads automatically), but **a ChatGPT/Codex session has no way to read it** — it's outside any git-tracked location this repo controls. If per-state research needs to be visible to both tools, it should move into this repo (e.g. under `docs/states/`) instead of staying Claude-only; that hasn't been decided yet. Until then, a ChatGPT session picking this project up should ask Lukas directly for that context rather than assuming it doesn't exist just because it's not in the repo.
+
+`docs/roadmap-50-states.md` (in this repo, both tools can read it) has the higher-level, all-51-state status table and is kept current — trust that one for overall state status; go to the skill (or ask Lukas) only for the deep per-state investigation detail.
+
 ## Documentation
 
-After meaningful changes, append a concise project update to the current dated log, for this redesign:
+After meaningful changes, append a concise project update to that day's dated log:
 
-`C:\Users\lukasn\Documents\Obsidian Vault\Codex Logs\2026-08-25.md`
+`C:\Users\lukasn\Documents\Obsidian Vault\Codex Logs\<YYYY-MM-DD>.md`
 
-Record outcomes, important decisions, validation results, and useful links. Do not include secrets, credentials, raw logs, or routine low-value activity.
+Record outcomes, important decisions, validation results, and useful links. Do not include secrets, credentials, raw logs, or routine low-value activity. **Also update this file (`HANDOFF.md`) itself before ending any session that changed the project's state** — whichever assistant you're using — so the next session starts accurate regardless of which tool picks it up next.
 
 ## Suggested continuation prompt
 
-> Read `CLAUDE-HANDOFF.md`, `README.md`, `server/ga-boundary.mjs`, `server/aplus-connector.mjs`, `app/page.tsx`, and the relevant tests. Work only from snapshots, fixtures, mocks, and automated tests. Do not contact A+, DWStage, SQL03, APLUS, production databases, or live `/api/aplus/*` routes. Do not start the connector, commit, push, deploy, or write to A+. Use the A+ ERP skill before changing SQL or ERP behavior. Continue the dashboard-first monitoring workflow by researching and fixture-testing the next official state source; do not claim a source is connected until its schema and jurisdiction mapping are validated. Keep customer-level address data off the browser, run the complete offline validation suite, and report unknowns without guessing.
+> Read `HANDOFF.md`, `README.md`, `docs/roadmap-50-states.md`, `server/ga-boundary.mjs`, `server/aplus-connector.mjs`, `app/page.tsx`, and the relevant tests. Work only from snapshots, fixtures, mocks, and automated tests. Do not contact A+, DWStage, SQL03, APLUS, production databases, or live `/api/aplus/*` routes. Do not start the connector, commit, push, deploy, or write to A+. Use the A+ ERP skill before changing SQL or ERP behavior. Continue the dashboard-first monitoring workflow by researching and fixture-testing the next official state source; do not claim a source is connected until its schema and jurisdiction mapping are validated. Keep customer-level address data off the browser, run the complete offline validation suite, report unknowns without guessing, and update `HANDOFF.md` before finishing.
