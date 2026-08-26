@@ -58,10 +58,13 @@ const KNOWN_NON_US_JURISDICTIONS = [
  * ship-to state it is assigned under. This flags real A+ data-quality issues — a mis-assigned or
  * mislabeled tax-body code — rather than treating them as ordinary counties of the selected state.
  */
-export function describesOtherJurisdiction({ description }: TaxBodyIdentity, stateCode: string) {
+export function describesOtherJurisdiction({ taxBody, description }: TaxBodyIdentity, stateCode: string) {
   const normalized = String(description ?? "").toUpperCase().replace(/['’]/g, "").trim();
-  if (!normalized) return false;
   const normalizedStateCode = String(stateCode ?? "").trim().toUpperCase();
+  const normalizedTaxBody = String(taxBody ?? "").trim().toUpperCase();
+  const codedState = normalizedTaxBody.match(/^([A-Z]{2})\d/)?.[1];
+  if (codedState && STATE_NAME_BY_CODE.has(codedState) && codedState !== normalizedStateCode) return true;
+  if (!normalized) return false;
   const matchedState = MULTI_WORD_STATE_NAMES.find((state) => normalized.includes(state.name.toUpperCase()));
   if (matchedState && matchedState.code !== normalizedStateCode) return true;
   return KNOWN_NON_US_JURISDICTIONS.some((name) => normalized.includes(name));

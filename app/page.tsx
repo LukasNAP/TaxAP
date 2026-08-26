@@ -81,6 +81,7 @@ type OfficialStateSnapshot = {
 type GaBoundaryJurisdiction = { fipsCounty: string | null; fipsPlace: string | null; specialCode: string | null };
 type GaBoundaryTaxBodyFinding = {
   taxBody: string;
+  description: string | null;
   activeShipTos: number;
   matchedShipTos: number;
   unmatchedShipTos: number;
@@ -104,8 +105,23 @@ type GaBoundaryReconciliation = {
   matchTierCounts: { address: number; zip9: number; zip5: number; zip5FromZip9: number };
   taxBodyFindings: GaBoundaryTaxBodyFinding[];
   excludedForNoAplusRate: number;
+  crossStateAssignments: { taxBodyCount: number; shipToCount: number; rateBearingTaxBodyCount: number; rateBearingShipToCount: number; taxBodies: GaBoundaryTaxBodyFinding[] };
   unmatchedReasons: { reason: string; count: number }[];
   ambiguousReasons: { reason: string; count: number }[];
+};
+type NjAplusReconciliation = {
+  stateCode: "NJ";
+  expectedTaxBody: "NJ000";
+  retrievedAt: string;
+  officialRate: number;
+  aplusRate: number | null;
+  rateDifference: number | null;
+  hasDifference: boolean;
+  comparisonStatus: "matched" | "difference" | "unavailable";
+  totals: { activeShipTos: number; comparedShipTos: number; crossStateShipTos: number; unclassifiedShipTos: number };
+  crossStateAssignments: StateTaxBody[];
+  unclassifiedAssignments: StateTaxBody[];
+  stateDetail: StateDetail;
 };
 type StateDrawerCacheEntry = {
   stateDetail: StateDetail | null;
@@ -114,6 +130,8 @@ type StateDrawerCacheEntry = {
   officialStateStatus: StateDetailStatus;
   gaBoundaryDetail: GaBoundaryReconciliation | null;
   gaBoundaryStatus: StateDetailStatus;
+  njAplusDetail: NjAplusReconciliation | null;
+  njAplusStatus: StateDetailStatus;
   fetchedAt: number;
 };
 type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcoming" | "not-checked";
@@ -314,6 +332,8 @@ export default function Home() {
   const [officialStateStatus, setOfficialStateStatus] = useState<StateDetailStatus>("idle");
   const [gaBoundaryDetail, setGaBoundaryDetail] = useState<GaBoundaryReconciliation | null>(null);
   const [gaBoundaryStatus, setGaBoundaryStatus] = useState<StateDetailStatus>("idle");
+  const [njAplusDetail, setNjAplusDetail] = useState<NjAplusReconciliation | null>(null);
+  const [njAplusStatus, setNjAplusStatus] = useState<StateDetailStatus>("idle");
   // Deliberately separate from gaBoundaryDetail/gaBoundaryStatus above, which belong to the state
   // drawer and get cleared whenever it closes. The home dashboard's findings must survive that —
   // see the "how come it reconnects every click" / caching work this pairs with.
@@ -606,6 +626,8 @@ export default function Home() {
       setOfficialStateStatus(cached.officialStateStatus);
       setGaBoundaryDetail(cached.gaBoundaryDetail);
       setGaBoundaryStatus(cached.gaBoundaryStatus);
+      setNjAplusDetail(cached.njAplusDetail);
+      setNjAplusStatus(cached.njAplusStatus);
       setStateDrawerCheckedAt(cached.fetchedAt);
       return;
     }
@@ -616,24 +638,38 @@ export default function Home() {
     setOfficialStateStatus("loading");
     setGaBoundaryDetail(null);
     setGaBoundaryStatus(cacheKey === "GA" ? "loading" : "idle");
+    setNjAplusDetail(null);
+    setNjAplusStatus(cacheKey === "NJ" ? "loading" : "idle");
     const apiBase = apiBaseUrl();
     if (!apiBase) {
       setStateDetailStatus("error");
       setOfficialStateStatus("error");
       if (cacheKey === "GA") setGaBoundaryStatus("error");
+      if (cacheKey === "NJ") setNjAplusStatus("error");
       return;
     }
     const officialRequest = fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
     const boundaryRequest = cacheKey === "GA"
       ? fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
+    const njAplusRequest = cacheKey === "NJ"
+      ? fetch(`${apiBase}/api/official/states/NJ/aplus`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
+      : null;
 
     let nextStateDetail: StateDetail | null = null;
     let nextStateDetailStatus: StateDetailStatus = "error";
+    let pendingNjAplusDetail: NjAplusReconciliation | null = null;
     try {
-      const response = await fetch(`${apiBase}/api/aplus/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } });
-      if (!response.ok) throw new Error("State detail unavailable");
-      nextStateDetail = await response.json() as StateDetail;
+      const response = cacheKey === "NJ" && njAplusRequest
+        ? await njAplusRequest
+        : await fetch(`${apiBase}/api/aplus/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      if (!response?.ok) throw new Error("State detail unavailable");
+      if (cacheKey === "NJ") {
+        pendingNjAplusDetail = await response.json() as NjAplusReconciliation;
+        nextStateDetail = pendingNjAplusDetail.stateDetail;
+      } else {
+        nextStateDetail = await response.json() as StateDetail;
+      }
       nextStateDetailStatus = "ready";
     } catch {
       nextStateDetailStatus = "error";
@@ -663,6 +699,17 @@ export default function Home() {
       setGaBoundaryStatus(nextGaStatus);
     }
 
+    let nextNjAplusDetail: NjAplusReconciliation | null = null;
+    let nextNjAplusStatus: StateDetailStatus = cacheKey === "NJ" ? "error" : "idle";
+    if (njAplusRequest) {
+      if (pendingNjAplusDetail) {
+        nextNjAplusDetail = pendingNjAplusDetail;
+        nextNjAplusStatus = "ready";
+      }
+      setNjAplusDetail(nextNjAplusDetail);
+      setNjAplusStatus(nextNjAplusStatus);
+    }
+
     // Cached for the rest of the session (or until LIVE_REFRESH_INTERVAL_MS elapses, or the
     // drawer's own Refresh control is used) so reopening the same state doesn't re-read A+.
     const fetchedAt = new Date().getTime();
@@ -673,6 +720,8 @@ export default function Home() {
       officialStateStatus: nextOfficialStatus,
       gaBoundaryDetail: nextGaDetail,
       gaBoundaryStatus: nextGaStatus,
+      njAplusDetail: nextNjAplusDetail,
+      njAplusStatus: nextNjAplusStatus,
       fetchedAt,
     });
     setStateDrawerCheckedAt(fetchedAt);
@@ -1096,7 +1145,7 @@ export default function Home() {
       )}
 
       {selectedState && (
-        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setStateDrawerCheckedAt(null); }}>
+        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setNjAplusDetail(null); setNjAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
           <div className="drawer-kicker"><span className="section-label">{connectorStatus === "live" ? "Live A+ state coverage" : "Validated A+ state snapshot"}</span><span className="status-badge">Read only</span></div>
           <h2 id="state-title">{STATE_NAME_BY_CODE.get(selectedState.stateCode) ?? selectedState.stateCode}</h2>
           <p className="drawer-lede">Active ship-to assignments and configured tax-body rates queried from A+. This is not yet a comparison with the state&apos;s official Department of Revenue rates.</p>
@@ -1111,6 +1160,7 @@ export default function Home() {
           </div>
           <OfficialStateSourcePanel source={officialSourcesByCode.get(selectedState.stateCode) ?? null} status={officialStateStatus} snapshot={officialStateDetail} />
           {selectedState.stateCode === "GA" && <GeorgiaBoundaryPanel status={gaBoundaryStatus} reconciliation={gaBoundaryDetail} />}
+          {selectedState.stateCode === "NJ" && <NewJerseyAplusPanel status={njAplusStatus} reconciliation={njAplusDetail} />}
           {stateDetailStatus === "loading" && <div className="state-detail-message" role="status">Querying A+ tax-body assignments and configured rates…</div>}
           {stateDetailStatus === "error" && <div className="state-detail-message state-detail-error" role="alert">The state detail query is unavailable. The state-level totals above remain from the last successful A+ coverage read.</div>}
           {stateDetailStatus === "ready" && stateDetail && (() => {
@@ -1298,7 +1348,7 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
   if (status === "error" || !reconciliation) {
     return <div className="state-detail-message state-detail-error" role="alert">The Georgia boundary-match reconciliation is unavailable or failed validation. No jurisdiction was guessed.</div>;
   }
-  const { totals, matchTierCounts, taxBodyFindings, excludedForNoAplusRate } = reconciliation;
+  const { totals, matchTierCounts, taxBodyFindings, excludedForNoAplusRate, crossStateAssignments } = reconciliation;
   const differences = taxBodyFindings.filter((row) => row.hasDifference);
   return (
     <section className="official-state-panel" aria-labelledby="ga-boundary-title">
@@ -1313,7 +1363,18 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
         Matched by address: {matchTierCounts.address.toLocaleString()} · ZIP+4: {matchTierCounts.zip9.toLocaleString()} · ZIP-5: {matchTierCounts.zip5.toLocaleString()} · ZIP+4 sub-ranges in agreement (no ZIP-5 row published): {matchTierCounts.zip5FromZip9.toLocaleString()}.
         Unmatched and ambiguous ship-tos are reported, not guessed.
         {excludedForNoAplusRate > 0 && ` ${excludedForNoAplusRate} tax ${excludedForNoAplusRate === 1 ? "body" : "bodies"} excluded from the rows below for having no A+ rate configured (retired, DO NOT USE, or a blank 0% definition).`}
+        {crossStateAssignments.taxBodyCount > 0 && ` ${crossStateAssignments.rateBearingTaxBodyCount} rate-bearing different-jurisdiction tax ${crossStateAssignments.rateBearingTaxBodyCount === 1 ? "body" : "bodies"}, covering ${crossStateAssignments.rateBearingShipToCount.toLocaleString()} ship-tos, are excluded from Georgia rate comparison. ${crossStateAssignments.taxBodyCount - crossStateAssignments.rateBearingTaxBodyCount} additional zero-rate outside-jurisdiction assignment groups remain visible below.`}
       </p>
+      {crossStateAssignments.taxBodyCount > 0 && (
+        <details className="official-rate-details">
+          <summary>View {crossStateAssignments.taxBodyCount} different-state or country assignment groups ({crossStateAssignments.shipToCount.toLocaleString()} ship-tos)</summary>
+          <div className="table-scroll"><table className="coverage-table official-rate-table"><thead><tr><th>Tax body</th><th>Description</th><th>Ship-tos</th><th>A+ rate</th><th>Handling</th></tr></thead><tbody>
+            {crossStateAssignments.taxBodies.map((row) => (
+              <tr key={row.taxBody}><td><code>{row.taxBody}</code></td><td>{row.description ?? "Different-state tax body"}</td><td>{row.activeShipTos.toLocaleString()}</td><td>{row.aplusRate === null ? "—" : formatRate(row.aplusRate)}</td><td>Excluded from GA comparison</td></tr>
+            ))}
+          </tbody></table></div>
+        </details>
+      )}
       {(reconciliation.unmatchedReasons.length > 0 || reconciliation.ambiguousReasons.length > 0) && (
         <details className="official-rate-details">
           <summary>Why {totals.unmatched.toLocaleString()} unmatched{totals.ambiguous > 0 ? ` and ${totals.ambiguous.toLocaleString()} ambiguous` : ""} ship-tos didn&apos;t resolve</summary>
@@ -1344,6 +1405,26 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
         </tbody></table></div>
       </details>
       <div className="official-source-links"><a href={reconciliation.boundaryFileUrl} target="_blank" rel="noreferrer">Open boundary-file evidence ↗</a><span>Boundary fingerprint {reconciliation.boundarySourceHash.slice(0, 12)}…</span></div>
+    </section>
+  );
+}
+
+function NewJerseyAplusPanel({ status, reconciliation }: { status: StateDetailStatus; reconciliation: NjAplusReconciliation | null }) {
+  if (status === "loading") return <div className="state-detail-message" role="status">Comparing A+ tax body NJ000 with the current New Jersey statewide rate…</div>;
+  if (status === "error" || !reconciliation) return <div className="state-detail-message state-detail-error" role="alert">The New Jersey A+ comparison is unavailable or failed validation. No rate was guessed.</div>;
+  const { totals } = reconciliation;
+  return (
+    <section className="official-state-panel" aria-labelledby="nj-aplus-title">
+      <div className="state-table-heading"><div><span className="section-label">New Jersey A+ reconciliation</span><strong id="nj-aplus-title">Flat statewide rate comparison</strong></div></div>
+      <div className="official-source-summary">
+        <div><span>NJ000 ship-tos</span><strong>{totals.comparedShipTos.toLocaleString()}</strong></div>
+        <div><span>Official rate</span><strong>{formatRate(reconciliation.officialRate)}</strong></div>
+        <div><span>A+ rate</span><strong>{reconciliation.aplusRate === null ? "—" : formatRate(reconciliation.aplusRate)}</strong></div>
+        <div><span>Result</span><strong>{reconciliation.comparisonStatus === "matched" ? "Matches" : reconciliation.comparisonStatus === "difference" ? "Review difference" : "Unavailable"}</strong></div>
+      </div>
+      <p className="official-boundary-note">
+        {totals.crossStateShipTos.toLocaleString()} ship-to{totals.crossStateShipTos === 1 ? "" : "s"} assigned to another state and {totals.unclassifiedShipTos.toLocaleString()} unclassified ship-to{totals.unclassifiedShipTos === 1 ? "" : "s"} are reported separately and excluded from the NJ000 comparison. All {totals.activeShipTos.toLocaleString()} active New Jersey ship-tos reconcile to these categories.
+      </p>
     </section>
   );
 }

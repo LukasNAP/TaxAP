@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
 import { readSingleFileZip } from "./zip-utils.mjs";
 
 export const GEORGIA_BOUNDARY_DIRECTORY_URL = "https://www.streamlinedsalestax.org/ratesandboundry/Boundary/";
@@ -341,7 +342,7 @@ function jurisdictionKey(jurisdiction) {
  * tax body's resolved official rate against its configured XATXBD rate. Never returns ship-to-level
  * address or customer data — only aggregate counts and rate comparisons.
  */
-export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnapshot, taxBodyRates = new Map(), asOfDate }) {
+export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnapshot, taxBodyRates = new Map(), taxBodyDescriptions = new Map(), asOfDate }) {
   const perTaxBody = new Map();
   let matchedCount = 0;
   let unmatchedCount = 0;
@@ -387,6 +388,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     const rateDifference = officialRate !== null && aplusRate !== null ? Number((officialRate - aplusRate).toFixed(4)) : null;
     return {
       taxBody: bucket.taxBody,
+      description: taxBodyDescriptions.get(bucket.taxBody) ?? null,
       activeShipTos: bucket.activeShipTos,
       matchedShipTos: bucket.activeShipTos - bucket.unmatched - bucket.ambiguous,
       unmatchedShipTos: bucket.unmatched,
@@ -400,6 +402,17 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     };
   });
 
+  const crossStateTaxBodyFindings = allTaxBodyFindings
+    .filter((finding) => describesOtherJurisdiction(finding, "GA"))
+    .map((finding) => ({
+      ...finding,
+      officialRate: null,
+      rateDifference: null,
+      hasDifference: false,
+    }))
+    .sort((a, b) => b.activeShipTos - a.activeShipTos || a.taxBody.localeCompare(b.taxBody));
+  const crossStateTaxBodies = new Set(crossStateTaxBodyFindings.map((finding) => finding.taxBody));
+
   // Per instruction: drop tax bodies with no real A+ rate configured. `aplusRate === null` already
   // covers both "no XATXBD row exists" and "the only row is retired/DO NOT USE" — the caller
   // (readGeorgiaBoundaryReconciliation) excludes retired definitions from taxBodyRates before this
@@ -409,9 +422,13 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
   // Never silently drop the ship-to counts alongside it: totals/matched/unmatched above are
   // unaffected, and the exclusion count is reported so a reviewer can see what was left out.
   const taxBodyFindings = allTaxBodyFindings
+    .filter((finding) => !crossStateTaxBodies.has(finding.taxBody))
     .filter((finding) => finding.aplusRate !== null && finding.aplusRate !== 0)
     .sort((a, b) => b.activeShipTos - a.activeShipTos || a.taxBody.localeCompare(b.taxBody));
-  const excludedForNoAplusRate = allTaxBodyFindings.length - taxBodyFindings.length;
+  const excludedForNoAplusRate = allTaxBodyFindings
+    .filter((finding) => !crossStateTaxBodies.has(finding.taxBody))
+    .filter((finding) => finding.aplusRate === null || finding.aplusRate === 0)
+    .length;
 
   const sortReasons = (reasons) => [...reasons.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -420,6 +437,15 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
   return {
     asOfDate,
     excludedForNoAplusRate,
+    crossStateAssignments: {
+      taxBodyCount: crossStateTaxBodyFindings.length,
+      shipToCount: crossStateTaxBodyFindings.reduce((sum, finding) => sum + finding.activeShipTos, 0),
+      rateBearingTaxBodyCount: crossStateTaxBodyFindings.filter((finding) => finding.aplusRate !== null && finding.aplusRate !== 0).length,
+      rateBearingShipToCount: crossStateTaxBodyFindings
+        .filter((finding) => finding.aplusRate !== null && finding.aplusRate !== 0)
+        .reduce((sum, finding) => sum + finding.activeShipTos, 0),
+      taxBodies: crossStateTaxBodyFindings,
+    },
     totals: { activeShipTos: addresses.length, matched: matchedCount, unmatched: unmatchedCount, ambiguous: ambiguousCount },
     matchTierCounts: tierCounts,
     unmatchedReasons: sortReasons(unmatchedReasons),
