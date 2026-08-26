@@ -11,6 +11,7 @@ import { readOfficialNcRates } from "./ncdor-rates.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
+import { readOfficialScRates } from "./sc-rates.mjs";
 import { readOfficialGaRates, readOfficialSstStateRates } from "./sst-rates.mjs";
 import { readOfficialTxRates } from "./tx-rates.mjs";
 
@@ -521,6 +522,11 @@ export function createConnectorServer({ reviews } = {}) {
         }
         if (stateCode === "PA") {
           const snapshot = await readOfficialPaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "SC") {
+          const snapshot = await readOfficialScRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }

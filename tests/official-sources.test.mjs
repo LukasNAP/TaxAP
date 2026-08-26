@@ -15,7 +15,7 @@ test("registers every state and DC without claiming unfinished adapters are conn
   assert.equal(sources.find((source) => source.stateCode === "TN").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "OH").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "PA").status, "connected");
-  assert.equal(sources.find((source) => source.stateCode === "SC").status, "official-document-source");
+  assert.equal(sources.find((source) => source.stateCode === "SC").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "IL").status, "machine-readable-source");
   assert.equal(sources.find((source) => source.stateCode === "VA").status, "machine-readable-source");
   assert.equal(sources.find((source) => source.stateCode === "MD").status, "official-document-source");

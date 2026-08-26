@@ -57,8 +57,8 @@ export function listOfficialSourceRegistry() {
     }
     if (stateCode === "SC") {
       return {
-        stateCode, stateName, status: "official-document-source", adapter: "state-dor-pdf-pending",
-        coverage: "official municipality and unincorporated-area totals in ST-575; validated parser pending",
+        stateCode, stateName, status: "connected", adapter: "state-dor-pdf",
+        coverage: "all 46 county (unincorporated) and municipality totals from ST-575; A+ tax-body matching not yet built",
         sourceName: "South Carolina Department of Revenue", sourceUrl: "https://dor.sc.gov/sites/dor/files/forms/ST575.pdf",
       };
     }
