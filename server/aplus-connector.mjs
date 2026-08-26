@@ -10,6 +10,7 @@ import { readOfficialFlRates } from "./fl-rates.mjs";
 import { readOfficialNcRates } from "./ncdor-rates.mjs";
 import { readOfficialMdRates } from "./md-rates.mjs";
 import { readOfficialNjRates } from "./nj-rates.mjs";
+import { reconcileNewJerseyAplus } from "./nj-aplus.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
@@ -135,7 +136,7 @@ export function buildStateCoverageQuery() {
     COUNT(DISTINCT NULLIF(LTRIM(RTRIM(a.SASTXB)), '')) AS TaxBodyCount
   FROM dbo.ADDR AS a
   LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
-  WHERE ISNULL(LTRIM(RTRIM(a.SASUSP)), '') <> 'S'
+  WHERE ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
     AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'
   GROUP BY UPPER(LTRIM(RTRIM(a.SASHST)))`;
 }
@@ -147,7 +148,7 @@ export function buildStateTaxBodyQuery() {
   FROM dbo.ADDR AS a
   LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
   WHERE UPPER(LTRIM(RTRIM(a.SASHST))) = @state
-    AND ISNULL(LTRIM(RTRIM(a.SASUSP)), '') <> 'S'
+    AND ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
     AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'
   GROUP BY NULLIF(LTRIM(RTRIM(a.SASTXB)), '')
   ORDER BY ActiveShipTos DESC, TaxBody`;
@@ -329,13 +330,21 @@ export async function readStateDetail(value) {
   }
 }
 
+export async function readNewJerseyAplusComparison() {
+  const [stateDetail, officialSnapshot] = await Promise.all([
+    readStateDetail("NJ"),
+    readOfficialNjRates(),
+  ]);
+  return { ...reconcileNewJerseyAplus({ stateDetail, officialSnapshot }), stateDetail };
+}
+
 export function buildGeorgiaAddressQuery() {
   return `SELECT a.SASAD1 AS StreetLine, a.SASAD2 AS SecondaryLine, a.SASCTY AS City, a.SASZIP AS Zip,
     NULLIF(LTRIM(RTRIM(a.SASTXB)), '') AS TaxBody
   FROM dbo.ADDR AS a
   LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
   WHERE UPPER(LTRIM(RTRIM(a.SASHST))) = 'GA'
-    AND ISNULL(LTRIM(RTRIM(a.SASUSP)), '') <> 'S'
+    AND ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
     AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'`;
 }
 
@@ -349,6 +358,7 @@ export async function readGeorgiaBoundaryReconciliation() {
   const pool = await openPool();
   let addressRows;
   let taxBodyRates;
+  let taxBodyDescriptions;
   try {
     const addressResult = await pool.request().query(buildGeorgiaAddressQuery());
     addressRows = addressResult.recordset.map((row) => ({
@@ -362,11 +372,14 @@ export async function readGeorgiaBoundaryReconciliation() {
     const assignedCodes = [...new Set(addressRows.map((row) => row.taxBody).filter(Boolean))];
     const definitionsQuery = buildTaxBodyDefinitionsQuery(assignedCodes, linkedSettings());
     taxBodyRates = new Map();
+    taxBodyDescriptions = new Map();
     if (definitionsQuery) {
       const definitionsResult = await pool.request().query(definitionsQuery);
       for (const row of definitionsResult.recordset) {
         if (isRetiredTaxBody({ taxBody: rowValue(row, "TaxBody"), description: rowValue(row, "Description") })) continue;
-        taxBodyRates.set(String(rowValue(row, "TaxBody") || "").trim(), numericValue(rowValue(row, "CurrentTotalRate")));
+        const taxBody = String(rowValue(row, "TaxBody") || "").trim();
+        taxBodyRates.set(taxBody, numericValue(rowValue(row, "CurrentTotalRate")));
+        taxBodyDescriptions.set(taxBody, String(rowValue(row, "Description") || "").trim());
       }
     }
   } finally {
@@ -378,7 +391,14 @@ export async function readGeorgiaBoundaryReconciliation() {
   const wantedAddressKeys = buildWantedAddressKeys(addressRows);
   const boundaryDataset = parseBoundaryCsv(boundaryFile.csvText, { wantedAddressKeys });
   const asOfDate = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const reconciliation = reconcileGeorgiaBoundary({ addresses: addressRows, boundaryDataset, rateSnapshot, taxBodyRates, asOfDate });
+  const reconciliation = reconcileGeorgiaBoundary({
+    addresses: addressRows,
+    boundaryDataset,
+    rateSnapshot,
+    taxBodyRates,
+    taxBodyDescriptions,
+    asOfDate,
+  });
 
   return {
     retrievedAt: new Date().toISOString(),
@@ -578,6 +598,25 @@ export function createConnectorServer({ reviews } = {}) {
         const status = /valid U\.S\. state code/.test(message) ? 400 : 503;
         console.error(JSON.stringify({ event: "official_state_refresh", ok: false, message }));
         return sendJson(response, status, { error: status === 400 ? message : "The official state rate source is unavailable or failed validation." }, responseOrigin);
+      }
+    }
+
+    if (url.pathname === "/api/official/states/NJ/aplus" && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        const reconciliation = await readNewJerseyAplusComparison();
+        console.info(JSON.stringify({
+          event: "nj_aplus_reconciliation", ok: true,
+          activeShipTos: reconciliation.totals.activeShipTos,
+          comparedShipTos: reconciliation.totals.comparedShipTos,
+          crossStateShipTos: reconciliation.totals.crossStateShipTos,
+          retrievedAt: reconciliation.retrievedAt,
+        }));
+        return sendJson(response, 200, reconciliation, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown New Jersey reconciliation error";
+        console.error(JSON.stringify({ event: "nj_aplus_reconciliation", ok: false, message }));
+        return sendJson(response, 503, { error: "The New Jersey A+ rate reconciliation is unavailable or failed validation." }, responseOrigin);
       }
     }
 

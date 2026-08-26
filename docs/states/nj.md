@@ -1,6 +1,6 @@
 # New Jersey — findings
 
-Status: **official-source adapter built** (`server/nj-rates.mjs`, `tests/nj-rates.test.mjs`, 12/12 passing). Not yet wired into `server/official-source-registry.mjs` or `app/page.tsx` — that's a separate step reserved for a human per this build's scope limits.
+Status: **official-source adapter and A+ reconciliation wired** (`server/nj-rates.mjs`, `server/nj-aplus.mjs`, connector endpoint `/api/official/states/NJ/aplus`, and the NJ state-drawer panel). Live read-only validation on 2026-08-26 returned 600 active NJ ship-tos: 599 on `NJ000`, one `GA060` cross-state assignment, and zero unclassified. `NJ000` and the official source both read 6.625%.
 
 ## Official source
 
@@ -48,7 +48,9 @@ Key point: **this reduced rate is a seller-certification property, not a ship-to
 
 `readOfficialNjRates` throws (never silently guesses or picks one side) if either page's expected sentence pattern isn't found, if the two pages disagree on the current rate or its effective date, if a page comes back suspiciously small (likely a changed page shell), or if a parsed rate falls outside a plausible 4–10% sanity band. The snapshot it returns follows the same shape as the other connected adapters (`stateCode`, `source`, `rates: [...]`, `counts`, `boundaryStatus`) plus one addition: a `caveats` array carrying `NJ_UEZ_CAVEAT` verbatim, so the UEZ/Salem County open question below isn't dropped on the floor by anything consuming this snapshot later.
 
-This is only the official-source half (Step 3/4's "official rate" side). It does not query `XATXBD` — mapping the single `NJ000` A+ tax body to this snapshot's single `NJ` rate row is a trivial direct-equality join (unlike NC's 100-row synthesized mapping), but still needs to be wired into `server/aplus-connector.mjs`/`app/page.tsx` by a human, along with excluding the one `GA060`-tagged NJ ship-to from the comparison set the same way NC's cross-state ship-tos are separated out (`describesOtherJurisdiction()` pattern in `app/tax-body-policy.ts`) rather than silently merging or dropping it.
+The official adapter remains independent of A+. `server/nj-aplus.mjs` now performs the aggregate join: it compares only `NJ000`, reports other-state and unclassified assignment counts separately, and fails if those buckets do not reconcile exactly to the active NJ total. `server/aplus-connector.mjs` exposes that through `/api/official/states/NJ/aplus`; the browser receives only aggregate tax-body counts/rates. The code-prefix check in `describesOtherJurisdiction()` identifies the known `GA060` assignment even though "Georgia" is a single-word state name.
+
+The live rate-history page changed shape during this wiring pass: it now states the transition in the heading (`Sales Tax Transition from 6.875% to 6.625%`) and gives January 1, 2018 in the immediately associated transition-period heading rather than in the old prose sentence. The parser now accepts both narrowly defined official formats, requires the heading and date context together, and still cross-validates the result against the separate Use Tax FAQ page.
 
 Unit tests (`tests/nj-rates.test.mjs`, fixture-based, no live network) cover: correct extraction of rate/year and rate/effective-date; both pages agreeing; the FAQ page's own two statements agreeing; rejection of a missing/unrecognized rate statement, a missing/unrecognized transition sentence, an unrecognized date format, a zero-change transition, an implausible rate, a non-OK HTTP response, and the two pages disagreeing with each other; and the full snapshot shape including `caveats`.
 

@@ -107,7 +107,8 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "NJ") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-flat-rate",
-        coverage: "flat statewide rate (6.625% since 2018), cross-validated live against two independent NJ Division of Taxation pages; no local-option sales tax exists, so no address matching is ever needed. One open caveat: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification, not modeled - see docs/states/nj.md",
+        coverage: "flat statewide rate (6.625% since 2018), cross-validated live against two independent NJ Division of Taxation pages and wired to A+'s NJ000 assignment; different-state ship-to assignments are counted separately. One open caveat: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification, not modeled - see docs/states/nj.md",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/NJ/aplus",
         sourceName: "New Jersey Division of Taxation", sourceUrl: NJ_USE_TAX_FAQ_URL,
       };
     }

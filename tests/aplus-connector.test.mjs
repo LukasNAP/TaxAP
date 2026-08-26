@@ -41,7 +41,8 @@ test("state queries preserve company joins, active filters, and parameterization
   for (const query of [summaryQuery, detailQuery]) {
     assert.match(query, /c\.CMCONO = a\.SACONO/);
     assert.match(query, /c\.CMCSNO = a\.SACSNO/);
-    assert.match(query, /a\.SASUSP/);
+    assert.match(query, /a\.SACSUS/);
+    assert.doesNotMatch(query, /a\.SASUSP/);
     assert.match(query, /c\.CMSUSP/);
   }
   assert.match(detailQuery, /= @state/);

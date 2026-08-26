@@ -30,6 +30,10 @@ function changeFixture({ fromRate = "6.875", toRate = "6.625", date = "January 1
   return `${PAGE_BOILERPLATE}<h2>Sales and Use Tax Rate Change</h2><p>The New Jersey Sales and Use Tax rate decreased from ${fromRate}% to ${toRate}% effective ${date}.</p>${PAGE_FOOTER}`;
 }
 
+function currentChangeFixture({ fromRate = "6.875", toRate = "6.625", date = "January 1, 2018" } = {}) {
+  return `${PAGE_BOILERPLATE}<h2>Sales Tax Transition from ${fromRate}% to ${toRate}%</h2><h3>Sales Made Between January 1, 2017, and December 31, 2017, but Not Completed Until On or After ${date}</h3>${PAGE_FOOTER}`;
+}
+
 test("parseNjRateStatementHtml extracts the current flat rate and its since-year", () => {
   const statement = parseNjRateStatementHtml(faqFixture());
   assert.deepEqual(statement, { rate: 6.625, sinceYear: 2018 });
@@ -61,6 +65,14 @@ test("parseNjRateStatementHtml refuses an implausible rate rather than trusting 
 test("parseNjRateChangeHtml extracts the most recent transition and its effective date", () => {
   const change = parseNjRateChangeHtml(changeFixture());
   assert.deepEqual(change, { fromRate: 6.875, toRate: 6.625, effectiveDate: "2018-01-01" });
+});
+
+test("parseNjRateChangeHtml accepts NJ's current transition-heading format", () => {
+  assert.deepEqual(parseNjRateChangeHtml(currentChangeFixture()), { fromRate: 6.875, toRate: 6.625, effectiveDate: "2018-01-01" });
+});
+
+test("parseNjRateChangeHtml rejects a transition heading without its effective-date context", () => {
+  assert.throws(() => parseNjRateChangeHtml(`${PAGE_BOILERPLATE}<h2>Sales Tax Transition from 6.875% to 6.625%</h2>${PAGE_FOOTER}`), /does not describe a recognizable/);
 });
 
 test("parseNjRateChangeHtml throws when no transition sentence is found", () => {

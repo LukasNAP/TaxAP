@@ -1,6 +1,6 @@
 # TaxAP project handoff
 
-Last updated: August 26, 2026 (South Carolina official-source adapter shipped; two multi-agent source-verification passes ran against all 42 non-connected states; New Jersey adapter shipped; AL/AZ/CO/LA/MO/NY/HI/NM investigated live against A+ and correctly declined to build — see docs/state-rollout.md; SC's Step 3 boundary source identified (SC RFA's public GIS services); GA's boundary reconciliation run live end to end for the first time)
+Last updated: August 26, 2026 (New Jersey A+ reconciliation wired and live-validated; Georgia outside-jurisdiction assignments separated and live-validated with the correct `SACSUS` active filter; South Carolina RFA matcher attempt stopped safely with verified blockers documented)
 
 **This is the single shared handoff doc for this project, regardless of which AI coding assistant you're using (Claude Code or ChatGPT/Codex).** Update it at the end of every session — whichever assistant you used — so the next session (with either tool) starts from the same accurate picture. Don't keep a separate per-assistant copy; this file replaces the earlier split between `CLAUDE-HANDOFF.md` (Claude-side) and `HANDOFF.md` (ChatGPT-side).
 
@@ -41,7 +41,7 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 - Production build passes.
 - ESLint passes.
 - `git diff --check` passes; Git may emit expected LF-to-CRLF warnings on Windows.
-- Test suite: 77 passing tests as of 2026-08-26 (grows most sessions — check `npm test` output rather than trusting this number for long).
+- Test suite: 83 passing tests as of 2026-08-26 (grows most sessions — check `npm test` output rather than trusting this number for long).
 - Work through 2026-08-26 is committed and pushed to the private GitHub repository (`LukasNAP/TaxAP`, `main`). No deployment, A+ write, or external account change has been performed.
 
 Live results verified on August 18, 2026 (still the most recent live A+ check as of 2026-08-26 — re-verify before trusting these numbers if much time has passed):
@@ -87,7 +87,7 @@ Local Node connector on 127.0.0.1:3001
 - City: `ADDR.SASCTY`
 - ZIP: `ADDR.SASZIP`
 - Company-aware customer join: `CUSMS.CMCONO = ADDR.SACONO` and `CUSMS.CMCSNO = ADDR.SACSNO`
-- Active filters preserve `ADDR.SASUSP <> 'S'` and `CUSMS.CMSUSP <> 'S'` semantics.
+- Active filters use `ADDR.SACSUS <> 'S'` and `CUSMS.CMSUSP <> 'S'`. Never restore `SASUSP`: live data confirms that older field is 100% blank/dead.
 - The browser receives aggregate counts and tax-body definitions, not customer-level records.
 
 Consult the local `aplus-erp` skill before changing SQL or assuming A+ field semantics.
@@ -111,6 +111,7 @@ Consult the local `aplus-erp` skill before changing SQL or assuming A+ field sem
 | `server/tx-rates.mjs` | Validated Texas quarterly text plus published-total adapter |
 | `server/fl-rates.mjs` | Validated Florida 67-county workbook adapter |
 | `server/pa-rates.mjs` | Validated Pennsylvania official-rule plus Census county adapter |
+| `server/nj-aplus.mjs` | Aggregate-only `NJ000` versus official-rate reconciliation with visible cross-state/unclassified counts |
 | `server/ga-boundary.mjs` | Georgia boundary-archive discovery/parsing, address normalization, address/ZIP+4/ZIP-5 matching, and tax-body reconciliation |
 | `server/zip-utils.mjs` | Minimal dependency-free ZIP reader (stored + deflate) used to extract the Streamlined boundary archive |
 | `server/official-source-registry.mjs` | All-state/DC adapter and research status registry |
@@ -139,7 +140,7 @@ Connected adapters:
 - Florida: current Department of Revenue 67-county workbook.
 - Pennsylvania: official statewide/local add-on rules normalized across all 67 Census counties.
 - South Carolina (official source only, added 2026-08-26): ST-575 PDF parsed via `pdftotext -table`. No A+ jurisdiction matching yet — see the note above about the poppler-utils runtime dependency. **Step 3 (boundary source) now identified 2026-08-26**: SC RFA (a separate SC state agency) runs public, unauthenticated ArcGIS REST services (geocoder + municipal/county boundary polygons) at `gis.state.sc.us` that together form a real address-to-jurisdiction path — not built, architecturally different from GA's static-file pattern (needs two live dependent calls per address: geocode, then point-in-polygon). See `docs/states/sc.md`.
-- New Jersey (added 2026-08-26): flat 6.625% statewide rate, cross-validated live against two independent NJ Division of Taxation pages (`server/nj-rates.mjs`). No local-option tax exists, so no address matching is ever needed. One open caveat, not modeled: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification — see `NJ_UEZ_CAVEAT` in the adapter and `docs/states/nj.md`.
+- New Jersey (completed 2026-08-26): flat 6.625% statewide rate cross-validated against two NJ Division pages (`server/nj-rates.mjs`) and reconciled to A+ by `server/nj-aplus.mjs` through `/api/official/states/NJ/aplus`. Live result: 599 active ship-tos on `NJ000` at 6.625%, one `GA060` assignment separately counted/excluded, zero unclassified, 600 total. One open caveat remains: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification — see `NJ_UEZ_CAVEAT` and `docs/states/nj.md`.
 
 **Full research status for every other state (all 42 not connected) was independently verified against live sources on 2026-08-26** — this replaced a lot of earlier unverified guesswork with confirmed facts (real URLs re-fetched, not assumed). Read `docs/roadmap-50-states.md` in this repo before starting work on any new state; do not re-derive this from scratch or trust an older summary of it. Headline corrections from that pass, worth knowing before you go further:
 
@@ -175,15 +176,27 @@ Implemented this session. Summary of what shipped:
 - `app/page.tsx`: new `GeorgiaBoundaryPanel`, shown in the Georgia state drawer, displaying total/matched/unmatched/ambiguous counts, the address/ZIP+4/ZIP-5 tier breakdown, and a per-tax-body reconciliation table with a rate-difference flag.
 - Tests added in `tests/ga-boundary.test.mjs` (11 tests): ZIP extraction round-trip, boundary-archive discovery, street-line parsing, ZIP normalization, address-level match, ZIP+4/ZIP-5 fallback, ambiguous match, effective-date exclusion, unsupported-address-range handling, schema/FIPS rejection, and tax-body reconciliation (matched + unmatched + ambiguous reconciling exactly to the active total).
 
-**Run end to end against live production for the first time on 2026-08-26** (previously deferred — see git history for context). Real results: `activeShipTos=2404, matched=2293, unmatched=92, ambiguous=19` — reconciles exactly (2293+92+19=2404), confirming the "no silent caps" invariant holds live, not just in fixtures. Match tiers all exercised live: address=997, zip9=63, zip5=1115, zip5FromZip9=118. 130 tax-body findings, 30 with a real rate difference (e.g. `GA027` Chattooga: official 9% vs A+ 7%; `GA006` Banks: official 7% vs A+ 9%, A+ *overcharging*). `excludedForNoAplusRate`=5, correctly excluded with a visible count.
+**Run end to end against live production on 2026-08-26 and corrected later the same day.** The first run used `SASUSP`, which is a confirmed dead/blank field, and therefore included suspended ship-tos: `2404 = 2293 matched + 92 unmatched + 19 ambiguous`. After every active-state/address query was corrected to the real `SACSUS` flag, the verified result became `2391 = 2280 matched + 92 unmatched + 19 ambiguous`. The no-silent-caps invariant still holds exactly. There are now 125 comparable Georgia tax-body findings, 27 with a real rate difference, and 3 in-state groups visibly excluded for no configured A+ rate.
 
-**New finding from that live run**: 5 of the 130 tax-body records on real GA-ship-to addresses carry a non-Georgia tax body — `NC060`×4, `NC041`×3, `SC126`×2, `CA1163`, `PA000`. This reproduces the already-documented `CMTXBD`/`SASTXB` cross-context pattern (`docs/aplus-data-findings.md`) confirmed live for the first time. 3 of these 5 show a "rate difference," but that's comparing GA's boundary-resolved rate against a *different state's* A+ configuration — apples-to-oranges, not evidence GA's own rate is wrong. **Not yet built:** excluding or separately categorizing these 5 non-GA-prefixed tax bodies in the GA findings table.
+**Outside-jurisdiction handling is now built and live-verified.** The 5 rate-bearing non-GA tax bodies named by the original finding — `NC060`×4, `NC041`×3, `SC126`×2, `CA1163`, `PA000` — cover 11 ship-tos and are no longer compared against Georgia rates. Two additional zero-rate outside-jurisdiction groups (`DR000`×10 and `CN000`×1) are also kept visible. The API/UI therefore reports 7 outside-jurisdiction groups / 22 ship-tos in total, while identifying the exact 5 rate-bearing groups / 11 ship-tos that would otherwise create apples-to-oranges findings. No ship-to count is silently dropped.
 
 Still not done / worth knowing for the next session:
 
 - The boundary file is parsed fully into memory per refresh (~2.9s locally for the real 316 MB CSV) rather than via a persistent index; fine for a 6-hour-cached background refresh, but worth revisiting if refresh frequency increases.
 - Address-level matching only decomposes `SASAD1`/`SASAD2`; it has not been checked against `SASAD3`/`SASAD4` overflow lines.
 - No `docs/states/ga.md` file exists yet — GA's findings are split across this file and `docs/state-rollout.md`'s status table rather than consolidated the way NC/SC/etc. are.
+
+## South Carolina matcher attempt — intentionally stopped
+
+The public-source validation requested on 2026-08-26 was completed without querying SC production A+ rows or sending customer addresses to RFA. No matcher was shipped. Verified blockers are documented in full in `docs/states/sc.md`:
+
+- Raw RFA county data really assigns FIPS `45077` to both Oconee and Pickens; the field cannot be treated as unique.
+- RFA's county `TaxRate` disagrees with current ST-575 for Williamsburg (7% vs 8%); ST-575 must remain the only rate authority.
+- All 46 county names and all 271 unique municipality names reconcile after conservative normalization, but 23 multi-county ST-575 pairs are absent from RFA's home-county attribute and require municipality plus county geometry.
+- Charleston and North Charleston each use one multipart polygon intersecting Charleston, Berkeley, and Dorchester. ST-575 has no Charleston/Dorchester row, so that intersection needs a known-address/spatial-area decision before matching can be trusted.
+- RFA publishes no explicit automated-use quota/license and asks users to confirm before acting on the data. Obtain approval for batch geocoding/caching and request rate.
+- Sending active A+ street addresses to an external government geocoder is a new outbound customer-data flow; Atlantic IT/privacy approval is required first.
+- This host still lacks `pdftotext`, so the live ST-575 adapter cannot run here even though its fixture tests pass.
 
 ## Rollout after Georgia
 
@@ -206,7 +219,7 @@ Do not assume the same source format across these states. Research and validate 
 
 - Official-rate adapters are connected for NC, GA, CA, TX, FL, PA, OH, TN, and (as of 2026-08-26) SC. IL and VA machine sources are confirmed real but not yet built into adapters; MD has no scrapable source and should just be hardcoded at a flat 6%. All other states' sources were verified 2026-08-26 — see `docs/roadmap-50-states.md` before assuming any state's status.
 - The dashboard currently uses the validated August 18 aggregate fallback in offline mode. It must not describe that evidence as a current live check.
-- Georgia address-boundary matching is implemented and reconciled by tax body, but has not been run end to end against live A+ (see "Not done" above); the rate-file table's own `totalGeneralRate` column still shows city/special components as `null` since a single component doesn't know which ship-tos it applies to without the boundary reconciliation.
+- Georgia address-boundary matching is implemented and live-validated with the real `SACSUS` active filter. Outside-jurisdiction assignments are separately counted and excluded from GA rate comparisons. The rate-file table's own `totalGeneralRate` column still shows city/special components as `null` since a single component doesn't know which ship-tos it applies to without the boundary reconciliation.
 - Georgia codes `05000` and `17780` are not present in the current Census place Gazetteer and therefore retain safe code-based fallback labels.
 - A+ tax-body-to-official-jurisdiction mapping outside NC is validated for Georgia via the boundary reconciliation; CA, TX, and FL currently expose official inventory only and are not yet compared with A+.
 - Review storage is local SQLite, not yet a shared hosted database.
@@ -265,8 +278,8 @@ Expected current Georgia results:
 - `counts.cities = 6`
 - `counts.specialJurisdictions = 4`
 - `rates.length = 170`
-- A+ Georgia active ship-tos = 2,401 as of 2026-08-18; **confirmed 2,404 live on 2026-08-26** (small, plausible ship-to churn, not a discrepancy)
-- `/api/official/states/GA/boundary`: `totals.matched + totals.unmatched + totals.ambiguous = totals.activeShipTos` — **confirmed live on 2026-08-26**: 2293+92+19=2404, exactly. See the "Completed milestone" section above for full results and the new cross-state tax-body finding.
+- A+ Georgia active ship-tos = **2,391 live on 2026-08-26 using the real `SACSUS` ship-to active flag**. The earlier 2,404 result used dead `SASUSP` and included suspended rows; do not use it as the active count.
+- `/api/official/states/GA/boundary`: `totals.matched + totals.unmatched + totals.ambiguous = totals.activeShipTos` — confirmed live with the corrected filter: 2280+92+19=2391, exactly. Outside-jurisdiction totals are 7 groups / 22 ship-tos overall, including 5 rate-bearing groups / 11 ship-tos excluded from apples-to-oranges GA comparisons.
 
 ## UI and branding rules
 

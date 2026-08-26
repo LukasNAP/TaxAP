@@ -315,3 +315,28 @@ test("excludes tax bodies with no A+ rate configured, and counts what was exclud
   // Ship-to totals are unaffected by the exclusion — only the rate-comparison rows are filtered.
   assert.equal(reconciliation.totals.activeShipTos, 3);
 });
+
+test("separates cross-state tax bodies from Georgia findings without dropping their ship-to counts", () => {
+  const addresses = [
+    { streetLine: "1 MAIN ST", city: "ATHENS", zip: "30606", taxBody: "GA219" },
+    { streetLine: "2 MAIN ST", city: "ATHENS", zip: "30606", taxBody: "NC060" },
+    { streetLine: "3 MAIN ST", city: "ATHENS", zip: "30606", taxBody: "NC060" },
+  ];
+  const reconciliation = reconcileGeorgiaBoundary({
+    addresses,
+    boundaryDataset: parseBoundaryCsv(boundaryRow({ type: "Z", zipLow: "30606", zipHigh: "30606", fipsCounty: "219" })),
+    rateSnapshot: { stateRate: 4, rates: [{ jurisdictionType: "county", jurisdictionCode: "219", componentRate: 3 }] },
+    taxBodyRates: new Map([["GA219", 7], ["NC060", 8.25]]),
+    taxBodyDescriptions: new Map([["GA219", "Georgia Clarke"], ["NC060", "North Carolina Mecklenburg"]]),
+    asOfDate: "20260826",
+  });
+
+  assert.deepEqual(reconciliation.taxBodyFindings.map((row) => row.taxBody), ["GA219"]);
+  assert.equal(reconciliation.crossStateAssignments.taxBodyCount, 1);
+  assert.equal(reconciliation.crossStateAssignments.shipToCount, 2);
+  assert.equal(reconciliation.crossStateAssignments.rateBearingTaxBodyCount, 1);
+  assert.equal(reconciliation.crossStateAssignments.rateBearingShipToCount, 2);
+  assert.equal(reconciliation.crossStateAssignments.taxBodies[0].taxBody, "NC060");
+  assert.equal(reconciliation.crossStateAssignments.taxBodies[0].officialRate, null);
+  assert.equal(reconciliation.totals.activeShipTos, 3);
+});

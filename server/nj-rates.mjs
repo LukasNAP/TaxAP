@@ -84,10 +84,11 @@ export function parseNjRateStatementHtml(html) {
   return statement;
 }
 
-// Matches sentences of the shape "...Sales and Use Tax rate ... from 6.875% to 6.625% ...
-// effective January 1, 2018" - the confirmed live wording on the rate-change history page
-// describing the most recent (2018) statewide rate change.
+// Supports the earlier prose sentence and NJ's current two-heading layout. The heading-only form
+// is accepted only when its associated transition-period heading also supplies the effective date.
 const RATE_CHANGE_PATTERN = /rate\s+(?:decreased|increased|changed|dropped|rose)\s+from\s+(\d+(?:\.\d+)?)%\s+to\s+(\d+(?:\.\d+)?)%[^.]*?effective\s+([A-Za-z]+\s+\d{1,2},\s*\d{4})/i;
+const RATE_TRANSITION_TITLE_PATTERN = /Sales\s+Tax\s+Transition\s+from\s+(\d+(?:\.\d+)?)%\s+to\s+(\d+(?:\.\d+)?)%/i;
+const RATE_TRANSITION_DATE_PATTERN = /but\s+Not\s+Completed\s+Until\s+On\s+or\s+After\s+([A-Za-z]+\s+\d{1,2},\s*\d{4})/i;
 
 /**
  * Parses NJ's rate-change history page for the most recent statewide rate transition. Cross-
@@ -97,16 +98,19 @@ const RATE_CHANGE_PATTERN = /rate\s+(?:decreased|increased|changed|dropped|rose)
  */
 export function parseNjRateChangeHtml(html) {
   const text = decodeHtml(html);
-  const match = text.match(RATE_CHANGE_PATTERN);
-  if (!match) {
+  const sentenceMatch = text.match(RATE_CHANGE_PATTERN);
+  const titleMatch = text.match(RATE_TRANSITION_TITLE_PATTERN);
+  const titleDateMatch = text.match(RATE_TRANSITION_DATE_PATTERN);
+  if (!sentenceMatch && (!titleMatch || !titleDateMatch)) {
     throw new Error("NJ Division of Taxation rate-change page does not describe a recognizable statewide rate transition (\"from X% to Y% effective <date>\").");
   }
-  const fromRate = Number(match[1]);
-  const toRate = Number(match[2]);
+  const fromRate = Number(sentenceMatch?.[1] ?? titleMatch?.[1]);
+  const toRate = Number(sentenceMatch?.[2] ?? titleMatch?.[2]);
+  const effectiveDateText = sentenceMatch?.[3] ?? titleDateMatch?.[1];
   assertPlausibleRate(fromRate, "prior rate");
   assertPlausibleRate(toRate, "new rate");
   if (fromRate === toRate) throw new Error("NJ Division of Taxation rate-change page describes a transition with no actual rate change.");
-  return { fromRate, toRate, effectiveDate: parseUsLongDate(match[3]) };
+  return { fromRate, toRate, effectiveDate: parseUsLongDate(effectiveDateText) };
 }
 
 async function fetchOfficialPage(url, fetchImpl) {

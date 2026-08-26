@@ -22,6 +22,8 @@ test("keeps legitimate configured tax bodies", () => {
 });
 
 test("flags tax bodies whose description names a different state or country", () => {
+  assert.equal(describesOtherJurisdiction({ taxBody: "GA060", description: "Georgia Fulton" }, "NJ"), true);
+  assert.equal(describesOtherJurisdiction({ taxBody: "NC060", description: "North Carolina Mecklenburg" }, "GA"), true);
   assert.equal(describesOtherJurisdiction({ description: "North Carolina Guilford" }, "GA"), true);
   assert.equal(describesOtherJurisdiction({ description: "North Carolina Mecklenburg" }, "GA"), true);
   assert.equal(describesOtherJurisdiction({ description: "Dominican Republic" }, "GA"), true);
@@ -29,6 +31,7 @@ test("flags tax bodies whose description names a different state or country", ()
 });
 
 test("does not flag legitimate same-state or ambiguous single-word descriptions", () => {
+  assert.equal(describesOtherJurisdiction({ taxBody: "GA060", description: "Georgia Fulton" }, "GA"), false);
   assert.equal(describesOtherJurisdiction({ description: "North Carolina Mecklenburg" }, "NC"), false);
   assert.equal(describesOtherJurisdiction({ description: "Fulton County" }, "GA"), false);
   assert.equal(describesOtherJurisdiction({ description: "Washington County" }, "GA"), false);
