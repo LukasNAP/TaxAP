@@ -192,6 +192,101 @@ The order is based on the apparent number of current ship-tos at risk or blocked
 
 North Carolina's 100 county codes match the current official rates, and known cross-state/legacy assignments are already displayed separately with exact counts. The remaining caution—periodically rechecking the alphabetical county-code convention—is an engineering/data-validation responsibility, not a pending business decision for Ana or Liv.
 
+## 2026-08-26 (later session): 24 more states investigated — new decisions
+
+The batch below comes from a second Layer 2 investigation pass that checked every one of TaxAP's remaining states against live A+ data (`docs/state-rollout.md`'s Step 1/Step 2 procedure). Combined with the batch above, **all 51 jurisdictions now have a completed Layer 2 investigation** except Delaware, Montana, New Hampshire, and Oregon, which are correctly excluded from comparison entirely (no general sales tax exists there). None of the states below are ready to build without the decision noted.
+
+### Illinois — explain `IL000`/`ILOOO`, the largest placeholder share found in this rollout
+
+1. **What was found:** `IL000` and a typo variant `ILOOO` together cover 454 of 891 active Illinois ship-tos — 51%, more than half the state's book of business — with no XATXBD rate definition at all. Illinois also has a handful of cities (Aurora, Elgin) that straddle county lines and carry two different codes for the same city name.
+2. **Question to answer:** What governs tax today for the 454 ship-tos on `IL000`/`ILOOO`? Is this an intentional fallback, or an unfinished jurisdiction assignment?
+3. **Why it matters:** This is the largest placeholder-shaped bucket found in any state investigated in this project so far, both by percentage and by raw count — larger than Utah's prior high of 23.9%.
+4. **What the answer unlocks:** TaxAP can either document the bucket as an approved exception or route those 454 ship-tos into jurisdiction assignment before an Illinois comparison is built. Separately, Illinois DOR's own "Addendum Address Files" should be checked before building a custom Aurora/Elgin boundary matcher from scratch.
+
+### Rhode Island and the District of Columbia — confirm whether tax is actually being collected
+
+1. **What was found:** Rhode Island's sole tax body (`RI000`) is configured at 0% against the state's real flat 7% rate, covering 100% of active RI ship-tos (40) and customers (22). DC's sole tax body (`DC000`) is configured at 0% against DC's real, legislated (not optional) rate of roughly 6.5% today, stepping to 7.0% on 10/1/2026, covering 20 of 21 active DC ship-tos (95%). Neither state's tax is legally optional the way Hawaii's GET pass-on is — this is the same shape as the already-flagged North Dakota finding, just newly confirmed in two more states.
+2. **Question to answer:** Is there a documented reason Atlantic charges $0 sales tax on every Rhode Island and DC ship-to today, or is this simply an unbuilt/never-configured setup in both states?
+3. **Why it matters:** If unintentional, every current invoice to these 60 combined ship-tos may be undercharging tax with no dollar amount currently visible anywhere in A+.
+4. **What the answer unlocks:** A confirmed answer lets engineering either document RI/DC as a known, approved zero-rate treatment or flag both as urgent missing configuration, the same fork already offered for North Dakota.
+
+### California — resolve the LA-County templated rate and explain `CA000`
+
+1. **What was found:** `CA000` (no XATXBD definition at all, not a labeled DO-NOT-USE row) covers 233 of 1,574 active California ship-tos (14.8%), the largest raw-count placeholder bucket found in this project. Separately, roughly 21 Los Angeles-area tax-body codes (~305 ship-tos, ~19% of CA's book) all share one templated local-rate add-on that overcharges the unincorporated-county code by 0.5 point while undercharging nearly every LA city code by 0.25–1.0 point — one shared root cause, not 21 unrelated stale rates. Smaller but similarly systemic stale clusters exist in Sonoma and Santa Clara counties.
+2. **Question to answer:** What governs the 233 `CA000` ship-tos today? And is there a known reason Atlantic applies one flat local add-on across all Los Angeles-area codes instead of each jurisdiction's real current rate?
+3. **Why it matters:** Combined, these two findings touch roughly 538 of California's 1,574 active ship-tos (~34%) — by far the largest-scale rate-accuracy question found in any state so far.
+4. **What the answer unlocks:** A confirmed correction plan lets TaxAP fix the LA-area rates as one coordinated update rather than 21 separate tickets, and either close or escalate the `CA000` gap. California will also need real address-level matching (city name alone doesn't distinguish incorporated-city from unincorporated-county land) before a full comparison can ship — that is a separate, purely technical follow-on once these business questions are answered.
+
+### Tennessee — explain `TN000` and correct seven confirmed stale rates
+
+1. **What was found:** `TN000` has no rate definition at all and covers 183 of 929 active Tennessee ship-tos (19.7%) — the largest single tax-body bucket in the state, bigger than Nashville. Separately, seven real, currently-configured codes are confirmed stale against the current official rate (Nashville/Davidson Co. +0.50pt on 66 ship-tos; a McMinn County cluster of three cities −0.75pt, stale since 2020; Mount Juliet −0.50pt since 2020; Tipton County +0.50pt; Spring Hill −0.50pt since 2020; Kingsport +0.25pt; Mountain City −0.50pt since just 2025-01-01), covering 85 ship-tos combined.
+2. **Question to answer:** What governs tax for the 183 `TN000` ship-tos? Is there a documented reason for any of the seven stale codes, or should they be corrected?
+3. **Why it matters:** Nearly a fifth of Tennessee's active book sits on an undefined placeholder, and Nashville — Tennessee's largest market — is a confirmed live 0.5-point undercharge today.
+4. **What the answer unlocks:** A confirmed correction plan lets TaxAP ship a Tennessee comparison; Tennessee will also need real address-level matching (rates genuinely vary within a county, e.g. Memphis vs. bare Shelby County) before that comparison can be complete.
+
+### Texas — decide how to handle same-city, different-county ambiguity, and correct one confirmed stale rate
+
+1. **What was found:** A confirmed stale rate exists on Midland (`TX1421`, 9 ship-tos): A+ shows 8.0% against an official 8.25%/7.5% split that matches neither. Separately, roughly 63% of Texas's active ship-to volume — including its six highest-volume cities (Dallas, Houston, Fort Worth, San Antonio, Austin, El Paso) — sits on a bare city-name code that structurally collides with two or more county-qualified rows in the Comptroller's own published rate table, because the same city name can straddle counties with different totals. Every such case checked happens to agree today, but that is not guaranteed to stay true.
+2. **Question to answer:** Is there a documented reason for Midland's rate, or should it be corrected? Separately, does Atlantic want Texas addresses matched down to the county level now, before any of these currently-agreeing splits diverges, or is monitoring the currently-assigned code sufficient?
+3. **Why it matters:** Midland is a confirmed, current, real gap. The broader address-matching question affects the majority of Texas's 1,907 active ship-tos, even though it isn't producing a wrong number today.
+4. **What the answer unlocks:** A Midland correction is independent of the larger address-matching question and can proceed on its own. The broader answer determines whether Texas ships as a code-level comparison now or waits for real address/county matching.
+
+### Florida — correct four confirmed stale county rates
+
+1. **What was found:** Four of Florida's 67 county codes are confirmed stale against the Florida DOR's current snapshot: Collier (A+ 7.0% vs. official 6.0% — A+ is *too high*), Flagler (7.5% vs. 7.0%), Hamilton (7.0% vs. 8.0% — A+ is *too low*), and Palm Beach (7.0% vs. 6.5%, on 83 active ship-tos, Florida's third-largest concentration).
+2. **Question to answer:** Is there a documented reason for any of these four differences, or should they be corrected in A+?
+3. **Why it matters:** Palm Beach alone affects 83 active ship-tos; Collier's direction (A+ charging *more* than the current official rate) is the opposite risk from the usual stale-and-undercharging pattern seen elsewhere.
+4. **What the answer unlocks:** A confirmed correction lets TaxAP ship Florida's comparison with the right status; Florida's underlying code-to-county mapping itself needs no address matching, so this is the only blocker for that state.
+
+### Pennsylvania — correct Philadelphia and decide on the missing Allegheny code
+
+1. **What was found:** Philadelphia (`PA001`, 49 active ship-tos) is configured at 6% in A+ against the current official 8% total — and A+'s own data shows a scheduled correction to 8% effective 2026-10-01, confirming the gap is real and already known internally. Separately, no A+ tax body exists at all for Allegheny County (official rate 7%); any ship-to actually in Allegheny today would silently fall onto the generic `PA000` 6% catch-all with no way to detect the mismatch.
+2. **Question to answer:** Is the Philadelphia correction already scheduled to land on time, or does it need attention now? Does Atlantic have any ship-tos in Allegheny County, and if so, should a dedicated code be created?
+3. **Why it matters:** Philadelphia is a confirmed, currently-live 2-point undercharge on 49 ship-tos. The Allegheny gap has unknown ship-to exposure since no code exists to reveal it.
+4. **What the answer unlocks:** Confirming the Philadelphia timeline lets TaxAP treat it as "correction in progress" rather than "unaddressed." Confirming Allegheny exposure (zero vs. nonzero) determines whether a new code is actually needed.
+
+### Ohio — explain `OH000` and correct one confirmed stale county rate
+
+1. **What was found:** `OH000` has an implausible 0% rate (not DO-NOT-USE-tagged, so not automatically excluded) and covers 65 of 936 active Ohio ship-tos (~6.9%). Separately, Knox County (`OH042`) is confirmed stale: A+ 6.75% vs. official 7.25% since 2023-10-01. (Ohio's ~16 counties with a transit-authority surcharge were separately confirmed to already be correctly included in A+'s rate — not a comparability problem, a real methodology validation.)
+2. **Question to answer:** What governs tax for the 65 `OH000` ship-tos? Is there a documented reason Knox County wasn't updated in 2023?
+3. **Why it matters:** Knox has been stale for nearly 3 years; `OH000` at a literal 0% general sales tax rate has no plausible legitimate reading the way NV000's small share might.
+4. **What the answer unlocks:** A confirmed correction lets Ohio, otherwise the cleanest large state investigated (77 codes map 1:1 to real counties, no address matching needed), ship a comparison with only these two items resolved first.
+
+### Arkansas — explain `AR000` and correct eight confirmed stale local components
+
+1. **What was found:** `AR000` covers 46 of 324 active Arkansas ship-tos (14.2%), the largest tax-body group in the state. Separately, eight real codes show a confirmed live stale local-rate component (West Memphis, Paragould, Barling, Magnolia, Prairie Grove, Van Buren, Stephens, El Dorado — see `docs/states/ar.md` for exact gaps and effective dates), covering 28 ship-tos. A separate, unrelated caveat: Arkansas's real single-article $2,500 local-tax cap has no representation in the source file used for this or any future Arkansas comparison, so even a fully corrected flat-rate comparison would overstate true tax on large single-item sales.
+2. **Question to answer:** What governs tax for the `AR000` ship-tos? Should the eight stale codes be corrected? Does Atlantic want the $2,500 cap modeled, and if so, does anyone have a primary Arkansas DFA citation for its exact mechanics?
+3. **Why it matters:** `AR000` is Arkansas's largest single bucket; the eight stale codes are confirmed and dated, several years old in some cases.
+4. **What the answer unlocks:** A confirmed correction plan lets Arkansas ship a comparison (address matching is otherwise not needed — A+ codes map cleanly to named cities/counties); the $2,500 cap question can be deferred separately since it affects only large single-item sales.
+
+### West Virginia, Wisconsin, Idaho — explain three more placeholder buckets
+
+1. **What was found:** `WV000` covers 21 of 112 active West Virginia ship-tos (18.75%). `WI000` covers 42 of 424 active Wisconsin ship-tos (9.9%). `ID000` covers 12 of 95 active Idaho ship-tos (12.6%). All three follow the same shape as AL000/MN000/ND000/NE000/UT000/WA000 already flagged elsewhere in this memo. Separately, one live West Virginia code (`WV961`) is labeled "Missouri Lewisburg" — a wrong-state-named description on a real, active code, not yet confirmed as a harmless typo or genuine contamination.
+2. **Question to answer:** What governs tax for each of these three placeholder buckets? Is `WV961`'s description a cosmetic error (like Arkansas's "Arizona Beebe") or does it point to a real miscoded jurisdiction?
+3. **Why it matters:** Each affects a meaningful minority of that state's active ship-tos; `WV961` specifically could mean a ship-to is silently priced using the wrong state's rate.
+4. **What the answer unlocks:** Confirmed answers let each state's placeholder be modeled as a documented exception or routed to jurisdiction assignment. Idaho has a second, structural caveat independent of `ID000`: its Tax Commission does not centrally publish the ~23 resort-city local rates at all, so full Idaho coverage may not be achievable regardless of A+'s own setup.
+
+### Virginia — confirm the Richmond city/county assignment
+
+1. **What was found:** A+ has two Richmond codes — `VA076` "Virginia Richmond" (59 active ship-tos, priced at the county rate, 5.3%) and `VA216` "Virginia Richmond (city)" (7 ship-tos, priced at the city rate, 6.0%). The volume is skewed heavily toward the lower-rate county code, which is numerically surprising since the City of Richmond (the state capital) would normally be expected to carry more ship-tos than rural Richmond County.
+2. **Question to answer:** Are the 59 ship-tos on `VA076` actually in Richmond County, or are some/all of them miscoded City of Richmond addresses being undercharged 0.7 points?
+3. **Why it matters:** If even a portion of the 59 are miscoded, this is a live, currently-undetected undercharge on real invoices in Virginia's capital.
+4. **What the answer unlocks:** Confirming actual ship-to addresses for this cluster resolves the question directly; short of that, Ana/Liv may want to flag the 59 for manual review before Virginia's comparison (otherwise close to ready — 106 of 133 real localities already map cleanly) is trusted.
+
+### Wyoming and Alaska — decide the actual scope of coverage
+
+1. **What was found:** 100% of Wyoming's 22 active ship-tos sit on non-jurisdiction placeholder codes (`WY000` "WYOMING NO TAX" and `ZTEMP`, both 0%) with no real per-county code in use at all, despite Wyoming having 23 real counties with official rates of 4–7%. Alaska has a single code (`AK000`, "Alaska no tax," 0%) covering all 8 active AK ship-tos — honestly named, unlike Wyoming's, but Alaska does have real local-only sales tax in 100+ home-rule boroughs/cities that A+ tracks none of.
+2. **Question to answer:** Is Wyoming's 0% intentional (a no-nexus or exemption policy) or an unbuilt setup? Does Atlantic want Alaska's real local tax tracked at all, given that even the best available public source (ARSSTC) only covers its member jurisdictions, not every Alaska taxing municipality?
+3. **Why it matters:** Both states currently show a flat $0 sales tax on every active ship-to; for Wyoming that is likely wrong (real tax exists in 23 counties), while Alaska is closer to Hawaii's category (a real product-scope question, not simply an error) since Alaska has no *state* tax and only partial-coverage local tax.
+4. **What the answer unlocks:** A Wyoming decision either builds a real per-county mapping or documents the 0% as intentional. An Alaska decision determines whether TaxAP pursues a necessarily-incomplete local-tax comparison there or excludes Alaska from local-tax monitoring the way DE/MT/NH/OR are excluded from general-tax monitoring.
+
+### Mississippi — decide whether Jackson and Tupelo's city levies are in scope
+
+1. **What was found:** Mississippi's sole A+ tax body (`MS000`, flat 7%) correctly matches the state's lack of a general local-option sales tax and covers 267 of 270 active ship-tos. Separately, Mississippi's DOR publishes two narrow, named-city special levies not modeled anywhere in A+: Jackson (+1%) and Tupelo (+0.25%), each on its own standalone page rather than in the main rate table.
+2. **Question to answer:** Does Atlantic have ship-tos inside Jackson or Tupelo city limits, and if so, does Ana/Liv want those two narrow levies tracked once Mississippi gets an official-source adapter?
+3. **Why it matters:** The affected ship-to count for these two cities specifically is not yet known from this aggregate-only investigation.
+4. **What the answer unlocks:** A "yes" answer means Mississippi's eventual adapter needs a Jackson/Tupelo carve-out; a "no" (or "not in scope") answer means Mississippi can ship as a simple flat 7% comparison once a source is connected.
+
 ## How Ana and Liv should use this memo
 
 Work through the questions one state at a time and record the answer, who confirmed it, the date, and any supporting A+ screen or policy reference. A short answer such as “intentional fallback,” “missing setup,” “approved exemption,” “not in scope,” or “needs correction” is enough when it includes the reason and owner.
