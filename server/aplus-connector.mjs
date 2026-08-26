@@ -8,6 +8,8 @@ import { buildWantedAddressKeys, readGeorgiaBoundaryArchive, parseBoundaryCsv, r
 import { readOfficialCaRates } from "./ca-rates.mjs";
 import { readOfficialFlRates } from "./fl-rates.mjs";
 import { readOfficialNcRates } from "./ncdor-rates.mjs";
+import { readOfficialMdRates } from "./md-rates.mjs";
+import { readOfficialNjRates } from "./nj-rates.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
@@ -515,8 +517,18 @@ export function createConnectorServer({ reviews } = {}) {
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
-        if (stateCode === "OH" || stateCode === "TN") {
+        if (stateCode === "OH" || stateCode === "TN" || stateCode === "AR" || stateCode === "WY" || stateCode === "IN" || stateCode === "KY" || stateCode === "MI" || stateCode === "RI") {
           const snapshot = await readOfficialSstStateRates(stateCode);
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "MD") {
+          const snapshot = await readOfficialMdRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "NJ") {
+          const snapshot = await readOfficialNjRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
@@ -557,6 +569,9 @@ export function createConnectorServer({ reviews } = {}) {
           return sendJson(response, 200, snapshot, responseOrigin);
         }
         const source = officialSourceForState(stateCode);
+        if (source?.status === "no-general-sales-tax") {
+          return sendJson(response, 501, { error: `${stateCode} has no general sales/use tax to compare - not an unbuilt adapter.`, source }, responseOrigin);
+        }
         return sendJson(response, 501, { error: `${stateCode} official-rate adapter is not connected yet.`, source }, responseOrigin);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown official-rate source error";

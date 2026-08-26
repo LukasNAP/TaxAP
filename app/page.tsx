@@ -49,7 +49,7 @@ type StateDetailStatus = "idle" | "loading" | "ready" | "error";
 type OfficialSourceState = {
   stateCode: string;
   stateName: string;
-  status: "connected" | "machine-readable-source" | "official-document-source" | "research-needed";
+  status: "connected" | "machine-readable-source" | "official-document-source" | "research-needed" | "no-general-sales-tax";
   adapter: string;
   coverage: string;
   sourceName: string;
@@ -143,19 +143,24 @@ type ComparedCounty = CountyCoverage & {
 const LIVE_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const OFFLINE_MODE = process.env.NEXT_PUBLIC_TAXAP_OFFLINE_MODE === "true";
 
-const SST_SOURCE_STATES = new Set(["AR", "GA", "IA", "IN", "KS", "KY", "MI", "MN", "NC", "ND", "NE", "NJ", "NV", "OH", "OK", "RI", "SD", "TN", "UT", "VT", "WA", "WI", "WV", "WY"]);
+const SST_SOURCE_STATES = new Set(["GA", "IA", "KS", "MN", "NC", "ND", "NE", "NV", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV"]);
+const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI"]);
+const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
   if (stateCode === "GA") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction components", sourceName: "Georgia DOR via Streamlined Sales Tax rate file", sourceUrl: "https://dor.georgia.gov/sales-tax-rates-general" };
   if (stateCode === "CA") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "current city and county total rates", sourceName: "California Department of Tax and Fee Administration", sourceUrl: "https://cdtfa.ca.gov/taxes-and-fees/sales-use-tax-rates.htm" };
   if (stateCode === "TX") return { stateCode, stateName, status: "connected", adapter: "state-comptroller-text-html", coverage: "quarterly combined city and local-area rates", sourceName: "Texas Comptroller of Public Accounts", sourceUrl: "https://comptroller.texas.gov/taxes/file-pay/edi/sales-tax-rates.php" };
   if (stateCode === "FL") return { stateCode, stateName, status: "connected", adapter: "state-dor-xlsx", coverage: "all 67 county discretionary surtax totals", sourceName: "Florida Department of Revenue", sourceUrl: "https://floridarevenue.com/taxes/taxesfees/Pages/discretionary.aspx" };
-  if (stateCode === "SC") return { stateCode, stateName, status: "official-document-source", adapter: "state-dor-pdf-pending", coverage: "official municipality and unincorporated-area totals in ST-575; validated parser pending", sourceName: "South Carolina Department of Revenue", sourceUrl: "https://dor.sc.gov/sites/dor/files/forms/ST575.pdf" };
+  if (stateCode === "SC") return { stateCode, stateName, status: "connected", adapter: "state-dor-pdf", coverage: "all 46 county (unincorporated) and municipality totals from ST-575; A+ tax-body matching not yet built", sourceName: "South Carolina Department of Revenue", sourceUrl: "https://dor.sc.gov/sites/dor/files/forms/ST575.pdf" };
   if (stateCode === "PA") return { stateCode, stateName, status: "connected", adapter: "state-dor-rules-census", coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons", sourceName: "Pennsylvania Department of Revenue", sourceUrl: "https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax" };
   if (stateCode === "IL") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-machine-file-pending", coverage: "official machine-readable sales-tax files; adapter validation pending", sourceName: "Illinois Department of Revenue", sourceUrl: "https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html" };
   if (stateCode === "VA") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-xlsx-pending", coverage: "official locality lookup and downloadable workbook; adapter validation pending", sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup" };
-  if (stateCode === "MD") return { stateCode, stateName, status: "official-document-source", adapter: "state-comptroller-guidance-pending", coverage: "official statewide guidance identified; validated locality model pending", sourceName: "Comptroller of Maryland", sourceUrl: "https://services.marylandcomptroller.gov/taxes/en/sales-and-use-tax-faqs?id=kb_article_view&sysparm_article=KB0010157" };
+  if (stateCode === "MD") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6% statewide rate (Tax-General Article Section 11-104); Maryland preempts local general sales tax, so no address matching is ever needed", sourceName: "Comptroller of Maryland", sourceUrl: "https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/Tax_rate_chart.pdf" };
+  if (stateCode === "NJ") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat statewide rate (6.625% since 2018), cross-validated live against two independent NJ Division of Taxation pages; no address matching is ever needed. Open caveat: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification, not modeled", sourceName: "New Jersey Division of Taxation", sourceUrl: "https://www.nj.gov/treasury/taxation/su_10.shtml" };
   if (stateCode === "OH" || stateCode === "TN") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction rate components", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
+  if (CONNECTED_GENERIC_SST_STATES.has(stateCode)) return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "jurisdiction rate components, validated 2026-08-26", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
+  if (NO_GENERAL_SALES_TAX_STATES.has(stateCode)) return { stateCode, stateName, status: "no-general-sales-tax", adapter: "none", coverage: "confirmed 2026-08-26: no general state or local sales/use tax exists in this state; excluded from rate comparison, not an unbuilt adapter", sourceName: "N/A", sourceUrl: null };
   if (SST_SOURCE_STATES.has(stateCode)) return { stateCode, stateName, status: "machine-readable-source", adapter: "sst-rate-file", coverage: "jurisdiction rate components; adapter pending", sourceName: "Streamlined Sales Tax rate and boundary files", sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   return { stateCode, stateName, status: "research-needed", adapter: "state-specific", coverage: "official DOR source mapping pending", sourceName: "State tax authority", sourceUrl: null };
 });
@@ -1051,7 +1056,7 @@ export default function Home() {
                       ? <button className="table-link" type="button" onClick={() => void openState(source.stateCode)}><strong>{source.stateCode}</strong> · {source.stateName}</button>
                       : <><strong>{source.stateCode}</strong> · {source.stateName}</>}</td>
                     <td>{source.activeShipTos.toLocaleString()}</td>
-                      <td><span className={`source-rollout-status source-rollout-${source.status}`}>{source.status === "connected" ? "Connected" : source.status === "machine-readable-source" ? "Machine source identified" : source.status === "official-document-source" ? "Official document identified" : "Research needed"}</span></td>
+                      <td><span className={`source-rollout-status source-rollout-${source.status}`}>{source.status === "connected" ? "Connected" : source.status === "machine-readable-source" ? "Machine source identified" : source.status === "official-document-source" ? "Official document identified" : source.status === "no-general-sales-tax" ? "No general sales tax" : "Research needed"}</span></td>
                     <td>{source.coverage}</td>
                     <td>{source.sourceUrl ? <a href={source.sourceUrl} target="_blank" rel="noreferrer">{source.sourceName} ↗</a> : source.sourceName}</td>
                   </tr>
@@ -1254,7 +1259,8 @@ function OfficialStateSourcePanel({ source, status, snapshot }: { source: Offici
   const statusLabel = source?.status === "connected" ? "Connected"
     : source?.status === "machine-readable-source" ? "Machine source identified"
       : source?.status === "official-document-source" ? "Official document identified"
-        : "Research needed";
+        : source?.status === "no-general-sales-tax" ? "No general sales tax"
+          : "Research needed";
   return (
     <section className="official-state-panel" aria-labelledby="official-state-title">
       <div className="state-table-heading"><div><span className="section-label">Official sales and use tax source</span><strong id="official-state-title">{source?.sourceName ?? "Loading source registry"}</strong></div>{source && <span className={`source-rollout-status source-rollout-${source.status}`}>{statusLabel}</span>}</div>

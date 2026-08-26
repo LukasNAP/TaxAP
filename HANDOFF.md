@@ -1,6 +1,6 @@
 # TaxAP project handoff
 
-Last updated: August 26, 2026 (South Carolina official-source adapter shipped; two multi-agent source-verification passes ran against all 42 non-connected states)
+Last updated: August 26, 2026 (South Carolina official-source adapter shipped; two multi-agent source-verification passes ran against all 42 non-connected states; New Jersey adapter shipped; AL/AZ/CO/LA/MO/NY/HI/NM investigated live against A+ and correctly declined to build — see docs/state-rollout.md; SC's Step 3 boundary source identified (SC RFA's public GIS services); GA's boundary reconciliation run live end to end for the first time)
 
 **This is the single shared handoff doc for this project, regardless of which AI coding assistant you're using (Claude Code or ChatGPT/Codex).** Update it at the end of every session — whichever assistant you used — so the next session (with either tool) starts from the same accurate picture. Don't keep a separate per-assistant copy; this file replaces the earlier split between `CLAUDE-HANDOFF.md` (Claude-side) and `HANDOFF.md` (ChatGPT-side).
 
@@ -41,7 +41,7 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 - Production build passes.
 - ESLint passes.
 - `git diff --check` passes; Git may emit expected LF-to-CRLF warnings on Windows.
-- Test suite: 60 passing tests as of 2026-08-26 (grows most sessions — check `npm test` output rather than trusting this number for long).
+- Test suite: 77 passing tests as of 2026-08-26 (grows most sessions — check `npm test` output rather than trusting this number for long).
 - Work through 2026-08-26 is committed and pushed to the private GitHub repository (`LukasNAP/TaxAP`, `main`). No deployment, A+ write, or external account change has been performed.
 
 Live results verified on August 18, 2026 (still the most recent live A+ check as of 2026-08-26 — re-verify before trusting these numbers if much time has passed):
@@ -138,14 +138,15 @@ Connected adapters:
 - Texas: quarterly Comptroller control file plus published combined city/local totals.
 - Florida: current Department of Revenue 67-county workbook.
 - Pennsylvania: official statewide/local add-on rules normalized across all 67 Census counties.
-- South Carolina (official source only, added 2026-08-26): ST-575 PDF parsed via `pdftotext -table`. No A+ jurisdiction matching yet — see the note above about the poppler-utils runtime dependency.
+- South Carolina (official source only, added 2026-08-26): ST-575 PDF parsed via `pdftotext -table`. No A+ jurisdiction matching yet — see the note above about the poppler-utils runtime dependency. **Step 3 (boundary source) now identified 2026-08-26**: SC RFA (a separate SC state agency) runs public, unauthenticated ArcGIS REST services (geocoder + municipal/county boundary polygons) at `gis.state.sc.us` that together form a real address-to-jurisdiction path — not built, architecturally different from GA's static-file pattern (needs two live dependent calls per address: geocode, then point-in-polygon). See `docs/states/sc.md`.
+- New Jersey (added 2026-08-26): flat 6.625% statewide rate, cross-validated live against two independent NJ Division of Taxation pages (`server/nj-rates.mjs`). No local-option tax exists, so no address matching is ever needed. One open caveat, not modeled: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification — see `NJ_UEZ_CAVEAT` in the adapter and `docs/states/nj.md`.
 
 **Full research status for every other state (all 42 not connected) was independently verified against live sources on 2026-08-26** — this replaced a lot of earlier unverified guesswork with confirmed facts (real URLs re-fetched, not assumed). Read `docs/roadmap-50-states.md` in this repo before starting work on any new state; do not re-derive this from scratch or trust an older summary of it. Headline corrections from that pass, worth knowing before you go further:
 
-- Of the "20 states with a reusable Streamlined Sales Tax format" this doc used to claim, **only Arkansas and Wyoming are actually drop-in.** 5 states (IN, KY, MI, RI, WV) have a real file with 0-1 rows instead of one-per-county (they're flat or no-local-tax states) and need special-casing. 11 states (IA, KS, MN, ND, NE, NV, OK, SD, UT, VT, WA) publish their current file as a `.zip`, which `server/sst-rates.mjs`'s file-discovery regex can't find — this needs a real code change before any of those 11 can be wired in. New Jersey's claimed SST file is 8+ years stale.
-- 5 states (AL, AZ, CO, LA, MO) have a newly-confirmed real, machine-readable (CSV/XLSX) official source with no adapter built yet — good next targets.
-- Hawaii and New Mexico have a structural red flag: HI's tax is legally a General Excise Tax on business receipts, not a buyer-facing sales tax; NM taxes sellers via Gross Receipts Tax. Get a product decision from Ana/Liv before treating either like a normal per-address sales-tax comparison.
-- Delaware, Montana, New Hampshire, and Oregon genuinely have no general sales tax at all — confirmed, not a research gap. Don't build an adapter for them; ask Ana/Liv how their ship-tos should be surfaced instead.
+- **Shipped since this was written (2026-08-26, same day, later session):** `server/sst-rates.mjs` gained ZIP-extraction support. AR and WY are wired in as genuine drop-in `GENERIC_SST_STATES`. IN, KY, MI, and RI are special-cased as flat/no-local-tax states (their own `expectedCountyCount: 0` validation, not forced through the per-county check). MD is hardcoded at a flat 6% (`server/md-rates.mjs`, no live fetch needed). DE, MT, NH, and OR are marked `no-general-sales-tax` end to end (registry, connector, dashboard) per Lukas's explicit decision to exclude them entirely. NJ is built (`server/nj-rates.mjs`, cross-validated live against two independent nj.gov pages) — recommended by a live investigation that found its A+ setup is the cleanest of any state checked (one tax body, exact rate match, no local tax at all). The 11 ZIP-blocked states (IA, KS, MN, ND, NE, NV, OK, SD, UT, VT, WA) and WV (place-level, not flat) are **still not wired in** — the adapter can now technically read their files, but nobody has done their live `XATXBD` Step 1/2 investigation yet.
+- **AL, AZ, CO, LA, MO, NY, HI, NM were all investigated live against production A+ on 2026-08-26 and correctly declined to build** — each for a different, real, documented reason (see `docs/state-rollout.md`'s status table and each state's `docs/states/<code>.md`): AL has ~100 real ship-tos on a zeroed-out DO-NOT-USE placeholder that needs explaining first; AZ found 3 live rate discrepancies needing a human call; CO found Denver's home-rule rate is stale by 0.34pt; LA's A+ setup only has 2 codes for the entire state (barely tracks Louisiana's real jurisdiction fragmentation at all); MO's 92 codes don't map to any real jurisdiction-code system; NY found 2 confirmed live rate bugs (Suffolk County, Yonkers City); HI's rate is fully zeroed with no way to tell if that's a data gap or a legitimate policy choice (GET pass-on is optional there); NM's state rate is confirmed stale after a statutory rate-change trigger fired 7/1/2026. **None of these are ready to build without a human decision first** — don't let a future session re-attempt one without reading its file.
+- Hawaii and New Mexico have a structural red flag: HI's tax is legally a General Excise Tax on business receipts, not a buyer-facing sales tax; NM taxes sellers via Gross Receipts Tax. Per Lukas's explicit decision, both are treated as functionally equivalent to a normal sales tax for comparison purposes — that framing question is resolved; what's still open for each is the live data problem described above.
+- Delaware, Montana, New Hampshire, and Oregon genuinely have no general sales tax at all — confirmed, not a research gap. Per Lukas's decision they're excluded entirely from the dashboard (see `server/official-source-registry.mjs`'s `no-general-sales-tax` status), not shown as pending.
 - Several official state tax-agency domains (azdor.gov, tax.colorado.gov, mass.gov, revenue.nh.gov, otr.cfo.dc.gov) block the automated `WebFetch` tool with a 403 even when the page is genuinely live — verify with a direct `curl` and a browser User-Agent before concluding a government source is dead.
 
 Current source links:
@@ -174,11 +175,15 @@ Implemented this session. Summary of what shipped:
 - `app/page.tsx`: new `GeorgiaBoundaryPanel`, shown in the Georgia state drawer, displaying total/matched/unmatched/ambiguous counts, the address/ZIP+4/ZIP-5 tier breakdown, and a per-tax-body reconciliation table with a rate-difference flag.
 - Tests added in `tests/ga-boundary.test.mjs` (11 tests): ZIP extraction round-trip, boundary-archive discovery, street-line parsing, ZIP normalization, address-level match, ZIP+4/ZIP-5 fallback, ambiguous match, effective-date exclusion, unsupported-address-range handling, schema/FIPS rejection, and tax-body reconciliation (matched + unmatched + ambiguous reconciling exactly to the active total).
 
-Not done / worth knowing for the next session:
+**Run end to end against live production for the first time on 2026-08-26** (previously deferred — see git history for context). Real results: `activeShipTos=2404, matched=2293, unmatched=92, ambiguous=19` — reconciles exactly (2293+92+19=2404), confirming the "no silent caps" invariant holds live, not just in fixtures. Match tiers all exercised live: address=997, zip9=63, zip5=1115, zip5FromZip9=118. 130 tax-body findings, 30 with a real rate difference (e.g. `GA027` Chattooga: official 9% vs A+ 7%; `GA006` Banks: official 7% vs A+ 9%, A+ *overcharging*). `excludedForNoAplusRate`=5, correctly excluded with a visible count.
 
-- `readGeorgiaBoundaryReconciliation()` itself is not unit-tested (same pattern as the other `openPool()`-dependent functions) — it needs a real Azure SQL connection, which this environment cannot reach locally, so it has not been exercised end to end this session.
+**New finding from that live run**: 5 of the 130 tax-body records on real GA-ship-to addresses carry a non-Georgia tax body — `NC060`×4, `NC041`×3, `SC126`×2, `CA1163`, `PA000`. This reproduces the already-documented `CMTXBD`/`SASTXB` cross-context pattern (`docs/aplus-data-findings.md`) confirmed live for the first time. 3 of these 5 show a "rate difference," but that's comparing GA's boundary-resolved rate against a *different state's* A+ configuration — apples-to-oranges, not evidence GA's own rate is wrong. **Not yet built:** excluding or separately categorizing these 5 non-GA-prefixed tax bodies in the GA findings table.
+
+Still not done / worth knowing for the next session:
+
 - The boundary file is parsed fully into memory per refresh (~2.9s locally for the real 316 MB CSV) rather than via a persistent index; fine for a 6-hour-cached background refresh, but worth revisiting if refresh frequency increases.
 - Address-level matching only decomposes `SASAD1`/`SASAD2`; it has not been checked against `SASAD3`/`SASAD4` overflow lines.
+- No `docs/states/ga.md` file exists yet — GA's findings are split across this file and `docs/state-rollout.md`'s status table rather than consolidated the way NC/SC/etc. are.
 
 ## Rollout after Georgia
 
@@ -260,8 +265,8 @@ Expected current Georgia results:
 - `counts.cities = 6`
 - `counts.specialJurisdictions = 4`
 - `rates.length = 170`
-- A+ Georgia active ship-tos = 2,401
-- `/api/official/states/GA/boundary`: `totals.matched + totals.unmatched + totals.ambiguous = totals.activeShipTos`; not yet run against live A+ this session (see "Not done" note above) — verify on the next dev deploy.
+- A+ Georgia active ship-tos = 2,401 as of 2026-08-18; **confirmed 2,404 live on 2026-08-26** (small, plausible ship-to churn, not a discrepancy)
+- `/api/official/states/GA/boundary`: `totals.matched + totals.unmatched + totals.ambiguous = totals.activeShipTos` — **confirmed live on 2026-08-26**: 2293+92+19=2404, exactly. See the "Completed milestone" section above for full results and the new cross-state tax-body finding.
 
 ## UI and branding rules
 

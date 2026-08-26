@@ -806,6 +806,7 @@ footer { display: flex; justify-content: space-between; padding: 26px 2px 0; col
 .source-rollout-machine-readable-source { background: rgba(69,158,216,.15); color: var(--ap-navy); }
 .source-rollout-official-document-source { border: 1px solid var(--ap-blue); background: var(--ap-white); color: var(--ap-navy); }
 .source-rollout-research-needed { background: var(--ap-lgray); color: var(--ap-dgray); }
+.source-rollout-no-general-sales-tax { background: transparent; border: 1px dashed var(--ap-dgray); color: var(--ap-dgray); }
 .source-private { color: var(--ap-dgray); }
 
 .source-next { margin-top: 22px; padding: 35px; border-radius: 14px; background: var(--ap-navy); color: var(--ap-white); }

@@ -18,7 +18,14 @@ test("registers every state and DC without claiming unfinished adapters are conn
   assert.equal(sources.find((source) => source.stateCode === "SC").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "IL").status, "machine-readable-source");
   assert.equal(sources.find((source) => source.stateCode === "VA").status, "machine-readable-source");
-  assert.equal(sources.find((source) => source.stateCode === "MD").status, "official-document-source");
+  assert.equal(sources.find((source) => source.stateCode === "MD").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "NJ").status, "connected");
+  for (const stateCode of ["AR", "WY", "IN", "KY", "MI", "RI"]) {
+    assert.equal(sources.find((source) => source.stateCode === stateCode).status, "connected", `${stateCode} should be connected`);
+  }
+  for (const stateCode of ["DE", "MT", "NH", "OR"]) {
+    assert.equal(sources.find((source) => source.stateCode === stateCode).status, "no-general-sales-tax", `${stateCode} should be marked no-general-sales-tax`);
+  }
 });
 
 test("builds Pennsylvania's 67 county totals only after validating the official rate rules", async () => {

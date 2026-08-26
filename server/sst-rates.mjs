@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { SST_RATE_DIRECTORY_URL } from "./official-source-registry.mjs";
+import { readSingleFileZip } from "./zip-utils.mjs";
 
 export const GEORGIA_DOR_RATES_URL = "https://dor.georgia.gov/sales-tax-rates-general";
 export const GEORGIA_COUNTY_NAMES_URL = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_gaz_counties_13.txt";
@@ -10,6 +11,17 @@ const JURISDICTION_SORT = { state: 0, county: 1, city: 2, special: 3 };
 const GENERIC_SST_STATES = {
   OH: { stateName: "Ohio", stateFips: "39", expectedCountyCount: 88, sourceUrl: "https://tax.ohio.gov/business/ohio-business-taxes/sales-and-use/information-releases" },
   TN: { stateName: "Tennessee", stateFips: "47", expectedCountyCount: 95, sourceUrl: "https://www.tn.gov/revenue/taxes/sales-and-use-tax.html" },
+  // Confirmed 2026-08-26: real, current bare-.csv SST files with a clean per-county shape matching
+  // OH/TN exactly (no zip, no flat-rate/place-level wrinkle) - genuinely drop-in.
+  AR: { stateName: "Arkansas", stateFips: "05", expectedCountyCount: 75, sourceUrl: "https://www.streamlinedsalestax.org/state-details/arkansas" },
+  WY: { stateName: "Wyoming", stateFips: "56", expectedCountyCount: 23, sourceUrl: "https://www.streamlinedsalestax.org/state-details/wyoming" },
+  // Confirmed 2026-08-26: these states have NO local-option sales tax at all - their current SST file
+  // has zero county/city rows, just the single active statewide rate. expectedCountyCount: 0 makes the
+  // existing validation assert exactly that shape rather than silently accepting a broken/empty file.
+  IN: { stateName: "Indiana", stateFips: "18", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/indiana" },
+  KY: { stateName: "Kentucky", stateFips: "21", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/kentucky" },
+  MI: { stateName: "Michigan", stateFips: "26", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/michigan" },
+  RI: { stateName: "Rhode Island", stateFips: "44", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/rhode-island" },
 };
 
 function compactDate(value) {
@@ -74,10 +86,35 @@ async function fetchText(url, fetchImpl, accept) {
   }
 }
 
+/**
+ * Fetches an SST rate file's raw CSV text. Confirmed 2026-08-26: most states publish their current
+ * rate file as a `.zip` (a single CSV inside), not the bare `.csv` OH/TN happen to have - unzip it
+ * transparently here rather than making every caller special-case the extension.
+ */
+async function fetchSstRateFileText(url, fetchImpl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetchImpl(url, {
+      headers: { Accept: "text/csv,application/zip,application/x-zip-compressed,application/octet-stream", "User-Agent": "TaxAP/0.1 official-rate monitor" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Official rate source returned HTTP ${response.status}.`);
+    if (/\.zip$/i.test(url)) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const entry = readSingleFileZip(buffer);
+      return entry.data.toString("utf8");
+    }
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function findLatestSstCsv(directoryHtml, stateCode) {
-  const expression = new RegExp(`href=["']([^"']*${stateCode}R[^"']*\\.csv)["']`, "gi");
+  const expression = new RegExp(`href=["']([^"']*${stateCode}R[^"']*\\.(?:csv|zip))["']`, "gi");
   const files = [...String(directoryHtml).matchAll(expression)].map((match) => match[1]);
-  if (files.length === 0) throw new Error(`No current ${stateCode} SST CSV rate file was listed.`);
+  if (files.length === 0) throw new Error(`No current ${stateCode} SST rate file was listed.`);
   return new URL(files.sort().at(-1), SST_RATE_DIRECTORY_URL).href;
 }
 
@@ -115,7 +152,7 @@ export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, 
     const directoryHtml = await fetchText(SST_RATE_DIRECTORY_URL, fetchImpl, "text/html");
     const rateFileUrl = findLatestSstCsv(directoryHtml, code);
     const [rateCsv, names] = await Promise.all([
-      fetchText(rateFileUrl, fetchImpl, "text/csv,application/octet-stream"),
+      fetchSstRateFileText(rateFileUrl, fetchImpl),
       readCensusNames(config.stateFips, fetchImpl),
     ]);
     const parsed = parseSstRateCsv(rateCsv, { stateFips: config.stateFips, asOfDate });
@@ -156,7 +193,9 @@ export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, 
       sourceHash: createHash("sha256").update(rateCsv).digest("hex"),
       rates,
       counts,
-      boundaryStatus: "Official jurisdiction components are connected. City and special totals require boundary reconciliation before comparison with A+.",
+      boundaryStatus: config.expectedCountyCount === 0
+        ? "No local-option sales tax exists in this state - a single flat statewide rate applies to every ship-to. No address or boundary matching is needed."
+        : "Official jurisdiction components are connected. City and special totals require boundary reconciliation before comparison with A+.",
     };
     genericCache.set(code, { snapshot, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
     return snapshot;
@@ -178,7 +217,7 @@ export async function readOfficialGaRates({ fetchImpl = fetch, now = new Date(),
     const directoryHtml = await fetchText(SST_RATE_DIRECTORY_URL, fetchImpl, "text/html");
     const rateFileUrl = findLatestSstCsv(directoryHtml, "GA");
     const [rateCsv, names] = await Promise.all([
-      fetchText(rateFileUrl, fetchImpl, "text/csv,application/octet-stream"),
+      fetchSstRateFileText(rateFileUrl, fetchImpl),
       readCensusNames(GEORGIA_STATE_FIPS, fetchImpl),
     ]);
     const parsed = parseSstRateCsv(rateCsv, { stateFips: GEORGIA_STATE_FIPS, asOfDate });
