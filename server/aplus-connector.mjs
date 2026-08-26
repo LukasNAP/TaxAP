@@ -517,7 +517,7 @@ export function createConnectorServer({ reviews } = {}) {
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
-        if (stateCode === "OH" || stateCode === "TN" || stateCode === "AR" || stateCode === "WY" || stateCode === "IN" || stateCode === "KY" || stateCode === "MI" || stateCode === "RI") {
+        if (stateCode === "OH" || stateCode === "TN" || stateCode === "AR" || stateCode === "WY" || stateCode === "IN" || stateCode === "KY" || stateCode === "MI" || stateCode === "RI" || stateCode === "NV" || stateCode === "NE") {
           const snapshot = await readOfficialSstStateRates(stateCode);
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);

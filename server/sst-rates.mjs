@@ -22,6 +22,23 @@ const GENERIC_SST_STATES = {
   KY: { stateName: "Kentucky", stateFips: "21", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/kentucky" },
   MI: { stateName: "Michigan", stateFips: "26", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/michigan" },
   RI: { stateName: "Rhode Island", stateFips: "44", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/rhode-island" },
+  // Confirmed 2026-08-26: Nevada's 17 real A+ codes (16 counties + Carson City) are all
+  // jurisdictionType "county" in the SST file - no city-level sales tax exists in NV at all -
+  // so the existing state+county totalGeneralRate logic already applies with zero changes.
+  NV: { stateName: "Nevada", stateFips: "32", expectedCountyCount: 17, sourceUrl: "https://www.streamlinedsalestax.org/state-details/nevada" },
+  // Confirmed 2026-08-26: Nebraska's real local-tax variation is entirely city-level (A+ has
+  // zero county-FIPS codes; its NE##### codes are real Census place FIPS numbers). Each city row's
+  // own rate already IS the full local total (no separate county component to stack on top) -
+  // cityRateIsFullLocal opts this one state into computing totalGeneralRate for city rows the same
+  // way as county rows. Do NOT copy this flag to a future state without confirming the same fact -
+  // a state where city and county both layer independently (e.g. Wisconsin's resort-area surtax
+  // cities) would get a silently wrong, too-low total this way.
+  // expectedCountyCount is 1, not Nebraska's real 93 counties: unlike SD (which has a 0%-rate row
+  // for every one of its 66 counties), Nebraska's SST file only includes an active county-type row
+  // for counties that actually levy a county option tax - confirmed live, only Dakota (FIPS 31043)
+  // does today. Verified directly against the live file 2026-08-26; do not assume 93 without
+  // rechecking if this ever throws again.
+  NE: { stateName: "Nebraska", stateFips: "31", expectedCountyCount: 1, cityRateIsFullLocal: true, sourceUrl: "https://www.streamlinedsalestax.org/state-details/nebraska" },
 };
 
 function compactDate(value) {
@@ -43,7 +60,13 @@ export function parseSstRateCsv(csv, { stateFips, asOfDate }) {
     const columns = line.split(",").map((value) => value.trim());
     if (columns.length !== 9) throw new Error(`SST rate row ${index + 1} does not have 9 columns.`);
     const [rowStateFips, jurisdictionType, jurisdictionCode, generalIntrastate, generalInterstate, foodDrugIntrastate, foodDrugInterstate, beginDate, endDate] = columns;
-    if (!/^\d{2}$/.test(rowStateFips) || !/^\d{1,2}$/.test(jurisdictionType) || !/^\d{2,5}$/.test(jurisdictionCode)) {
+    // jurisdictionCode is numeric (FIPS-style) for state/county/city rows, but confirmed live
+    // 2026-08-26 that special-district (type 63/79) rows can be alphanumeric - Nebraska's transit
+    // district codes (GL801-GL805), Kansas's type-79 codes (11KAN, AEATC, ALIOL), and Washington's
+    // location codes (L1702 etc.) all use a 5-character letter+digit shape. Accept alphanumeric
+    // codes generally rather than special-casing each state's exact pattern - the state FIPS and
+    // jurisdictionType columns are still strictly numeric and carry the real validation weight.
+    if (!/^\d{2}$/.test(rowStateFips) || !/^\d{1,2}$/.test(jurisdictionType) || !/^[A-Za-z0-9]{2,6}$/.test(jurisdictionCode)) {
       throw new Error(`SST rate row ${index + 1} has an invalid jurisdiction identifier.`);
     }
     compactDate(beginDate);
@@ -168,7 +191,9 @@ export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, 
         name,
         componentRate: row.generalIntrastateRate,
         totalGeneralRate: jurisdictionType === "state" ? parsed.stateRate
-          : jurisdictionType === "county" ? Number((parsed.stateRate + row.generalIntrastateRate).toFixed(4)) : null,
+          : jurisdictionType === "county" ? Number((parsed.stateRate + row.generalIntrastateRate).toFixed(4))
+            : jurisdictionType === "city" && config.cityRateIsFullLocal ? Number((parsed.stateRate + row.generalIntrastateRate).toFixed(4))
+              : null,
         generalInterstateRate: row.generalInterstateRate,
         beginDate: row.beginDate,
         endDate: row.endDate,

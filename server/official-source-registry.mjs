@@ -18,14 +18,14 @@ const STATES = {
 };
 
 const SST_RATE_STATES = new Set([
-  "GA", "IA", "KS", "MN", "NC", "ND", "NE", "NV", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV",
+  "GA", "IA", "KS", "MN", "NC", "ND", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV",
 ]);
 
 // Confirmed 2026-08-26 (see docs/roadmap-50-states.md): real, current, validated GENERIC_SST_STATES
 // entries in server/sst-rates.mjs - either a clean drop-in county model (AR, WY) or a confirmed flat/
 // no-local-tax state (IN, KY, MI, RI). Listed separately from SST_RATE_STATES above, which is now only
 // the "claimed but not independently wired into a config entry yet" bucket.
-const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI"]);
+const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI", "NV", "NE"]);
 
 // Confirmed 2026-08-26: these states impose no general state or local sales/use tax at all (4 of the
 // 5 well-known "NOMAD" states; Alaska is the 5th but has real local-only sales tax and isn't included

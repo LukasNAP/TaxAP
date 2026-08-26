@@ -143,8 +143,8 @@ type ComparedCounty = CountyCoverage & {
 const LIVE_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const OFFLINE_MODE = process.env.NEXT_PUBLIC_TAXAP_OFFLINE_MODE === "true";
 
-const SST_SOURCE_STATES = new Set(["GA", "IA", "KS", "MN", "NC", "ND", "NE", "NV", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV"]);
-const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI"]);
+const SST_SOURCE_STATES = new Set(["GA", "IA", "KS", "MN", "NC", "ND", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV"]);
+const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI", "NV", "NE"]);
 const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
