@@ -24,6 +24,13 @@ test("registers every state and DC without claiming unfinished adapters are conn
   for (const stateCode of ["AR", "WY", "IN", "KY", "MI", "RI"]) {
     assert.equal(sources.find((source) => source.stateCode === stateCode).status, "connected", `${stateCode} should be connected`);
   }
+  for (const stateCode of ["MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS"]) {
+    const source = sources.find((s) => s.stateCode === stateCode);
+    assert.equal(source.status, "connected", `${stateCode} should be connected`);
+    assert.equal(source.aplusMatchingStatus, "connected", `${stateCode} should have A+ matching connected`);
+    assert.equal(source.comparisonEndpoint, `/api/official/states/${stateCode}/aplus`, `${stateCode} should expose its comparison endpoint`);
+  }
+  assert.equal(sources.find((source) => source.stateCode === "RI").aplusMatchingStatus, undefined, "RI's 0%-vs-7% finding is an open decision, not wired A+ matching");
   for (const stateCode of ["DE", "MT", "NH", "OR"]) {
     assert.equal(sources.find((source) => source.stateCode === stateCode).status, "no-general-sales-tax", `${stateCode} should be marked no-general-sales-tax`);
   }

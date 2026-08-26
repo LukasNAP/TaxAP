@@ -9,8 +9,13 @@ import { readOfficialCaRates } from "./ca-rates.mjs";
 import { readOfficialFlRates } from "./fl-rates.mjs";
 import { readOfficialNcRates } from "./ncdor-rates.mjs";
 import { readOfficialMdRates } from "./md-rates.mjs";
+import { readOfficialMeRates } from "./me-rates.mjs";
+import { readOfficialCtRates } from "./ct-rates.mjs";
+import { readOfficialMaRates } from "./ma-rates.mjs";
+import { readOfficialMsRates } from "./ms-rates.mjs";
 import { readOfficialNjRates } from "./nj-rates.mjs";
 import { reconcileNewJerseyAplus } from "./nj-aplus.mjs";
+import { reconcileFlatStateAplus } from "./flat-state-aplus.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
@@ -338,6 +343,35 @@ export async function readNewJerseyAplusComparison() {
   return { ...reconcileNewJerseyAplus({ stateDetail, officialSnapshot }), stateDetail };
 }
 
+// States confirmed live (2026-08-26) to be a single flat statewide A+ tax body with no local-option
+// variation - see each state's docs/states/<code>.md. IN/KY/MI read through the same generic SST
+// adapter OH/TN/AR/WY/NV/NE already use (server/sst-rates.mjs's expectedCountyCount:0 special case);
+// the other four have their own dedicated adapters (server/md-rates.mjs, me-rates.mjs, ct-rates.mjs,
+// ma-rates.mjs, ms-rates.mjs).
+const FLAT_STATE_APLUS_ADAPTERS = {
+  MD: { expectedTaxBody: "MD000", readOfficial: readOfficialMdRates },
+  IN: { expectedTaxBody: "IN000", readOfficial: () => readOfficialSstStateRates("IN") },
+  KY: { expectedTaxBody: "KY000", readOfficial: () => readOfficialSstStateRates("KY") },
+  MI: { expectedTaxBody: "MI000", readOfficial: () => readOfficialSstStateRates("MI") },
+  ME: { expectedTaxBody: "ME000", readOfficial: readOfficialMeRates },
+  CT: { expectedTaxBody: "CT000", readOfficial: readOfficialCtRates },
+  MA: { expectedTaxBody: "MA000", readOfficial: readOfficialMaRates },
+  MS: { expectedTaxBody: "MS000", readOfficial: readOfficialMsRates },
+};
+
+export async function readFlatStateAplusComparison(stateCode) {
+  const config = FLAT_STATE_APLUS_ADAPTERS[stateCode];
+  if (!config) throw new Error(`No flat-state A+ reconciliation is configured for ${stateCode}.`);
+  const [stateDetail, officialSnapshot] = await Promise.all([
+    readStateDetail(stateCode),
+    config.readOfficial(),
+  ]);
+  return {
+    ...reconcileFlatStateAplus({ stateCode, expectedTaxBody: config.expectedTaxBody, stateDetail, officialRate: officialSnapshot.stateRate }),
+    stateDetail,
+  };
+}
+
 export function buildGeorgiaAddressQuery() {
   return `SELECT a.SASAD1 AS StreetLine, a.SASAD2 AS SecondaryLine, a.SASCTY AS City, a.SASZIP AS Zip,
     NULLIF(LTRIM(RTRIM(a.SASTXB)), '') AS TaxBody
@@ -547,6 +581,26 @@ export function createConnectorServer({ reviews } = {}) {
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
+        if (stateCode === "ME") {
+          const snapshot = await readOfficialMeRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "CT") {
+          const snapshot = await readOfficialCtRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "MA") {
+          const snapshot = await readOfficialMaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "MS") {
+          const snapshot = await readOfficialMsRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
         if (stateCode === "NJ") {
           const snapshot = await readOfficialNjRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
@@ -617,6 +671,32 @@ export function createConnectorServer({ reviews } = {}) {
         const message = error instanceof Error ? error.message : "Unknown New Jersey reconciliation error";
         console.error(JSON.stringify({ event: "nj_aplus_reconciliation", ok: false, message }));
         return sendJson(response, 503, { error: "The New Jersey A+ rate reconciliation is unavailable or failed validation." }, responseOrigin);
+      }
+    }
+
+    const flatStateAplusMatch = url.pathname.match(/^\/api\/official\/states\/([^/]+)\/aplus$/);
+    if (flatStateAplusMatch && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      const stateCode = decodeURIComponent(flatStateAplusMatch[1]).toUpperCase();
+      if (stateCode === "NJ") {
+        // Handled by the dedicated block above (NJ's own UEZ-caveat-aware reconciler) - this
+        // generic route only serves the flat-state config, not NJ.
+      } else if (Object.prototype.hasOwnProperty.call(FLAT_STATE_APLUS_ADAPTERS, stateCode)) {
+        try {
+          const reconciliation = await readFlatStateAplusComparison(stateCode);
+          console.info(JSON.stringify({
+            event: "flat_state_aplus_reconciliation", ok: true, stateCode,
+            activeShipTos: reconciliation.totals.activeShipTos,
+            comparedShipTos: reconciliation.totals.comparedShipTos,
+            crossStateShipTos: reconciliation.totals.crossStateShipTos,
+            retrievedAt: reconciliation.retrievedAt,
+          }));
+          return sendJson(response, 200, reconciliation, responseOrigin);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : `Unknown ${stateCode} reconciliation error`;
+          console.error(JSON.stringify({ event: "flat_state_aplus_reconciliation", ok: false, stateCode, message }));
+          return sendJson(response, 503, { error: `The ${stateCode} A+ rate reconciliation is unavailable or failed validation.` }, responseOrigin);
+        }
       }
     }
 

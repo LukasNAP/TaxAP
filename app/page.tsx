@@ -109,9 +109,12 @@ type GaBoundaryReconciliation = {
   unmatchedReasons: { reason: string; count: number }[];
   ambiguousReasons: { reason: string; count: number }[];
 };
-type NjAplusReconciliation = {
-  stateCode: "NJ";
-  expectedTaxBody: "NJ000";
+// Shared shape for every "single flat statewide tax body" state's A+ reconciliation - NJ's own
+// dedicated server/nj-aplus.mjs (which also carries the UEZ caveat) and the generic
+// server/flat-state-aplus.mjs used for MD/IN/KY/MI/ME/CT/MA/MS both return this same structure.
+type FlatStateAplusReconciliation = {
+  stateCode: string;
+  expectedTaxBody: string;
   retrievedAt: string;
   officialRate: number;
   aplusRate: number | null;
@@ -130,8 +133,8 @@ type StateDrawerCacheEntry = {
   officialStateStatus: StateDetailStatus;
   gaBoundaryDetail: GaBoundaryReconciliation | null;
   gaBoundaryStatus: StateDetailStatus;
-  njAplusDetail: NjAplusReconciliation | null;
-  njAplusStatus: StateDetailStatus;
+  flatStateAplusDetail: FlatStateAplusReconciliation | null;
+  flatStateAplusStatus: StateDetailStatus;
   fetchedAt: number;
 };
 type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcoming" | "not-checked";
@@ -162,8 +165,14 @@ const LIVE_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const OFFLINE_MODE = process.env.NEXT_PUBLIC_TAXAP_OFFLINE_MODE === "true";
 
 const SST_SOURCE_STATES = new Set(["GA", "IA", "KS", "MN", "NC", "ND", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV"]);
-const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI", "NV", "NE"]);
+const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "RI", "NV", "NE"]);
 const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
+// States confirmed live (2026-08-26) to be a single flat statewide A+ tax body with no local-option
+// variation, matching its official rate exactly - drives both the FALLBACK_OFFICIAL_SOURCES entries
+// below and which states show the shared FlatStateAplusPanel in the state drawer. Deliberately does
+// NOT include RI: RI's sole tax body is confirmed live at 0% against RI's real flat 7% rate, an open
+// human decision, not wired A+ matching (see docs/pending-business-decisions.md).
+const FLAT_STATE_APLUS_STATES = new Set(["NJ", "MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
   if (stateCode === "GA") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction components", sourceName: "Georgia DOR via Streamlined Sales Tax rate file", sourceUrl: "https://dor.georgia.gov/sales-tax-rates-general" };
@@ -175,8 +184,13 @@ const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_B
   if (stateCode === "IL") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-machine-file-pending", coverage: "official machine-readable sales-tax files; adapter validation pending", sourceName: "Illinois Department of Revenue", sourceUrl: "https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html" };
   if (stateCode === "VA") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-xlsx-pending", coverage: "official locality lookup and downloadable workbook; adapter validation pending", sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup" };
   if (stateCode === "MD") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6% statewide rate (Tax-General Article Section 11-104); Maryland preempts local general sales tax, so no address matching is ever needed", sourceName: "Comptroller of Maryland", sourceUrl: "https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/Tax_rate_chart.pdf" };
+  if (stateCode === "ME") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 5.5% statewide rate, live-parsed from Maine Revenue Services' own rate/due-date table; no local-option sales tax exists, so no address matching is ever needed", sourceName: "Maine Revenue Services", sourceUrl: "https://www.maine.gov/revenue/taxes/sales-use-service-provider-tax/rates-due-dates" };
+  if (stateCode === "CT") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6.35% statewide rate, live-parsed from Connecticut DRS's tax-information page; no local-option sales tax exists, so no address matching is ever needed", sourceName: "Connecticut Department of Revenue Services", sourceUrl: "https://portal.ct.gov/drs/sales-tax/tax-information" };
+  if (stateCode === "MA") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6.25% statewide rate, live-parsed from Massachusetts' own sales-and-use-tax guide; no general local-option sales tax exists, so no address matching is ever needed", sourceName: "Commonwealth of Massachusetts", sourceUrl: "https://www.mass.gov/guides/sales-and-use-tax" };
+  if (stateCode === "MS") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 7% general retail rate, live-parsed from Mississippi DOR's rate page. Open caveat: Jackson (+1%) and Tupelo (+0.25%) each impose a narrow city-specific levy not modeled here", sourceName: "Mississippi Department of Revenue", sourceUrl: "https://www.dor.ms.gov/business/sales-use-tax/sales-tax-rates" };
   if (stateCode === "NJ") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat statewide rate (6.625% since 2018), cross-validated live against two independent NJ Division of Taxation pages; no address matching is ever needed. Open caveat: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification, not modeled", sourceName: "New Jersey Division of Taxation", sourceUrl: "https://www.nj.gov/treasury/taxation/su_10.shtml" };
   if (stateCode === "OH" || stateCode === "TN") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction rate components", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
+  if (stateCode === "IN" || stateCode === "KY" || stateCode === "MI") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "flat statewide rate with zero local jurisdiction rows, validated 2026-08-26 - matches A+'s single statewide tax body exactly, no blocking finding", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (CONNECTED_GENERIC_SST_STATES.has(stateCode)) return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "jurisdiction rate components, validated 2026-08-26", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (NO_GENERAL_SALES_TAX_STATES.has(stateCode)) return { stateCode, stateName, status: "no-general-sales-tax", adapter: "none", coverage: "confirmed 2026-08-26: no general state or local sales/use tax exists in this state; excluded from rate comparison, not an unbuilt adapter", sourceName: "N/A", sourceUrl: null };
   if (SST_SOURCE_STATES.has(stateCode)) return { stateCode, stateName, status: "machine-readable-source", adapter: "sst-rate-file", coverage: "jurisdiction rate components; adapter pending", sourceName: "Streamlined Sales Tax rate and boundary files", sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
@@ -332,8 +346,8 @@ export default function Home() {
   const [officialStateStatus, setOfficialStateStatus] = useState<StateDetailStatus>("idle");
   const [gaBoundaryDetail, setGaBoundaryDetail] = useState<GaBoundaryReconciliation | null>(null);
   const [gaBoundaryStatus, setGaBoundaryStatus] = useState<StateDetailStatus>("idle");
-  const [njAplusDetail, setNjAplusDetail] = useState<NjAplusReconciliation | null>(null);
-  const [njAplusStatus, setNjAplusStatus] = useState<StateDetailStatus>("idle");
+  const [flatStateAplusDetail, setFlatStateAplusDetail] = useState<FlatStateAplusReconciliation | null>(null);
+  const [flatStateAplusStatus, setFlatStateAplusStatus] = useState<StateDetailStatus>("idle");
   // Deliberately separate from gaBoundaryDetail/gaBoundaryStatus above, which belong to the state
   // drawer and get cleared whenever it closes. The home dashboard's findings must survive that —
   // see the "how come it reconnects every click" / caching work this pairs with.
@@ -626,47 +640,48 @@ export default function Home() {
       setOfficialStateStatus(cached.officialStateStatus);
       setGaBoundaryDetail(cached.gaBoundaryDetail);
       setGaBoundaryStatus(cached.gaBoundaryStatus);
-      setNjAplusDetail(cached.njAplusDetail);
-      setNjAplusStatus(cached.njAplusStatus);
+      setFlatStateAplusDetail(cached.flatStateAplusDetail);
+      setFlatStateAplusStatus(cached.flatStateAplusStatus);
       setStateDrawerCheckedAt(cached.fetchedAt);
       return;
     }
 
+    const isFlatStateAplus = FLAT_STATE_APLUS_STATES.has(cacheKey);
     setStateDetail(null);
     setStateDetailStatus("loading");
     setOfficialStateDetail(null);
     setOfficialStateStatus("loading");
     setGaBoundaryDetail(null);
     setGaBoundaryStatus(cacheKey === "GA" ? "loading" : "idle");
-    setNjAplusDetail(null);
-    setNjAplusStatus(cacheKey === "NJ" ? "loading" : "idle");
+    setFlatStateAplusDetail(null);
+    setFlatStateAplusStatus(isFlatStateAplus ? "loading" : "idle");
     const apiBase = apiBaseUrl();
     if (!apiBase) {
       setStateDetailStatus("error");
       setOfficialStateStatus("error");
       if (cacheKey === "GA") setGaBoundaryStatus("error");
-      if (cacheKey === "NJ") setNjAplusStatus("error");
+      if (isFlatStateAplus) setFlatStateAplusStatus("error");
       return;
     }
     const officialRequest = fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
     const boundaryRequest = cacheKey === "GA"
       ? fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
-    const njAplusRequest = cacheKey === "NJ"
-      ? fetch(`${apiBase}/api/official/states/NJ/aplus`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
+    const flatStateAplusRequest = isFlatStateAplus
+      ? fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}/aplus`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
 
     let nextStateDetail: StateDetail | null = null;
     let nextStateDetailStatus: StateDetailStatus = "error";
-    let pendingNjAplusDetail: NjAplusReconciliation | null = null;
+    let pendingFlatStateAplusDetail: FlatStateAplusReconciliation | null = null;
     try {
-      const response = cacheKey === "NJ" && njAplusRequest
-        ? await njAplusRequest
+      const response = isFlatStateAplus && flatStateAplusRequest
+        ? await flatStateAplusRequest
         : await fetch(`${apiBase}/api/aplus/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } });
       if (!response?.ok) throw new Error("State detail unavailable");
-      if (cacheKey === "NJ") {
-        pendingNjAplusDetail = await response.json() as NjAplusReconciliation;
-        nextStateDetail = pendingNjAplusDetail.stateDetail;
+      if (isFlatStateAplus) {
+        pendingFlatStateAplusDetail = await response.json() as FlatStateAplusReconciliation;
+        nextStateDetail = pendingFlatStateAplusDetail.stateDetail;
       } else {
         nextStateDetail = await response.json() as StateDetail;
       }
@@ -699,15 +714,15 @@ export default function Home() {
       setGaBoundaryStatus(nextGaStatus);
     }
 
-    let nextNjAplusDetail: NjAplusReconciliation | null = null;
-    let nextNjAplusStatus: StateDetailStatus = cacheKey === "NJ" ? "error" : "idle";
-    if (njAplusRequest) {
-      if (pendingNjAplusDetail) {
-        nextNjAplusDetail = pendingNjAplusDetail;
-        nextNjAplusStatus = "ready";
+    let nextFlatStateAplusDetail: FlatStateAplusReconciliation | null = null;
+    let nextFlatStateAplusStatus: StateDetailStatus = isFlatStateAplus ? "error" : "idle";
+    if (flatStateAplusRequest) {
+      if (pendingFlatStateAplusDetail) {
+        nextFlatStateAplusDetail = pendingFlatStateAplusDetail;
+        nextFlatStateAplusStatus = "ready";
       }
-      setNjAplusDetail(nextNjAplusDetail);
-      setNjAplusStatus(nextNjAplusStatus);
+      setFlatStateAplusDetail(nextFlatStateAplusDetail);
+      setFlatStateAplusStatus(nextFlatStateAplusStatus);
     }
 
     // Cached for the rest of the session (or until LIVE_REFRESH_INTERVAL_MS elapses, or the
@@ -720,8 +735,8 @@ export default function Home() {
       officialStateStatus: nextOfficialStatus,
       gaBoundaryDetail: nextGaDetail,
       gaBoundaryStatus: nextGaStatus,
-      njAplusDetail: nextNjAplusDetail,
-      njAplusStatus: nextNjAplusStatus,
+      flatStateAplusDetail: nextFlatStateAplusDetail,
+      flatStateAplusStatus: nextFlatStateAplusStatus,
       fetchedAt,
     });
     setStateDrawerCheckedAt(fetchedAt);
@@ -1145,7 +1160,7 @@ export default function Home() {
       )}
 
       {selectedState && (
-        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setNjAplusDetail(null); setNjAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
+        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setFlatStateAplusDetail(null); setFlatStateAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
           <div className="drawer-kicker"><span className="section-label">{connectorStatus === "live" ? "Live A+ state coverage" : "Validated A+ state snapshot"}</span><span className="status-badge">Read only</span></div>
           <h2 id="state-title">{STATE_NAME_BY_CODE.get(selectedState.stateCode) ?? selectedState.stateCode}</h2>
           <p className="drawer-lede">Active ship-to assignments and configured tax-body rates queried from A+. This is not yet a comparison with the state&apos;s official Department of Revenue rates.</p>
@@ -1160,7 +1175,7 @@ export default function Home() {
           </div>
           <OfficialStateSourcePanel source={officialSourcesByCode.get(selectedState.stateCode) ?? null} status={officialStateStatus} snapshot={officialStateDetail} />
           {selectedState.stateCode === "GA" && <GeorgiaBoundaryPanel status={gaBoundaryStatus} reconciliation={gaBoundaryDetail} />}
-          {selectedState.stateCode === "NJ" && <NewJerseyAplusPanel status={njAplusStatus} reconciliation={njAplusDetail} />}
+          {FLAT_STATE_APLUS_STATES.has(selectedState.stateCode) && <FlatStateAplusPanel status={flatStateAplusStatus} reconciliation={flatStateAplusDetail} />}
           {stateDetailStatus === "loading" && <div className="state-detail-message" role="status">Querying A+ tax-body assignments and configured rates…</div>}
           {stateDetailStatus === "error" && <div className="state-detail-message state-detail-error" role="alert">The state detail query is unavailable. The state-level totals above remain from the last successful A+ coverage read.</div>}
           {stateDetailStatus === "ready" && stateDetail && (() => {
@@ -1409,21 +1424,22 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
   );
 }
 
-function NewJerseyAplusPanel({ status, reconciliation }: { status: StateDetailStatus; reconciliation: NjAplusReconciliation | null }) {
-  if (status === "loading") return <div className="state-detail-message" role="status">Comparing A+ tax body NJ000 with the current New Jersey statewide rate…</div>;
-  if (status === "error" || !reconciliation) return <div className="state-detail-message state-detail-error" role="alert">The New Jersey A+ comparison is unavailable or failed validation. No rate was guessed.</div>;
+function FlatStateAplusPanel({ status, reconciliation }: { status: StateDetailStatus; reconciliation: FlatStateAplusReconciliation | null }) {
+  const stateName = reconciliation ? (STATE_NAME_BY_CODE.get(reconciliation.stateCode) ?? reconciliation.stateCode) : "this state";
+  if (status === "loading") return <div className="state-detail-message" role="status">Comparing A+&apos;s single statewide tax body with the current official rate…</div>;
+  if (status === "error" || !reconciliation) return <div className="state-detail-message state-detail-error" role="alert">The A+ comparison is unavailable or failed validation. No rate was guessed.</div>;
   const { totals } = reconciliation;
   return (
-    <section className="official-state-panel" aria-labelledby="nj-aplus-title">
-      <div className="state-table-heading"><div><span className="section-label">New Jersey A+ reconciliation</span><strong id="nj-aplus-title">Flat statewide rate comparison</strong></div></div>
+    <section className="official-state-panel" aria-labelledby="flat-state-aplus-title">
+      <div className="state-table-heading"><div><span className="section-label">{stateName} A+ reconciliation</span><strong id="flat-state-aplus-title">Flat statewide rate comparison</strong></div></div>
       <div className="official-source-summary">
-        <div><span>NJ000 ship-tos</span><strong>{totals.comparedShipTos.toLocaleString()}</strong></div>
+        <div><span>{reconciliation.expectedTaxBody} ship-tos</span><strong>{totals.comparedShipTos.toLocaleString()}</strong></div>
         <div><span>Official rate</span><strong>{formatRate(reconciliation.officialRate)}</strong></div>
         <div><span>A+ rate</span><strong>{reconciliation.aplusRate === null ? "—" : formatRate(reconciliation.aplusRate)}</strong></div>
         <div><span>Result</span><strong>{reconciliation.comparisonStatus === "matched" ? "Matches" : reconciliation.comparisonStatus === "difference" ? "Review difference" : "Unavailable"}</strong></div>
       </div>
       <p className="official-boundary-note">
-        {totals.crossStateShipTos.toLocaleString()} ship-to{totals.crossStateShipTos === 1 ? "" : "s"} assigned to another state and {totals.unclassifiedShipTos.toLocaleString()} unclassified ship-to{totals.unclassifiedShipTos === 1 ? "" : "s"} are reported separately and excluded from the NJ000 comparison. All {totals.activeShipTos.toLocaleString()} active New Jersey ship-tos reconcile to these categories.
+        {totals.crossStateShipTos.toLocaleString()} ship-to{totals.crossStateShipTos === 1 ? "" : "s"} assigned to another state and {totals.unclassifiedShipTos.toLocaleString()} unclassified ship-to{totals.unclassifiedShipTos === 1 ? "" : "s"} are reported separately and excluded from the {reconciliation.expectedTaxBody} comparison. All {totals.activeShipTos.toLocaleString()} active {stateName} ship-tos reconcile to these categories.
       </p>
     </section>
   );

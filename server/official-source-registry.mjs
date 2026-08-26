@@ -2,6 +2,10 @@ import { NCDOR_CURRENT_RATES_URL } from "./ncdor-rates.mjs";
 import { CALIFORNIA_DOR_OVERVIEW_URL } from "./ca-rates.mjs";
 import { FLORIDA_DOR_RATES_URL } from "./fl-rates.mjs";
 import { MARYLAND_RATE_CHART_URL } from "./md-rates.mjs";
+import { MAINE_RATES_URL } from "./me-rates.mjs";
+import { CT_RATES_URL } from "./ct-rates.mjs";
+import { MA_RATES_URL } from "./ma-rates.mjs";
+import { MS_RATES_URL } from "./ms-rates.mjs";
 import { NJ_USE_TAX_FAQ_URL } from "./nj-rates.mjs";
 import { PENNSYLVANIA_DOR_RATES_URL } from "./pa-rates.mjs";
 import { TEXAS_DOR_RATES_URL } from "./tx-rates.mjs";
@@ -25,7 +29,16 @@ const SST_RATE_STATES = new Set([
 // entries in server/sst-rates.mjs - either a clean drop-in county model (AR, WY) or a confirmed flat/
 // no-local-tax state (IN, KY, MI, RI). Listed separately from SST_RATE_STATES above, which is now only
 // the "claimed but not independently wired into a config entry yet" bucket.
-const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI", "NV", "NE"]);
+const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "RI", "NV", "NE"]);
+
+// IN/KY/MI (below, alongside MD/ME/CT/MA/MS) are confirmed live 2026-08-26 (see docs/state-rollout.md
+// and each state's docs/states/<code>.md) to be a single flat statewide A+ tax body with no
+// local-option variation, matching its official rate exactly with no blocking finding - the same
+// shape MD and NJ already have wired, so they carry an aplusMatchingStatus/comparisonEndpoint below
+// instead of falling into the generic CONNECTED_GENERIC_SST_STATES case above. Deliberately does NOT
+// include RI here: RI's sole tax body is confirmed live at 0% against RI's real flat 7% rate (see
+// docs/pending-business-decisions.md), an unresolved human decision, not a "wire it" case, even
+// though RI is otherwise a genuine drop-in GENERIC_SST_STATES entry.
 
 // Confirmed 2026-08-26: these states impose no general state or local sales/use tax at all (4 of the
 // 5 well-known "NOMAD" states; Alaska is the 5th but has real local-only sales tax and isn't included
@@ -101,7 +114,48 @@ export function listOfficialSourceRegistry() {
       return {
         stateCode, stateName, status: "connected", adapter: "state-flat-rate",
         coverage: "flat 6% statewide rate (Tax-General Article Section 11-104); Maryland preempts local general sales tax, so no address matching is ever needed",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/MD/aplus",
         sourceName: "Comptroller of Maryland", sourceUrl: MARYLAND_RATE_CHART_URL,
+      };
+    }
+    if (stateCode === "ME") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
+        coverage: "flat 5.5% statewide rate, live-parsed from Maine Revenue Services' own rate/due-date table; Maine has no local-option sales tax, so no address matching is ever needed",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/ME/aplus",
+        sourceName: "Maine Revenue Services", sourceUrl: MAINE_RATES_URL,
+      };
+    }
+    if (stateCode === "CT") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
+        coverage: "flat 6.35% statewide rate, live-parsed from Connecticut DRS's tax-information page; Connecticut abolished county government in 1960 and has no local-option sales tax, so no address matching is ever needed",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/CT/aplus",
+        sourceName: "Connecticut Department of Revenue Services", sourceUrl: CT_RATES_URL,
+      };
+    }
+    if (stateCode === "MA") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
+        coverage: "flat 6.25% statewide rate, live-parsed from Massachusetts' own sales-and-use-tax guide (requires a non-browser User-Agent - mass.gov bot-blocks browser-style fetches even though the page is live); no general local-option sales tax exists, so no address matching is ever needed",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/MA/aplus",
+        sourceName: "Commonwealth of Massachusetts", sourceUrl: MA_RATES_URL,
+      };
+    }
+    if (stateCode === "MS") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
+        coverage: "flat 7% general retail rate, live-parsed from Mississippi DOR's rate page; no general local-option sales tax exists. Open caveat: Jackson (+1%) and Tupelo (+0.25%) each impose a narrow city-specific levy not modeled here, and A+ has no way to identify a ship-to physically inside either city",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/MS/aplus",
+        sourceName: "Mississippi Department of Revenue", sourceUrl: MS_RATES_URL,
+      };
+    }
+    if (stateCode === "IN" || stateCode === "KY" || stateCode === "MI") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "flat statewide rate with zero local jurisdiction rows, validated 2026-08-26 - matches A+'s single statewide tax body exactly, no blocking finding",
+        aplusMatchingStatus: "connected", comparisonEndpoint: `/api/official/states/${stateCode}/aplus`,
+        sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: SST_RATE_DIRECTORY_URL,
       };
     }
     if (stateCode === "NJ") {
