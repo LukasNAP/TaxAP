@@ -275,9 +275,14 @@ Expected current Georgia results:
 
 ## Where deeper research findings live
 
-Detailed per-state research (NC and SC's full Step 1/2 findings, the reusable `XATXBD` query template, known A+ data-quality gotchas like `SASHST` not being a clean state code) currently lives in a **Claude Code skill** at `C:\Users\lukasn\.claude\skills\taxap-dev\`, not in this repository. That's fine for Claude Code sessions (the skill loads automatically), but **a ChatGPT/Codex session has no way to read it** — it's outside any git-tracked location this repo controls. If per-state research needs to be visible to both tools, it should move into this repo (e.g. under `docs/states/`) instead of staying Claude-only; that hasn't been decided yet. Until then, a ChatGPT session picking this project up should ask Lukas directly for that context rather than assuming it doesn't exist just because it's not in the repo.
+**As of 2026-08-26, this all lives in this repo, under `docs/` — moved out of the Claude-Code-only skill it used to sit in, specifically so both tools can read it:**
 
-`docs/roadmap-50-states.md` (in this repo, both tools can read it) has the higher-level, all-51-state status table and is kept current — trust that one for overall state status; go to the skill (or ask Lukas) only for the deep per-state investigation detail.
+- `docs/roadmap-50-states.md` — the authoritative, most-recently-verified official-source status for all 51 jurisdictions.
+- `docs/state-rollout.md` — the repeatable per-state A+-matching investigation procedure (Step 0–4), the reusable query template, and a running per-state status table.
+- `docs/states/<code>.md` — full findings for each investigated state (NC and SC exist today; others noted in `state-rollout.md` as "summary only, no dedicated file yet" should be re-verified before trusting, not cited as-is).
+- `docs/aplus-schema.md` and `docs/aplus-data-findings.md` — confirmed A+/DWStage column semantics and documented-vs-actual data divergences (e.g. `SASUSP` is dead, `SACSUS` is the real suspension flag, `SASHST` isn't a clean state code).
+
+A Claude Code session also has the `taxap-dev` skill (`C:\Users\lukasn\.claude\skills\taxap-dev\SKILL.md`), which auto-loads for TaxAP work and now just points here plus carries the mode/identity safety checks that only matter when running the tool live — it deliberately doesn't duplicate the content above anymore, to avoid the two copies drifting apart the way the two handoff docs did.
 
 ## Documentation
 
