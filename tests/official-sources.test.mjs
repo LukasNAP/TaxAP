@@ -34,6 +34,8 @@ test("registers every state and DC without claiming unfinished adapters are conn
   for (const stateCode of ["DE", "MT", "NH", "OR"]) {
     assert.equal(sources.find((source) => source.stateCode === stateCode).status, "no-general-sales-tax", `${stateCode} should be marked no-general-sales-tax`);
   }
+  assert.equal(sources.find((source) => source.stateCode === "HI").status, "no-general-sales-tax", "HI should be excluded per Lukas's 2026-08-27 decision (GET is not a buyer-facing sales tax)");
+  assert.equal(sources.find((source) => source.stateCode === "AK").status, "no-general-sales-tax", "AK should be excluded per Lukas's 2026-08-27 decision (necessarily-incomplete local-only coverage)");
 });
 
 test("builds Pennsylvania's 67 county totals only after validating the official rate rules", async () => {

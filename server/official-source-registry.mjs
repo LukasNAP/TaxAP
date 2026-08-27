@@ -186,6 +186,20 @@ export function listOfficialSourceRegistry() {
         sourceName: "N/A", sourceUrl: null,
       };
     }
+    if (stateCode === "HI") {
+      return {
+        stateCode, stateName, status: "no-general-sales-tax", adapter: "none",
+        coverage: "per Lukas's explicit decision (2026-08-27): Hawaii has no buyer-facing sales tax to compare. Its General Excise Tax (GET) legally taxes the seller's gross receipts, not the buyer, and any customer-visible \"rate\" is a voluntary, uncapped-below-4.712% pass-on choice, not a statutory transaction tax. Excluded from the rate-comparison dashboard entirely, the same as DE/MT/NH/OR - not an unbuilt adapter.",
+        sourceName: "N/A", sourceUrl: null,
+      };
+    }
+    if (stateCode === "AK") {
+      return {
+        stateCode, stateName, status: "no-general-sales-tax", adapter: "none",
+        coverage: "per Lukas's explicit decision (2026-08-27): excluded from the comparison dashboard. Unlike Hawaii, Alaska does have real local-only sales tax in 100+ home-rule boroughs/cities - but no state tax exists, and the only public source (ARSSTC) covers just its member jurisdictions, never all of Alaska, so a comparison here could never be complete. Not an unbuilt adapter - a deliberate scope decision.",
+        sourceName: "N/A", sourceUrl: null,
+      };
+    }
     if (SST_RATE_STATES.has(stateCode)) {
       return {
         stateCode, stateName, status: "machine-readable-source", adapter: "sst-rate-file",

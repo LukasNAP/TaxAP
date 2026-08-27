@@ -183,7 +183,7 @@ function recordsetToCsv(recordset) {
   }).join(",")).join("\n");
 }
 
-async function openPool() {
+export async function openPool() {
   const server = requiredSetting("TAXAP_SQL_SERVER");
   const database = requiredSetting("TAXAP_SQL_DATABASE");
   const credential = new DefaultAzureCredential();
