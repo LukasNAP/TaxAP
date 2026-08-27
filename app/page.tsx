@@ -126,6 +126,29 @@ type FlatStateAplusReconciliation = {
   unclassifiedAssignments: StateTaxBody[];
   stateDetail: StateDetail;
 };
+// Shared shape for a "many codes, each mapped directly to one real jurisdiction" state's A+
+// reconciliation (FL/PA/OH today - see server/direct-mapping-aplus.mjs). Unlike a flat state
+// (one number, one comparison), this carries a whole table of per-tax-body findings.
+type DirectMappingFinding = {
+  taxBody: string;
+  description: string | null;
+  activeShipTos: number;
+  jurisdictionLabel: string;
+  officialRate: number | null;
+  aplusRate: number | null;
+  rateDifference: number | null;
+  hasDifference: boolean;
+  matched: boolean;
+};
+type DirectMappingAplusReconciliation = {
+  stateCode: string;
+  retrievedAt: string;
+  totals: { activeShipTos: number; comparedShipTos: number; crossStateShipTos: number; misinputShipTos: number; unmatchedShipTos: number };
+  findings: DirectMappingFinding[];
+  crossStateAssignments: StateTaxBody[];
+  misinputAssignments: StateTaxBody[];
+  stateDetail: StateDetail;
+};
 type StateDrawerCacheEntry = {
   stateDetail: StateDetail | null;
   stateDetailStatus: StateDetailStatus;
@@ -135,6 +158,8 @@ type StateDrawerCacheEntry = {
   gaBoundaryStatus: StateDetailStatus;
   flatStateAplusDetail: FlatStateAplusReconciliation | null;
   flatStateAplusStatus: StateDetailStatus;
+  directMappingAplusDetail: DirectMappingAplusReconciliation | null;
+  directMappingAplusStatus: StateDetailStatus;
   fetchedAt: number;
 };
 type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcoming" | "not-checked";
@@ -173,23 +198,30 @@ const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 // NOT include RI: RI's sole tax body is confirmed live at 0% against RI's real flat 7% rate, an open
 // human decision, not wired A+ matching (see docs/pending-business-decisions.md).
 const FLAT_STATE_APLUS_STATES = new Set(["NJ", "MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS"]);
+// States confirmed live (2026-08-27) to have many A+ codes each mapping directly to one real
+// jurisdiction (no address matching needed) - see server/direct-mapping-aplus.mjs.
+const DIRECT_MAPPING_APLUS_STATES = new Set(["FL", "PA", "OH", "VA", "NY", "AZ", "AL"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
   if (stateCode === "GA") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction components", sourceName: "Georgia DOR via Streamlined Sales Tax rate file", sourceUrl: "https://dor.georgia.gov/sales-tax-rates-general" };
   if (stateCode === "CA") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "current city and county total rates", sourceName: "California Department of Tax and Fee Administration", sourceUrl: "https://cdtfa.ca.gov/taxes-and-fees/sales-use-tax-rates.htm" };
   if (stateCode === "TX") return { stateCode, stateName, status: "connected", adapter: "state-comptroller-text-html", coverage: "quarterly combined city and local-area rates", sourceName: "Texas Comptroller of Public Accounts", sourceUrl: "https://comptroller.texas.gov/taxes/file-pay/edi/sales-tax-rates.php" };
-  if (stateCode === "FL") return { stateCode, stateName, status: "connected", adapter: "state-dor-xlsx", coverage: "all 67 county discretionary surtax totals", sourceName: "Florida Department of Revenue", sourceUrl: "https://floridarevenue.com/taxes/taxesfees/Pages/discretionary.aspx" };
+  if (stateCode === "FL") return { stateCode, stateName, status: "connected", adapter: "state-dor-xlsx", coverage: "all 67 county discretionary surtax totals, matched to A+ by real county name", sourceName: "Florida Department of Revenue", sourceUrl: "https://floridarevenue.com/taxes/taxesfees/Pages/discretionary.aspx" };
   if (stateCode === "SC") return { stateCode, stateName, status: "connected", adapter: "state-dor-pdf", coverage: "all 46 county (unincorporated) and municipality totals from ST-575; A+ tax-body matching not yet built", sourceName: "South Carolina Department of Revenue", sourceUrl: "https://dor.sc.gov/sites/dor/files/forms/ST575.pdf" };
-  if (stateCode === "PA") return { stateCode, stateName, status: "connected", adapter: "state-dor-rules-census", coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons", sourceName: "Pennsylvania Department of Revenue", sourceUrl: "https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax" };
+  if (stateCode === "PA") return { stateCode, stateName, status: "connected", adapter: "state-dor-rules-census", coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons; PA000/PA001 matched to A+", sourceName: "Pennsylvania Department of Revenue", sourceUrl: "https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax" };
   if (stateCode === "IL") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-machine-file-pending", coverage: "official machine-readable sales-tax files; adapter validation pending", sourceName: "Illinois Department of Revenue", sourceUrl: "https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html" };
-  if (stateCode === "VA") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-xlsx-pending", coverage: "official locality lookup and downloadable workbook; adapter validation pending", sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup" };
+  if (stateCode === "VA") return { stateCode, stateName, status: "connected", adapter: "state-dor-xlsx", coverage: "all 133 real counties and independent cities, matched to A+ by real locality name with the County/City suffix disambiguating Virginia's 4 name-duplicate pairs", sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup" };
+  if (stateCode === "NY") return { stateCode, stateName, status: "connected", adapter: "state-dor-pdf", coverage: "Publication 718's full jurisdiction rate list, matched to A+ by real locality name", sourceName: "New York State Department of Taxation and Finance", sourceUrl: "https://www.tax.ny.gov/pdf/publications/sales/pub718.pdf" };
+  if (stateCode === "AZ") return { stateCode, stateName, status: "connected", adapter: "state-dor-csv", coverage: "business code 017 (Retail) county and city rates, city rows summed with their real county", sourceName: "Arizona Department of Revenue", sourceUrl: "https://azdor.gov/business/transaction-privilege-tax/tax-rate-table" };
+  if (stateCode === "AL") return { stateCode, stateName, status: "connected", adapter: "state-dor-csv", coverage: "general sales rate only, matched to A+ by ADOR's own numeric locality code", sourceName: "Alabama Department of Revenue", sourceUrl: "https://www.revenue.alabama.gov/sales-use/local-cities-and-counties-tax-rates-text-file/" };
   if (stateCode === "MD") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6% statewide rate (Tax-General Article Section 11-104); Maryland preempts local general sales tax, so no address matching is ever needed", sourceName: "Comptroller of Maryland", sourceUrl: "https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/Tax_rate_chart.pdf" };
   if (stateCode === "ME") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 5.5% statewide rate, live-parsed from Maine Revenue Services' own rate/due-date table; no local-option sales tax exists, so no address matching is ever needed", sourceName: "Maine Revenue Services", sourceUrl: "https://www.maine.gov/revenue/taxes/sales-use-service-provider-tax/rates-due-dates" };
   if (stateCode === "CT") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6.35% statewide rate, live-parsed from Connecticut DRS's tax-information page; no local-option sales tax exists, so no address matching is ever needed", sourceName: "Connecticut Department of Revenue Services", sourceUrl: "https://portal.ct.gov/drs/sales-tax/tax-information" };
   if (stateCode === "MA") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6.25% statewide rate, live-parsed from Massachusetts' own sales-and-use-tax guide; no general local-option sales tax exists, so no address matching is ever needed", sourceName: "Commonwealth of Massachusetts", sourceUrl: "https://www.mass.gov/guides/sales-and-use-tax" };
   if (stateCode === "MS") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 7% general retail rate, live-parsed from Mississippi DOR's rate page. Open caveat: Jackson (+1%) and Tupelo (+0.25%) each impose a narrow city-specific levy not modeled here", sourceName: "Mississippi Department of Revenue", sourceUrl: "https://www.dor.ms.gov/business/sales-use-tax/sales-tax-rates" };
   if (stateCode === "NJ") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat statewide rate (6.625% since 2018), cross-validated live against two independent NJ Division of Taxation pages; no address matching is ever needed. Open caveat: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification, not modeled", sourceName: "New Jersey Division of Taxation", sourceUrl: "https://www.nj.gov/treasury/taxation/su_10.shtml" };
-  if (stateCode === "OH" || stateCode === "TN") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction rate components", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
+  if (stateCode === "OH") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, and special-jurisdiction rate components, matched to A+ by county name with the transit-authority surcharge crosswalk folded in", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
+  if (stateCode === "TN") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction rate components", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (stateCode === "IN" || stateCode === "KY" || stateCode === "MI") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "flat statewide rate with zero local jurisdiction rows, validated 2026-08-26 - matches A+'s single statewide tax body exactly, no blocking finding", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (CONNECTED_GENERIC_SST_STATES.has(stateCode)) return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "jurisdiction rate components, validated 2026-08-26", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (NO_GENERAL_SALES_TAX_STATES.has(stateCode)) return { stateCode, stateName, status: "no-general-sales-tax", adapter: "none", coverage: "confirmed 2026-08-26: no general state or local sales/use tax exists in this state; excluded from rate comparison, not an unbuilt adapter", sourceName: "N/A", sourceUrl: null };
@@ -350,10 +382,25 @@ export default function Home() {
   const [gaBoundaryStatus, setGaBoundaryStatus] = useState<StateDetailStatus>("idle");
   const [flatStateAplusDetail, setFlatStateAplusDetail] = useState<FlatStateAplusReconciliation | null>(null);
   const [flatStateAplusStatus, setFlatStateAplusStatus] = useState<StateDetailStatus>("idle");
+  const [directMappingAplusDetail, setDirectMappingAplusDetail] = useState<DirectMappingAplusReconciliation | null>(null);
+  const [directMappingAplusStatus, setDirectMappingAplusStatus] = useState<StateDetailStatus>("idle");
   // Deliberately separate from gaBoundaryDetail/gaBoundaryStatus above, which belong to the state
   // drawer and get cleared whenever it closes. The home dashboard's findings must survive that —
   // see the "how come it reconnects every click" / caching work this pairs with.
   const [dashboardGaBoundary, setDashboardGaBoundary] = useState<GaBoundaryReconciliation | null>(null);
+  // Every other wired state's (NJ + the 9 flat-rate states + FL/PA/OH direct-mapping states)
+  // findings, fetched in one batch on dashboard load - same "survives drawer close" shape as
+  // dashboardGaBoundary above, so a real finding stays visible in "Needs attention" without the
+  // user having to open that specific state's drawer first.
+  const [dashboardOtherFindings, setDashboardOtherFindings] = useState<JurisdictionFinding[]>([]);
+  // Both start false and flip true (success or failure - either way, the fetch was attempted) the
+  // first time their own refresh finishes. Needed because gaBoundaryDetail/dashboardOtherFindings
+  // both start empty and take several seconds to populate live - without this, "Needs attention"
+  // reads as 0 (or NC-only) for those first few seconds on every page load, then visibly jumps once
+  // the real data lands. Gating the displayed count on both being loaded at least once means the
+  // number is either "still loading" or the real settled value - never a misleadingly low one.
+  const [gaBoundaryLoaded, setGaBoundaryLoaded] = useState(false);
+  const [otherFindingsLoaded, setOtherFindingsLoaded] = useState(false);
   // Session-lifetime cache of state-drawer reads, keyed by state code. A ref (not state) so
   // populating it never triggers a re-render on its own — openState reads/writes it directly.
   const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
@@ -478,7 +525,10 @@ export default function Home() {
   // Georgia failure can never affect NC's refresh, and so NC's memoized callback body is untouched.
   const refreshGaBoundary = useCallback(async () => {
     const apiBase = apiBaseUrl();
-    if (!apiBase) return;
+    if (!apiBase) {
+      setGaBoundaryLoaded(true); // offline mode: no live source to wait on, so there's nothing to load
+      return;
+    }
     try {
       const response = await fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } });
       if (!response.ok) throw new Error("Georgia boundary reconciliation unavailable");
@@ -486,6 +536,8 @@ export default function Home() {
     } catch {
       // The dashboard's Georgia findings simply hold their last known value on failure — same
       // fail-quiet-but-don't-guess behavior as the NC official-rate fetch a few lines up.
+    } finally {
+      setGaBoundaryLoaded(true);
     }
   }, []);
 
@@ -506,6 +558,35 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [refreshGaBoundary]);
+
+  // Kept independent from NC's and GA's refresh above for the same reason refreshGaBoundary is its
+  // own callback: one wired state (or the whole batch) failing must never affect the others.
+  const refreshOtherFindings = useCallback(async () => {
+    const apiBase = apiBaseUrl();
+    if (!apiBase) {
+      setOtherFindingsLoaded(true); // offline mode: no live source to wait on, so there's nothing to load
+      return;
+    }
+    try {
+      const response = await fetch(`${apiBase}/api/official/findings`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      if (!response.ok) throw new Error("Wired-state findings batch unavailable");
+      const result = await response.json() as { findings: JurisdictionFinding[] };
+      setDashboardOtherFindings(result.findings);
+    } catch {
+      // Holds its last known value on failure - same fail-quiet-but-don't-guess behavior as NC/GA.
+    } finally {
+      setOtherFindingsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshOtherFindings(), 0);
+    const interval = window.setInterval(() => void refreshOtherFindings(), LIVE_REFRESH_INTERVAL_MS);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+    };
+  }, [refreshOtherFindings]);
 
   const reviewCasesByKey = useMemo(() => new Map(reviewCases.map((reviewCase) => [reviewCase.findingKey, reviewCase])), [reviewCases]);
 
@@ -574,10 +655,15 @@ export default function Home() {
     [dashboardGaBoundary],
   );
   const inboxFindings = useMemo(
-    () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings),
-    [gaFindings, openFindings, toNcFinding, upcomingFindings],
+    () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings),
+    [dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
-  const needsAttentionCount = openFindings.length + gaFindings.length;
+  const needsAttentionCount = openFindings.length + gaFindings.length + dashboardOtherFindings.length;
+  // GA and the other-states batch both take several seconds to load and start empty - without this,
+  // needsAttentionCount reads as NC-only (or 0) for the first few seconds of every page load, then
+  // visibly jumps once they land. Gating the displayed count on this means it's either a clear
+  // "loading" state or the real settled number - never a misleadingly low one.
+  const dashboardCountsReady = gaBoundaryLoaded && otherFindingsLoaded;
   const openFinding = (finding: JurisdictionFinding) => {
     if (finding.stateCode === "NC") {
       const county = activeCountyCoverage.find((candidate) => candidate.taxBody === finding.taxBody);
@@ -644,11 +730,15 @@ export default function Home() {
       setGaBoundaryStatus(cached.gaBoundaryStatus);
       setFlatStateAplusDetail(cached.flatStateAplusDetail);
       setFlatStateAplusStatus(cached.flatStateAplusStatus);
+      setDirectMappingAplusDetail(cached.directMappingAplusDetail);
+      setDirectMappingAplusStatus(cached.directMappingAplusStatus);
       setStateDrawerCheckedAt(cached.fetchedAt);
       return;
     }
 
     const isFlatStateAplus = FLAT_STATE_APLUS_STATES.has(cacheKey);
+    const isDirectMappingAplus = DIRECT_MAPPING_APLUS_STATES.has(cacheKey);
+    const hasAplusEndpoint = isFlatStateAplus || isDirectMappingAplus;
     setStateDetail(null);
     setStateDetailStatus("loading");
     setOfficialStateDetail(null);
@@ -657,33 +747,40 @@ export default function Home() {
     setGaBoundaryStatus(cacheKey === "GA" ? "loading" : "idle");
     setFlatStateAplusDetail(null);
     setFlatStateAplusStatus(isFlatStateAplus ? "loading" : "idle");
+    setDirectMappingAplusDetail(null);
+    setDirectMappingAplusStatus(isDirectMappingAplus ? "loading" : "idle");
     const apiBase = apiBaseUrl();
     if (!apiBase) {
       setStateDetailStatus("error");
       setOfficialStateStatus("error");
       if (cacheKey === "GA") setGaBoundaryStatus("error");
       if (isFlatStateAplus) setFlatStateAplusStatus("error");
+      if (isDirectMappingAplus) setDirectMappingAplusStatus("error");
       return;
     }
     const officialRequest = fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
     const boundaryRequest = cacheKey === "GA"
       ? fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
-    const flatStateAplusRequest = isFlatStateAplus
+    const aplusEndpointRequest = hasAplusEndpoint
       ? fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}/aplus`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
 
     let nextStateDetail: StateDetail | null = null;
     let nextStateDetailStatus: StateDetailStatus = "error";
     let pendingFlatStateAplusDetail: FlatStateAplusReconciliation | null = null;
+    let pendingDirectMappingAplusDetail: DirectMappingAplusReconciliation | null = null;
     try {
-      const response = isFlatStateAplus && flatStateAplusRequest
-        ? await flatStateAplusRequest
+      const response = hasAplusEndpoint && aplusEndpointRequest
+        ? await aplusEndpointRequest
         : await fetch(`${apiBase}/api/aplus/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } });
       if (!response?.ok) throw new Error("State detail unavailable");
       if (isFlatStateAplus) {
         pendingFlatStateAplusDetail = await response.json() as FlatStateAplusReconciliation;
         nextStateDetail = pendingFlatStateAplusDetail.stateDetail;
+      } else if (isDirectMappingAplus) {
+        pendingDirectMappingAplusDetail = await response.json() as DirectMappingAplusReconciliation;
+        nextStateDetail = pendingDirectMappingAplusDetail.stateDetail;
       } else {
         nextStateDetail = await response.json() as StateDetail;
       }
@@ -718,13 +815,24 @@ export default function Home() {
 
     let nextFlatStateAplusDetail: FlatStateAplusReconciliation | null = null;
     let nextFlatStateAplusStatus: StateDetailStatus = isFlatStateAplus ? "error" : "idle";
-    if (flatStateAplusRequest) {
+    if (isFlatStateAplus) {
       if (pendingFlatStateAplusDetail) {
         nextFlatStateAplusDetail = pendingFlatStateAplusDetail;
         nextFlatStateAplusStatus = "ready";
       }
       setFlatStateAplusDetail(nextFlatStateAplusDetail);
       setFlatStateAplusStatus(nextFlatStateAplusStatus);
+    }
+
+    let nextDirectMappingAplusDetail: DirectMappingAplusReconciliation | null = null;
+    let nextDirectMappingAplusStatus: StateDetailStatus = isDirectMappingAplus ? "error" : "idle";
+    if (isDirectMappingAplus) {
+      if (pendingDirectMappingAplusDetail) {
+        nextDirectMappingAplusDetail = pendingDirectMappingAplusDetail;
+        nextDirectMappingAplusStatus = "ready";
+      }
+      setDirectMappingAplusDetail(nextDirectMappingAplusDetail);
+      setDirectMappingAplusStatus(nextDirectMappingAplusStatus);
     }
 
     // Cached for the rest of the session (or until LIVE_REFRESH_INTERVAL_MS elapses, or the
@@ -739,6 +847,8 @@ export default function Home() {
       gaBoundaryStatus: nextGaStatus,
       flatStateAplusDetail: nextFlatStateAplusDetail,
       flatStateAplusStatus: nextFlatStateAplusStatus,
+      directMappingAplusDetail: nextDirectMappingAplusDetail,
+      directMappingAplusStatus: nextDirectMappingAplusStatus,
       fetchedAt,
     });
     setStateDrawerCheckedAt(fetchedAt);
@@ -807,27 +917,17 @@ export default function Home() {
 
       {activeView === "dashboard" && (
         <section className="page-content" aria-labelledby="overview-title">
-          <div className="eyebrow-row">
-            <span className="eyebrow">Tax rate change workspace</span>
-            <span className="prototype-badge">Read-only monitoring · human approval</span>
-          </div>
           <div className="intro">
-            <div>
-              <h1 id="overview-title">See what changed, what matters, and what needs review.</h1>
-              <p>
-                TaxAP separates newly published government rates from confirmed A+ differences, then
-                shows Ana the affected jurisdictions and aggregate ship-to impact in one work queue.
-              </p>
-            </div>
+            <h1 id="overview-title" className="sr-only">TaxAP dashboard</h1>
             <button className="primary-button" type="button" onClick={() => navigate("attention")}>
               Open review queue <span aria-hidden="true">→</span>
             </button>
           </div>
 
           <SummaryStats
-            openCount={needsAttentionCount}
-            upcomingCount={upcomingFindings.length}
-            affectedShipTos={inboxFindings.reduce((total, finding) => total + finding.activeShipTos, 0)}
+            openCount={dashboardCountsReady ? needsAttentionCount : null}
+            upcomingCount={dashboardCountsReady ? upcomingFindings.length : null}
+            affectedShipTos={dashboardCountsReady ? inboxFindings.reduce((total, finding) => total + finding.activeShipTos, 0) : null}
             connectedSources={officialSources.filter((source) => source.status === "connected").length}
             lastRefresh={officialSnapshot?.retrievedAt ?? null}
           />
@@ -871,7 +971,9 @@ export default function Home() {
                         <td><ComparisonPill status={finding.comparisonStatus} />{finding.confidence === "unverified" && <span className="rate-warning" title={finding.confidenceNote ?? undefined}> !</span>}</td>
                         <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${finding.jurisdictionLabel}`}>›</button></td>
                       </tr>
-                    )) : (
+                    )) : !dashboardCountsReady ? (
+                      <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+ — this can take a few seconds.</p></div></div></td></tr>
+                    ) : (
                       <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">✓</span><div><strong>No confirmed differences or upcoming changes</strong><p>{officialSnapshot ? "Every validated current NC rate matches A+, and Georgia's boundary reconciliation has no unresolved rate difference." : "The last validated snapshot has no open findings. Connect official sources during supervised validation to check for newer publications."}</p></div></div></td></tr>
                     )}
                   </tbody>
@@ -888,11 +990,13 @@ export default function Home() {
               <div className="card-heading alert-heading">
                 <div>
                   <span className="section-label">Review activity</span>
-                  <h2>{needsAttentionCount > 0 ? `${needsAttentionCount} rate ${needsAttentionCount === 1 ? "difference" : "differences"}` : upcomingFindings.length > 0 ? `${upcomingFindings.length} upcoming ${upcomingFindings.length === 1 ? "change" : "changes"}` : "No open findings"}</h2>
+                  <h2>{!dashboardCountsReady ? "Loading…" : needsAttentionCount > 0 ? `${needsAttentionCount} rate ${needsAttentionCount === 1 ? "difference" : "differences"}` : upcomingFindings.length > 0 ? `${upcomingFindings.length} upcoming ${upcomingFindings.length === 1 ? "change" : "changes"}` : "No open findings"}</h2>
                 </div>
-                <span className={`count-pill ${inboxFindings.length === 0 ? "quiet" : ""}`}>{inboxFindings.length}</span>
+                <span className={`count-pill ${inboxFindings.length === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? inboxFindings.length : "…"}</span>
               </div>
-              {inboxFindings.length === 0 ? (
+              {!dashboardCountsReady ? (
+                <div className="empty-queue compact"><span aria-hidden="true">…</span><div><strong>Loading review activity…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+.</p></div></div>
+              ) : inboxFindings.length === 0 ? (
                 <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>The approval queue is clear</strong><p>{officialSnapshot ? "Every current NC county rate in A+ matches the validated NCDOR table, and Georgia's boundary reconciliation has no unresolved difference." : "The official NCDOR comparison is not currently available."}</p></div></div>
               ) : inboxFindings.slice(0, 4).map((finding) => (
                 <button className="alert-row" type="button" key={finding.id} onClick={() => openFinding(finding)}>
@@ -921,7 +1025,6 @@ export default function Home() {
             </aside>
           </section>
 
-          <ReadOnlyWorkflow />
           <AppFooter />
         </section>
       )}
@@ -1162,7 +1265,7 @@ export default function Home() {
       )}
 
       {selectedState && (
-        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setFlatStateAplusDetail(null); setFlatStateAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
+        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setFlatStateAplusDetail(null); setFlatStateAplusStatus("idle"); setDirectMappingAplusDetail(null); setDirectMappingAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
           <div className="drawer-kicker"><span className="section-label">{connectorStatus === "live" ? "Live A+ state coverage" : "Validated A+ state snapshot"}</span><span className="status-badge">Read only</span></div>
           <h2 id="state-title">{STATE_NAME_BY_CODE.get(selectedState.stateCode) ?? selectedState.stateCode}</h2>
           <p className="drawer-lede">Active ship-to assignments and configured tax-body rates queried from A+. This is not yet a comparison with the state&apos;s official Department of Revenue rates.</p>
@@ -1178,6 +1281,7 @@ export default function Home() {
           <OfficialStateSourcePanel source={officialSourcesByCode.get(selectedState.stateCode) ?? null} status={officialStateStatus} snapshot={officialStateDetail} />
           {selectedState.stateCode === "GA" && <GeorgiaBoundaryPanel status={gaBoundaryStatus} reconciliation={gaBoundaryDetail} />}
           {FLAT_STATE_APLUS_STATES.has(selectedState.stateCode) && <FlatStateAplusPanel status={flatStateAplusStatus} reconciliation={flatStateAplusDetail} />}
+          {DIRECT_MAPPING_APLUS_STATES.has(selectedState.stateCode) && <DirectMappingAplusPanel status={directMappingAplusStatus} reconciliation={directMappingAplusDetail} />}
           {stateDetailStatus === "loading" && <div className="state-detail-message" role="status">Querying A+ tax-body assignments and configured rates…</div>}
           {stateDetailStatus === "error" && <div className="state-detail-message state-detail-error" role="alert">The state detail query is unavailable. The state-level totals above remain from the last successful A+ coverage read.</div>}
           {stateDetailStatus === "ready" && stateDetail && (() => {
@@ -1447,6 +1551,38 @@ function FlatStateAplusPanel({ status, reconciliation }: { status: StateDetailSt
   );
 }
 
+function DirectMappingAplusPanel({ status, reconciliation }: { status: StateDetailStatus; reconciliation: DirectMappingAplusReconciliation | null }) {
+  const stateName = reconciliation ? (STATE_NAME_BY_CODE.get(reconciliation.stateCode) ?? reconciliation.stateCode) : "this state";
+  if (status === "loading") return <div className="state-detail-message" role="status">Comparing each A+ tax body with its matching official jurisdiction…</div>;
+  if (status === "error" || !reconciliation) return <div className="state-detail-message state-detail-error" role="alert">The A+ comparison is unavailable or failed validation. No rate was guessed.</div>;
+  const { totals } = reconciliation;
+  const mismatches = reconciliation.findings.filter((finding) => finding.hasDifference).sort((a, b) => b.activeShipTos - a.activeShipTos);
+  const unmatched = reconciliation.findings.filter((finding) => !finding.matched);
+  return (
+    <section className="official-state-panel" aria-labelledby="direct-mapping-aplus-title">
+      <div className="state-table-heading"><div><span className="section-label">{stateName} A+ reconciliation</span><strong id="direct-mapping-aplus-title">Per tax-body rate comparison</strong></div></div>
+      <div className="official-source-summary">
+        <div><span>Compared ship-tos</span><strong>{totals.comparedShipTos.toLocaleString()}</strong></div>
+        <div><span>Rate differences</span><strong>{mismatches.length}</strong></div>
+        <div><span>Misinputs excluded</span><strong>{totals.misinputShipTos.toLocaleString()}</strong></div>
+        <div><span>Cross-state excluded</span><strong>{totals.crossStateShipTos.toLocaleString()}</strong></div>
+      </div>
+      {mismatches.length > 0 ? (
+        <div className="official-source-table-wrap"><table><thead><tr><th>Tax body</th><th>Jurisdiction</th><th>Official</th><th>A+</th><th>Ship-tos</th></tr></thead><tbody>
+          {mismatches.map((finding) => (
+            <tr key={finding.taxBody}><td>{finding.taxBody}</td><td>{finding.jurisdictionLabel}</td><td>{finding.officialRate === null ? "—" : formatRate(finding.officialRate)}</td><td>{finding.aplusRate === null ? "—" : formatRate(finding.aplusRate)}</td><td>{finding.activeShipTos.toLocaleString()}</td></tr>
+          ))}
+        </tbody></table></div>
+      ) : (
+        <p className="official-boundary-note">No rate differences found among {totals.comparedShipTos.toLocaleString()} compared ship-tos.</p>
+      )}
+      {(totals.unmatchedShipTos > 0 || unmatched.length > 0) && (
+        <p className="official-boundary-note">{unmatched.length} tax body{unmatched.length === 1 ? "" : "ies"} ({totals.unmatchedShipTos.toLocaleString()} ship-tos) had no matching official jurisdiction found and {unmatched.length === 1 ? "is" : "are"} not compared, rather than guessed.</p>
+      )}
+    </section>
+  );
+}
+
 function ImportSnapshotView({
   result,
   appliedImport,
@@ -1570,12 +1706,12 @@ function ImportSnapshotView({
   );
 }
 
-function SummaryStats({ openCount, upcomingCount, affectedShipTos, connectedSources, lastRefresh }: { openCount: number; upcomingCount: number; affectedShipTos: number; connectedSources: number; lastRefresh: string | null }) {
+function SummaryStats({ openCount, upcomingCount, affectedShipTos, connectedSources, lastRefresh }: { openCount: number | null; upcomingCount: number | null; affectedShipTos: number | null; connectedSources: number; lastRefresh: string | null }) {
   return (
     <section className="stats" aria-label="Tax rate monitoring summary">
-      <article><span>Needs attention</span><strong>{openCount}</strong><small>Confirmed official-to-A+ differences</small></article>
-      <article><span>Upcoming changes</span><strong>{upcomingCount}</strong><small>Published future effective dates</small></article>
-      <article><span>Affected ship-tos</span><strong>{affectedShipTos.toLocaleString()}</strong><small>Aggregate impact across open findings</small></article>
+      <article><span>Needs attention</span><strong>{openCount === null ? "…" : openCount}</strong><small>{openCount === null ? "Still loading every connected state" : "Confirmed official-to-A+ differences"}</small></article>
+      <article><span>Upcoming changes</span><strong>{upcomingCount === null ? "…" : upcomingCount}</strong><small>Published future effective dates</small></article>
+      <article><span>Affected ship-tos</span><strong>{affectedShipTos === null ? "…" : affectedShipTos.toLocaleString()}</strong><small>Aggregate impact across open findings</small></article>
       <article><span>Connected sources</span><strong>{connectedSources}</strong><small>Validated official-rate adapters</small></article>
       <article><span>Last validated refresh</span><strong className="stat-date">{lastRefresh ? new Date(lastRefresh).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Unavailable"}</strong><small>Live refresh requires supervision</small></article>
     </section>
@@ -1598,15 +1734,6 @@ function Drawer({ titleId, onClose, children, className = "" }: { titleId: strin
         {children}
       </section>
     </div>
-  );
-}
-
-function ReadOnlyWorkflow() {
-  return (
-    <section className="workflow" aria-label="How TaxAP works">
-      <div className="workflow-intro"><span className="section-label">Protected workflow</span><h2>A decision aid, not an automatic A+ update.</h2><p>Every difference keeps its source, effective date, and aggregate impact attached so the tax administrator can make the call.</p></div>
-      <ol><li><span>01</span><strong>Read</strong><small>Aggregate active ship-to coverage from A+</small></li><li><span>02</span><strong>Compare</strong><small>Official rates by jurisdiction and date</small></li><li><span>03</span><strong>Review</strong><small>Confirm the discrepancy and impact</small></li><li><span>04</span><strong>Record</strong><small>Keep the decision and resolution history</small></li></ol>
-    </section>
   );
 }
 

@@ -45,12 +45,16 @@ const MULTI_WORD_STATE_NAMES = Object.values(STATE_BY_FIPS).filter((state) => st
 
 // Free-text tax-body descriptions in XATXBD occasionally name a jurisdiction entirely outside the
 // United States. These are unambiguous regardless of word count.
+// Confirmed live across multiple states' investigations (NV, MD, MS, FL) - a small, recurring set
+// of generic non-US "no tax" placeholder codes, not specific to any one state's contamination.
 const KNOWN_NON_US_JURISDICTIONS = [
   "DOMINICAN REPUBLIC",
   "PUERTO RICO",
   "CANADA",
   "MEXICO",
   "UNITED KINGDOM",
+  "HONDURAS",
+  "EL SALVADOR",
 ];
 
 /**

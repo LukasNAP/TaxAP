@@ -17,7 +17,7 @@ test("registers every state and DC without claiming unfinished adapters are conn
   assert.equal(sources.find((source) => source.stateCode === "PA").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "SC").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "IL").status, "machine-readable-source");
-  assert.equal(sources.find((source) => source.stateCode === "VA").status, "machine-readable-source");
+  assert.equal(sources.find((source) => source.stateCode === "VA").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "MD").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "NJ").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "NJ").aplusMatchingStatus, "connected");
@@ -36,6 +36,12 @@ test("registers every state and DC without claiming unfinished adapters are conn
   }
   assert.equal(sources.find((source) => source.stateCode === "HI").status, "no-general-sales-tax", "HI should be excluded per Lukas's 2026-08-27 decision (GET is not a buyer-facing sales tax)");
   assert.equal(sources.find((source) => source.stateCode === "AK").status, "no-general-sales-tax", "AK should be excluded per Lukas's 2026-08-27 decision (necessarily-incomplete local-only coverage)");
+  for (const stateCode of ["FL", "PA", "OH", "VA", "NY"]) {
+    const source = sources.find((s) => s.stateCode === stateCode);
+    assert.equal(source.aplusMatchingStatus, "connected", `${stateCode} should have direct-mapping A+ matching connected`);
+    assert.equal(source.comparisonEndpoint, `/api/official/states/${stateCode}/aplus`, `${stateCode} should expose its comparison endpoint`);
+  }
+  assert.equal(sources.find((source) => source.stateCode === "TN").aplusMatchingStatus, undefined, "TN's A+ matching is not built yet");
 });
 
 test("builds Pennsylvania's 67 county totals only after validating the official rate rules", async () => {

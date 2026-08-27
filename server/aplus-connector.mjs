@@ -13,9 +13,21 @@ import { readOfficialMeRates } from "./me-rates.mjs";
 import { readOfficialCtRates } from "./ct-rates.mjs";
 import { readOfficialMaRates } from "./ma-rates.mjs";
 import { readOfficialMsRates } from "./ms-rates.mjs";
+import { flatStateFindingsFromReconciliation, directMappingFindingsFromReconciliation } from "../app/dashboard-findings.ts";
 import { readOfficialNjRates } from "./nj-rates.mjs";
 import { reconcileNewJerseyAplus } from "./nj-aplus.mjs";
 import { reconcileFlatStateAplus } from "./flat-state-aplus.mjs";
+import { readFloridaAplusComparison } from "./fl-aplus.mjs";
+import { readPennsylvaniaAplusComparison } from "./pa-aplus.mjs";
+import { readOhioAplusComparison } from "./oh-aplus.mjs";
+import { readVirginiaAplusComparison } from "./va-aplus.mjs";
+import { readOfficialVaRates } from "./va-rates.mjs";
+import { readNewYorkAplusComparison } from "./ny-aplus.mjs";
+import { readOfficialNyRates } from "./ny-rates.mjs";
+import { readArizonaAplusComparison } from "./az-aplus.mjs";
+import { readOfficialAzRates } from "./az-rates.mjs";
+import { readAlabamaAplusComparison } from "./al-aplus.mjs";
+import { readOfficialAlRates } from "./al-rates.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
@@ -372,6 +384,69 @@ export async function readFlatStateAplusComparison(stateCode) {
   };
 }
 
+// States confirmed live (2026-08-26/27) to have many A+ tax-body codes that each map directly to
+// one real jurisdiction (NC-style: no address/boundary matching needed) via server/direct-mapping-
+// aplus.mjs. AR and TX are NOT here yet despite having a real official adapter and no address-
+// matching requirement - AR needs a real city-to-county crosswalk this project doesn't have a safe
+// source for yet, and TX has a genuine same-city-name-across-counties ambiguity (Lukas's decision:
+// monitor current codes, revisit if one diverges) that a first cut of this matcher hasn't been
+// built to handle carefully. AL/MO/CO don't have an official-source adapter connected at all yet -
+// Layer 1 has to exist before Layer 2 matching is possible.
+const DIRECT_MAPPING_APLUS_READERS = {
+  FL: readFloridaAplusComparison,
+  PA: readPennsylvaniaAplusComparison,
+  OH: readOhioAplusComparison,
+  VA: readVirginiaAplusComparison,
+  NY: readNewYorkAplusComparison,
+  AZ: readArizonaAplusComparison,
+  AL: readAlabamaAplusComparison,
+};
+
+export async function readDirectMappingAplusComparison(stateCode) {
+  const reader = DIRECT_MAPPING_APLUS_READERS[stateCode];
+  if (!reader) throw new Error(`No direct-mapping A+ reconciliation is configured for ${stateCode}.`);
+  const stateDetail = await readStateDetail(stateCode);
+  return { ...(await reader(stateDetail)), stateDetail };
+}
+
+/**
+ * Reads every wired state's A+ comparison (NJ, the flat-rate states, and the direct-mapping
+ * states) in parallel and converts each into the dashboard's shared JurisdictionFinding shape, so
+ * the "Needs attention" inbox can show every confirmed mismatch on initial dashboard load instead
+ * of only after a user manually opens that specific state's drawer. NC and GA are NOT included
+ * here - they already have their own dedicated, independently-refreshed dashboard fetch paths
+ * (readOfficialNcRates / readGeorgiaBoundaryReconciliation) that page.tsx calls directly. A single
+ * state's failure (e.g. Massachusetts' bot-block, Mississippi's TLS quirk) never fails the batch -
+ * it's just omitted, the same fail-quiet-but-don't-guess behavior every other dashboard fetch uses.
+ */
+export async function readAllWiredStateFindings() {
+  const flatStateCodes = Object.keys(FLAT_STATE_APLUS_ADAPTERS);
+  const directMappingCodes = Object.keys(DIRECT_MAPPING_APLUS_READERS);
+  const [njResult, flatResults, directResults] = await Promise.all([
+    readNewJerseyAplusComparison().then((value) => ({ status: "fulfilled", value })).catch((error) => ({ status: "rejected", reason: error })),
+    Promise.allSettled(flatStateCodes.map((code) => readFlatStateAplusComparison(code))),
+    Promise.allSettled(directMappingCodes.map((code) => readDirectMappingAplusComparison(code))),
+  ]);
+
+  const findings = [];
+  const failedStates = [];
+
+  if (njResult.status === "fulfilled") findings.push(...flatStateFindingsFromReconciliation(njResult.value));
+  else failedStates.push("NJ");
+
+  flatResults.forEach((result, index) => {
+    if (result.status === "fulfilled") findings.push(...flatStateFindingsFromReconciliation(result.value));
+    else failedStates.push(flatStateCodes[index]);
+  });
+
+  directResults.forEach((result, index) => {
+    if (result.status === "fulfilled") findings.push(...directMappingFindingsFromReconciliation(result.value));
+    else failedStates.push(directMappingCodes[index]);
+  });
+
+  return { findings, failedStates, retrievedAt: new Date().toISOString() };
+}
+
 export function buildGeorgiaAddressQuery() {
   return `SELECT a.SASAD1 AS StreetLine, a.SASAD2 AS SecondaryLine, a.SASCTY AS City, a.SASZIP AS Zip,
     NULLIF(LTRIM(RTRIM(a.SASTXB)), '') AS TaxBody
@@ -616,6 +691,26 @@ export function createConnectorServer({ reviews } = {}) {
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
+        if (stateCode === "VA") {
+          const snapshot = await readOfficialVaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "NY") {
+          const snapshot = await readOfficialNyRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "AZ") {
+          const snapshot = await readOfficialAzRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "AL") {
+          const snapshot = await readOfficialAlRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
         if (stateCode === "NC") {
           const nc = await readOfficialNcRates();
           const snapshot = {
@@ -680,7 +775,7 @@ export function createConnectorServer({ reviews } = {}) {
       const stateCode = decodeURIComponent(flatStateAplusMatch[1]).toUpperCase();
       if (stateCode === "NJ") {
         // Handled by the dedicated block above (NJ's own UEZ-caveat-aware reconciler) - this
-        // generic route only serves the flat-state config, not NJ.
+        // generic route only serves the flat-state/direct-mapping configs, not NJ.
       } else if (Object.prototype.hasOwnProperty.call(FLAT_STATE_APLUS_ADAPTERS, stateCode)) {
         try {
           const reconciliation = await readFlatStateAplusComparison(stateCode);
@@ -697,6 +792,35 @@ export function createConnectorServer({ reviews } = {}) {
           console.error(JSON.stringify({ event: "flat_state_aplus_reconciliation", ok: false, stateCode, message }));
           return sendJson(response, 503, { error: `The ${stateCode} A+ rate reconciliation is unavailable or failed validation.` }, responseOrigin);
         }
+      } else if (Object.prototype.hasOwnProperty.call(DIRECT_MAPPING_APLUS_READERS, stateCode)) {
+        try {
+          const reconciliation = await readDirectMappingAplusComparison(stateCode);
+          console.info(JSON.stringify({
+            event: "direct_mapping_aplus_reconciliation", ok: true, stateCode,
+            activeShipTos: reconciliation.totals.activeShipTos,
+            comparedShipTos: reconciliation.totals.comparedShipTos,
+            mismatches: reconciliation.findings.filter((finding) => finding.hasDifference).length,
+            retrievedAt: reconciliation.retrievedAt,
+          }));
+          return sendJson(response, 200, reconciliation, responseOrigin);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : `Unknown ${stateCode} reconciliation error`;
+          console.error(JSON.stringify({ event: "direct_mapping_aplus_reconciliation", ok: false, stateCode, message }));
+          return sendJson(response, 503, { error: `The ${stateCode} A+ rate reconciliation is unavailable or failed validation.` }, responseOrigin);
+        }
+      }
+    }
+
+    if (url.pathname === "/api/official/findings" && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        const result = await readAllWiredStateFindings();
+        console.info(JSON.stringify({ event: "all_wired_state_findings", ok: true, findings: result.findings.length, failedStates: result.failedStates, retrievedAt: result.retrievedAt }));
+        return sendJson(response, 200, result, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown wired-state findings error";
+        console.error(JSON.stringify({ event: "all_wired_state_findings", ok: false, message }));
+        return sendJson(response, 503, { error: "The wired-state findings batch is unavailable." }, responseOrigin);
       }
     }
 

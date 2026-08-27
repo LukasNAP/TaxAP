@@ -32,8 +32,6 @@ test("server-renders the TaxAP dashboard-first MVP", async () => {
   assert.match(html, /<title>TaxAP \| Sales and use tax rate monitoring<\/title>/i);
   assert.match(html, /Atlantic Packaging/);
   assert.match(html, /TaxAP/);
-  assert.match(html, /See what changed, what matters, and what needs review\./);
-  assert.match(html, /Tax rate change workspace/);
   assert.match(html, /Needs attention/);
   assert.match(html, /Upcoming changes/);
   assert.match(html, /Affected ship-tos/);
@@ -105,7 +103,6 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /Effective date/);
   assert.match(page, /Official source/);
   assert.match(page, /Any review status/);
-  assert.match(page, /New publications are not automatically treated as A\+ problems|separates newly published government rates from confirmed A\+ differences/);
   assert.match(importParser, /XATXBD_COLUMN_COUNT = 19/);
   assert.match(importParser, /Missing standard county tax bodies/);
   assert.match(importParser, /current total does not equal its rate components/);

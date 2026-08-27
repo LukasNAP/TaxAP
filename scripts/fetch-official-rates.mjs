@@ -15,6 +15,10 @@ import { readOfficialNjRates } from "../server/nj-rates.mjs";
 import { readOfficialPaRates } from "../server/pa-rates.mjs";
 import { readOfficialScRates } from "../server/sc-rates.mjs";
 import { readOfficialNcRates } from "../server/ncdor-rates.mjs";
+import { readOfficialVaRates } from "../server/va-rates.mjs";
+import { readOfficialNyRates } from "../server/ny-rates.mjs";
+import { readOfficialAzRates } from "../server/az-rates.mjs";
+import { readOfficialAlRates } from "../server/al-rates.mjs";
 
 const GENERIC_SST = new Set(["OH", "TN", "AR", "WY", "IN", "KY", "MI", "RI", "NV", "NE"]);
 
@@ -34,6 +38,10 @@ else if (stateCode === "NJ") snapshot = await readOfficialNjRates();
 else if (stateCode === "PA") snapshot = await readOfficialPaRates();
 else if (stateCode === "SC") snapshot = await readOfficialScRates();
 else if (stateCode === "NC") snapshot = await readOfficialNcRates();
+else if (stateCode === "VA") snapshot = await readOfficialVaRates();
+else if (stateCode === "NY") snapshot = await readOfficialNyRates();
+else if (stateCode === "AZ") snapshot = await readOfficialAzRates();
+else if (stateCode === "AL") snapshot = await readOfficialAlRates();
 else if (GENERIC_SST.has(stateCode)) snapshot = await readOfficialSstStateRates(stateCode);
 else {
   console.error(`No official-source adapter is wired for ${stateCode} yet - see docs/roadmap-50-states.md.`);

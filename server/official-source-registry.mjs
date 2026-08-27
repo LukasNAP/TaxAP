@@ -7,6 +7,10 @@ import { CT_RATES_URL } from "./ct-rates.mjs";
 import { MA_RATES_URL } from "./ma-rates.mjs";
 import { MS_RATES_URL } from "./ms-rates.mjs";
 import { NJ_USE_TAX_FAQ_URL } from "./nj-rates.mjs";
+import { VIRGINIA_RATES_URL } from "./va-rates.mjs";
+import { NY_PUB718_URL } from "./ny-rates.mjs";
+import { AZ_RATE_TABLE_PAGE_URL } from "./az-rates.mjs";
+import { AL_RATES_PAGE_URL } from "./al-rates.mjs";
 import { PENNSYLVANIA_DOR_RATES_URL } from "./pa-rates.mjs";
 import { TEXAS_DOR_RATES_URL } from "./tx-rates.mjs";
 
@@ -78,7 +82,9 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "FL") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-xlsx",
-        coverage: "all 67 county discretionary surtax totals", sourceName: "Florida Department of Revenue",
+        coverage: "all 67 county discretionary surtax totals, matched to A+ by real county name (not the FL### code number, which is not a reliable alphabetical index - confirmed live 2026-08-27)",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/FL/aplus",
+        sourceName: "Florida Department of Revenue",
         sourceUrl: FLORIDA_DOR_RATES_URL,
       };
     }
@@ -92,7 +98,8 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "PA") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-rules-census",
-        coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons",
+        coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons. A+ has only 2 real codes (PA000 catch-all, PA001 Philadelphia); Philadelphia's confirmed stale rate already has a scheduled A+ correction (2026-10-01). No A+ code exists for Allegheny at all - a confirmed real gap (64+ ship-tos), not something matching can resolve",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/PA/aplus",
         sourceName: "Pennsylvania Department of Revenue", sourceUrl: PENNSYLVANIA_DOR_RATES_URL,
       };
     }
@@ -105,9 +112,34 @@ export function listOfficialSourceRegistry() {
     }
     if (stateCode === "VA") {
       return {
-        stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-xlsx-pending",
-        coverage: "official locality lookup and downloadable workbook; adapter validation pending",
-        sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup",
+        stateCode, stateName, status: "connected", adapter: "state-dor-xlsx",
+        coverage: "all 133 real counties and independent cities, matched to A+ by real locality name with Virginia's own County/City suffix disambiguating its 4 name-duplicate pairs (Fairfax, Franklin, Richmond, Roanoke). One confirmed live miscoding (Richmond) and one confirmed stale rate (Pittsylvania) flagged, pending A+ correction",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/VA/aplus",
+        sourceName: "Virginia Department of Taxation", sourceUrl: VIRGINIA_RATES_URL,
+      };
+    }
+    if (stateCode === "NY") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-pdf",
+        coverage: "Publication 718's full jurisdiction rate list (~77 counties/cities incl. one combined New York City rate), matched to A+ by real locality name (not the state's own reporting code number, which does not reliably match A+'s). Two confirmed live stale rates (Suffolk County, Yonkers City) flagged, pending A+ correction",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/NY/aplus",
+        sourceName: "New York State Department of Taxation and Finance", sourceUrl: NY_PUB718_URL,
+      };
+    }
+    if (stateCode === "AZ") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-csv",
+        coverage: "business code 017 (Retail, confirmed default) county and city rates. County rows already include the 5.6% state rate; city rows are summed with their real county (a small verified crosswalk, not AZDOR's own file - Arizona's own county boundaries are stable public geography). 4 confirmed live stale/incomplete rates flagged (Casa Grande, Douglas, Taylor, and the City of Maricopa - a real name-duplicate with Pinal County, not Maricopa County itself), pending A+ correction. Green Valley (AZ3518) is a Census-designated place, not incorporated, and has no official row to match against - still open",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/AZ/aplus",
+        sourceName: "Arizona Department of Revenue", sourceUrl: AZ_RATE_TABLE_PAGE_URL,
+      };
+    }
+    if (stateCode === "AL") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-csv",
+        coverage: "general sales rate only (per Lukas's confirmed decision - equipment and police-jurisdiction rates out of scope), matched to A+ by ADOR's own numeric locality code, which A+ uses directly. A small number of A+ codes for cities spanning more than one county (confirmed: Birmingham, and others found live) reuse a different locality's own code number or have no reliable single-county total - reported as unmatched rather than guessed when the CSV's own locality name doesn't corroborate A+'s description",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/AL/aplus",
+        sourceName: "Alabama Department of Revenue", sourceUrl: AL_RATES_PAGE_URL,
       };
     }
     if (stateCode === "MD") {
@@ -166,7 +198,15 @@ export function listOfficialSourceRegistry() {
         sourceName: "New Jersey Division of Taxation", sourceUrl: NJ_USE_TAX_FAQ_URL,
       };
     }
-    if (stateCode === "OH" || stateCode === "TN") {
+    if (stateCode === "OH") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "state, county, and special-jurisdiction rate components, matched to A+ by real county name. Real ~16-county transit-authority surcharge crosswalk confirmed and folded into the comparison (special jurisdictionCode <A+'s county number>000) - not a naive county-row-only diff, which would have false-flagged Cuyahoga/Franklin/Hamilton/etc.",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/OH/aplus",
+        sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: SST_RATE_DIRECTORY_URL,
+      };
+    }
+    if (stateCode === "TN") {
       return {
         stateCode, stateName, status: "connected", adapter: "sst-rate-file",
         coverage: "state, county, city, and special-jurisdiction rate components",
