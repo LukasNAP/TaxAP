@@ -1,0 +1,17 @@
+.git
+.data
+.env
+.env.*
+!.env.example
+node_modules
+dist
+.vinext
+.wrangler
+coverage
+npm-debug.log*
+README.md
+HANDOFF.md
+docs
+tests
+work
+tmp

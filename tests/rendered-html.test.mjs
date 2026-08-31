@@ -97,6 +97,7 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /Upcoming change/);
   assert.match(page, /Open official NCDOR evidence/);
   assert.match(page, /api\/aplus\/states\/\$\{encodeURIComponent\(stateCode\)\}/);
+  assert.match(page, /window\.location\.origin/);
   assert.match(page, /api\/aplus\/tax-treatment/);
   assert.match(page, /A\+ tax treatment context/);
   assert.match(page, /Always taxable/);

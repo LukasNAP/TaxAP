@@ -259,7 +259,10 @@ const visibleSpecialTaxBodies = specialTaxBodies.filter((taxBody) => !isRetiredT
 function apiBaseUrl() {
   if (OFFLINE_MODE) return "";
   const configuredBase = process.env.NEXT_PUBLIC_TAXAP_API_BASE_URL?.replace(/\/$/, "");
-  return configuredBase || (window.location.hostname === "localhost" ? "http://127.0.0.1:3001" : "");
+  // Production deployments proxy the connector's /api routes through the same authenticated
+  // origin as the web app.  This keeps port 3001 private inside the container network and avoids
+  // putting a connector URL (or a second public surface) in browser configuration.
+  return configuredBase || (window.location.hostname === "localhost" ? "http://127.0.0.1:3001" : window.location.origin);
 }
 
 const comparisonLabels: Record<ComparisonStatus, string> = {
