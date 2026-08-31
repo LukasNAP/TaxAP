@@ -28,6 +28,11 @@ test("parseNyRateText extracts a flat name/rate/code list from the 3-column layo
   assert.equal(byName.get("New York City").rate, 8.875);
 });
 
+test("parseNyRateText does not merge a preceding physical line into the first table row", () => {
+  const parsed = parseNyRateText(`Publication explanation ends here\n${FIXTURE_TEXT}`);
+  assert.equal(parsed.rows.find((row) => row.name === "New York State only")?.rate, 4);
+});
+
 test("parseNyRateText rejects text with no recognizable heading", () => {
   assert.throws(() => parseNyRateText("Sales tax information"), /Rates by Jurisdiction/);
 });

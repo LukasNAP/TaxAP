@@ -28,6 +28,10 @@ import { readArizonaAplusComparison } from "./az-aplus.mjs";
 import { readOfficialAzRates } from "./az-rates.mjs";
 import { readAlabamaAplusComparison } from "./al-aplus.mjs";
 import { readOfficialAlRates } from "./al-rates.mjs";
+import { readTexasAplusComparison } from "./tx-aplus.mjs";
+import { readCaliforniaAplusComparison } from "./ca-aplus.mjs";
+import { readColoradoAplusComparison } from "./co-aplus.mjs";
+import { readOfficialCoRates } from "./co-rates.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
@@ -171,6 +175,39 @@ export function buildStateTaxBodyQuery() {
   ORDER BY ActiveShipTos DESC, TaxBody`;
 }
 
+// Tax treatment is summarized before it leaves the connector. The browser receives only
+// aggregate treatment-code counts, never customer, ship-to, address, order, or invoice rows.
+export function buildTaxTreatmentSummaryQuery() {
+  const treatmentCode = `CASE
+      WHEN LTRIM(RTRIM(a.SATXCD)) = '0' THEN '0'
+      WHEN LTRIM(RTRIM(a.SATXCD)) = '3' THEN '3'
+      WHEN UPPER(LTRIM(RTRIM(a.SATXCD))) = 'J' THEN 'J'
+      ELSE 'other'
+    END`;
+  const activeShipTos = `FROM dbo.ADDR AS a
+    LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
+    WHERE ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
+      AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'`;
+  return `SELECT 'all' AS Scope, NULL AS TaxBody, ${treatmentCode} AS TreatmentCode,
+      COUNT(*) AS ActiveShipTos,
+      COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
+    ${activeShipTos}
+    GROUP BY ${treatmentCode}
+    UNION ALL
+    SELECT 'ZTEMP' AS Scope, NULL AS TaxBody, ${treatmentCode} AS TreatmentCode,
+      COUNT(*) AS ActiveShipTos,
+      COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
+    ${activeShipTos}
+      AND LTRIM(RTRIM(a.SASTXB)) = 'ZTEMP'
+    GROUP BY ${treatmentCode}
+    UNION ALL
+    SELECT 'tax-body' AS Scope, NULLIF(LTRIM(RTRIM(a.SASTXB)), '') AS TaxBody, ${treatmentCode} AS TreatmentCode,
+      COUNT(*) AS ActiveShipTos,
+      COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
+    ${activeShipTos}
+    GROUP BY NULLIF(LTRIM(RTRIM(a.SASTXB)), ''), ${treatmentCode}`;
+}
+
 function csvValue(value) {
   const normalized = value instanceof Date
     ? value.toISOString().slice(0, 10)
@@ -294,6 +331,52 @@ export async function readStateSummaries() {
   }
 }
 
+export async function readTaxTreatmentSummary() {
+  const pool = await openPool();
+  try {
+    const [summaryResult, definitionResult] = await Promise.all([
+      pool.request().query(buildTaxTreatmentSummaryQuery()),
+      pool.request().query(buildTaxBodyDefinitionsQuery(["ZTEMP"], linkedSettings())),
+    ]);
+    const groups = new Map([["all", []], ["ZTEMP", []]]);
+    const treatmentsByTaxBody = new Map();
+    for (const row of summaryResult.recordset) {
+      const scope = String(rowValue(row, "Scope") || "").trim();
+      const rawTreatment = String(rowValue(row, "TreatmentCode") || "other").trim().toUpperCase();
+      const treatment = {
+        treatmentCode: rawTreatment === "0" || rawTreatment === "3" || rawTreatment === "J" ? rawTreatment : "other",
+        activeShipTos: numericValue(rowValue(row, "ActiveShipTos")),
+        activeCustomers: numericValue(rowValue(row, "ActiveCustomers")),
+      };
+      if (scope === "tax-body") {
+        const taxBody = rowValue(row, "TaxBody") ? String(rowValue(row, "TaxBody")).trim() : null;
+        const bucket = treatmentsByTaxBody.get(taxBody) ?? [];
+        bucket.push(treatment);
+        treatmentsByTaxBody.set(taxBody, bucket);
+        continue;
+      }
+      const bucket = groups.get(scope);
+      if (bucket) bucket.push(treatment);
+    }
+    const definition = definitionResult.recordset[0];
+    const temporaryTreatments = groups.get("ZTEMP") ?? [];
+    return {
+      retrievedAt: new Date().toISOString(),
+      treatments: groups.get("all") ?? [],
+      taxBodies: [...treatmentsByTaxBody.entries()].map(([taxBody, treatments]) => ({ taxBody, treatments })),
+      temporaryTaxBody: {
+        taxBody: "ZTEMP",
+        definitionStatus: definition ? "configured" : "missing",
+        configuredRate: definition ? numericValue(rowValue(definition, "CurrentTotalRate")) : null,
+        activeShipTos: temporaryTreatments.reduce((sum, bucket) => sum + bucket.activeShipTos, 0),
+        treatments: temporaryTreatments,
+      },
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
 export async function readStateDetail(value) {
   const stateCode = validateStateCode(value);
   const pool = await openPool();
@@ -386,12 +469,12 @@ export async function readFlatStateAplusComparison(stateCode) {
 
 // States confirmed live (2026-08-26/27) to have many A+ tax-body codes that each map directly to
 // one real jurisdiction (NC-style: no address/boundary matching needed) via server/direct-mapping-
-// aplus.mjs. AR and TX are NOT here yet despite having a real official adapter and no address-
-// matching requirement - AR needs a real city-to-county crosswalk this project doesn't have a safe
-// source for yet, and TX has a genuine same-city-name-across-counties ambiguity (Lukas's decision:
-// monitor current codes, revisit if one diverges) that a first cut of this matcher hasn't been
-// built to handle carefully. AL/MO/CO don't have an official-source adapter connected at all yet -
-// Layer 1 has to exist before Layer 2 matching is possible.
+// aplus.mjs. Texas is an intentionally constrained variant: bare-city codes with divergent official
+// county slices remain unmatched, while uniform-rate slices and explicit county hints are safe to
+// compare. AR still needs a real city-to-county crosswalk before a city total can be calculated.
+// California is also deliberately constrained: its A+ description must itself identify exactly one
+// CDTFA city or county row. Same-named cities across counties remain unmatched rather than guessed.
+// Missouri still needs its own official-source adapter and mapping investigation.
 const DIRECT_MAPPING_APLUS_READERS = {
   FL: readFloridaAplusComparison,
   PA: readPennsylvaniaAplusComparison,
@@ -400,6 +483,9 @@ const DIRECT_MAPPING_APLUS_READERS = {
   NY: readNewYorkAplusComparison,
   AZ: readArizonaAplusComparison,
   AL: readAlabamaAplusComparison,
+  TX: readTexasAplusComparison,
+  CA: readCaliforniaAplusComparison,
+  CO: readColoradoAplusComparison,
 };
 
 export async function readDirectMappingAplusComparison(stateCode) {
@@ -603,6 +689,19 @@ export function createConnectorServer({ reviews } = {}) {
       }
     }
 
+    if (url.pathname === "/api/aplus/tax-treatment" && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        const snapshot = await readTaxTreatmentSummary();
+        console.info(JSON.stringify({ event: "aplus_tax_treatment_refresh", ok: true, treatments: snapshot.treatments.length, temporaryShipTos: snapshot.temporaryTaxBody.activeShipTos, retrievedAt: snapshot.retrievedAt }));
+        return sendJson(response, 200, snapshot, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown connector error";
+        console.error(JSON.stringify({ event: "aplus_tax_treatment_refresh", ok: false, message }));
+        return sendJson(response, 503, { error: "The read-only A+ tax-treatment summary is unavailable." }, responseOrigin);
+      }
+    }
+
     if (url.pathname === "/api/official/nc-rates" && (request.method === "GET" || request.method === "POST")) {
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
@@ -633,6 +732,11 @@ export function createConnectorServer({ reviews } = {}) {
         }
         if (stateCode === "CA") {
           const snapshot = await readOfficialCaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "CO") {
+          const snapshot = await readOfficialCoRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }

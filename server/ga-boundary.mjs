@@ -380,10 +380,17 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
   }
 
   const allTaxBodyFindings = [...perTaxBody.values()].map((bucket) => {
-    const jurisdictions = [...bucket.jurisdictionCounts.values()].sort((a, b) => b.count - a.count);
+    const jurisdictions = [...bucket.jurisdictionCounts.values()]
+      .sort((a, b) => b.count - a.count || jurisdictionKey(a.jurisdiction).localeCompare(jurisdictionKey(b.jurisdiction)));
     const majority = jurisdictions[0] ?? null;
     const consistent = jurisdictions.length <= 1;
-    const officialRate = majority ? officialRateForJurisdiction(majority.jurisdiction, rateSnapshot) : null;
+    // A tax body can be assigned to ship-tos in more than one GA jurisdiction.  A previous
+    // implementation selected the first equally-sized bucket, so the response depended on the
+    // unspecified A+ row order (observed with cross-state NC060).  Do not turn that tie, or any
+    // mixed jurisdiction assignment, into a synthetic official rate: it is an explicit
+    // configuration-review condition, not a rate comparison that TaxAP can safely make.
+    const resolvedJurisdiction = consistent ? majority?.jurisdiction ?? null : null;
+    const officialRate = resolvedJurisdiction ? officialRateForJurisdiction(resolvedJurisdiction, rateSnapshot) : null;
     const aplusRate = taxBodyRates.has(bucket.taxBody) ? taxBodyRates.get(bucket.taxBody) : null;
     const rateDifference = officialRate !== null && aplusRate !== null ? Number((officialRate - aplusRate).toFixed(4)) : null;
     return {
@@ -394,7 +401,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
       unmatchedShipTos: bucket.unmatched,
       ambiguousShipTos: bucket.ambiguous,
       jurisdictionAssignmentConsistent: consistent,
-      jurisdiction: majority ? majority.jurisdiction : null,
+      jurisdiction: resolvedJurisdiction,
       officialRate,
       aplusRate,
       rateDifference,

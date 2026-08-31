@@ -9,13 +9,13 @@ const PLAUSIBLE_RATE_MIN = 3;
 const PLAUSIBLE_RATE_MAX = 10;
 
 // Confirmed live 2026-08-26/27 (see docs/states/ny.md): Publication 718 is a 3-column newsletter-
-// style table. `pdftotext -table` interleaves all 3 columns' text on one physical line per visual
+// style table. The in-process PDF extraction interleaves all 3 columns' text on one physical line per visual
 // row, and a pure cross-reference row ("*Kings (Brooklyn) - see New York City") has no rate/code of
 // its own, so it silently merges into the next column's real entry when scanned as one text stream.
 // Rather than model the 3-column geometry, this adapter finds every (name, rate, code) triple
 // directly wherever it occurs and discards everything before the last "New York City" phrase in a
 // contaminated name - the real locality name is always the text immediately before its own rate.
-const ENTRY_PATTERN = /([A-Za-z*][A-Za-z .,'’()–-]*?)\s+(\d+)?([⅛¼⅜½⅝¾⅞])?\s+(\d{4})(?!\d)/g;
+const ENTRY_PATTERN = /([A-Za-z*][A-Za-z .,'’()–-]*?)[ \t]+(\d+)?([⅛¼⅜½⅝¾⅞])?[ \t]+(\d{4})(?!\d)/g;
 
 function parseRateValue(whole, frac) {
   const base = whole ? Number(whole) : 0;

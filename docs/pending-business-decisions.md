@@ -148,14 +148,14 @@ The order is based on the apparent number of current ship-tos at risk or blocked
 1. **What was found:** Denver is 8.81% in A+ (`CO004`) versus 9.15% in Colorado's current official file—a 0.34-point difference caused by the city portion. Denver is Atlantic's largest Colorado market.
 2. **Question to answer:** ~~Is there a documented self-collected/home-rule treatment or timing difference that explains 8.81%?~~ **Answered by standing default: no known exception — flag for A+ correction, pending Ana/Liv sign-off.**
 3. **Why it matters:** This is Atlantic's largest Colorado market and could affect current invoices.
-4. **What the answer unlocks:** TaxAP can report Denver as a confirmed correction item. Decision 2 below (full address-level precision for other multi-rate CO cities) is still open.
+4. **What the answer unlocks:** TaxAP now reports Denver as a confirmed correction item through its built Colorado comparison. The same safe matcher also found eight additional unambiguous-code differences (Boulder, Fort Collins, Commerce City, Grand Junction, Loveland, Englewood, Castle Rock, and Aspen); multi-rate city rows remain unmatched rather than guessed.
 
 ### Decision 2: Should TaxAP verify Colorado addresses down to county and special district? — **RESOLVED 2026-08-27: monitor assigned code only, confirmed by Lukas**
 
 1. **What was found:** One Colorado city can have several correct rates depending on county, transit district, cultural district, or other local boundary. Aurora alone has five official variants, while A+ has one Aurora code. Colorado Springs, Monument, Parker, Timnath, and Broomfield also have multiple variants. One code labeled Canon City (`CO140206`) is priced like unincorporated Fremont County, so the label may describe a mailing city rather than the legal tax jurisdiction.
 2. **Question to answer:** ~~Does Atlantic expect TaxAP to verify the full address-level district rate, or only monitor the rate on the A+ code already assigned?~~ **Answered: monitor the assigned code only — no full address/district-level Colorado matcher.** Canon City's specific labeling question is still open, but low priority given the narrower scope now confirmed.
 3. **Why it matters:** A+ has only 57 sparse Colorado codes; a full boundary matcher would have been a large build for a state with limited coverage today.
-4. **What the answer unlocks:** TaxAP compares each Colorado code against its closest official rate and flags ambiguous multi-rate cities (Aurora, Colorado Springs, etc.) rather than building real district-level matching.
+4. **What the answer unlocks:** TaxAP compares only exact state-code matches or one unambiguous official city. Multi-rate cities such as Aurora and Colorado Springs are explicitly left unmatched rather than selecting a closest rate, while no full district-level matcher is built.
 
 ## Arizona — resolve three rate differences and confirm the sales category
 
@@ -189,10 +189,17 @@ The order is based on the apparent number of current ship-tos at risk or blocked
 
 ## Missouri — decide the intended monitoring scope before mapping sparse codes — **RESOLVED 2026-08-27: current footprint only, confirmed by Lukas**
 
-1. **What was found:** A+ has 92 usable Missouri jurisdiction codes with inconsistent internal numbering, while Missouri's official system has thousands of overlapping city, county, and special-district combinations. The A+ list appears to be a sparse, customer-driven subset rather than statewide coverage. One additional code (`MO9999`) is a credit/adjustment code, not a place.
+1. **What was found:** A+ has a sparse, customer-driven Missouri subset rather than statewide coverage. The 2026-08-28 live check showed that several code formats do carry real Missouri DOR city or county segments, but they are mixed and do not include the final special-district segment. One additional code (`MO9999`) is a credit/adjustment code, not a place.
 2. **Question to answer:** ~~Should TaxAP monitor only the Missouri codes currently assigned to Atlantic ship-tos, or is the business expectation complete district-level coverage for every Missouri destination?~~ **Answered: current footprint only.** `MO9999` (credits-only) is still unconfirmed as a sub-item, but low-stakes.
 3. **Why it matters:** The exact active Missouri ship-to distribution has not yet been measured. A name-only or number-only join could confuse places with the same name or miss address-specific special districts, while a statewide build would be much larger than the current A+ setup.
-4. **What the answer unlocks:** **Confirmed — engineering can proceed with a careful, code-by-code official-rate reconciliation against Missouri's existing 92 A+ codes only, no statewide address-matching build needed.** `MO9999` should still be visibly categorized (excluded as a credit code) rather than silently dropped or compared as a place.
+4. **What the answer unlocks:** **Confirmed — engineering can proceed against Missouri's current A+ footprint only, not statewide coverage.** `MO9999` should still be visibly categorized (excluded as a credit code) rather than silently dropped or compared as a place.
+
+### Missouri follow-up — decide the comparison target for each A+ tax body
+
+1. **What was found:** Missouri DOR publishes separate sales and use rates, plus address-specific CID/TDD special-district rates. A+ bodies do not consistently align to just one DOR column: St. Louis County (`MO0029`, 16 ship-tos) and Neosho (`MO51572145`) equal their official **use** rates, while several others equal official **sales** rates. The A+ code also does not include Missouri DOR's special-district segment.
+2. **Question to answer:** For Missouri, should TaxAP compare each assigned A+ body to the official sales rate, official use rate, or a rule supplied by A+ tax setup? And should a city/county body without a CID/TDD identifier be treated as the non-special base rate or shown as address-dependent/unmatched?
+3. **Why it matters:** Without that rule, TaxAP could falsely flag a correctly configured use-tax body as undercharged, or call a real parcel-specific district rate an error. At least 16 active ship-tos are already affected by the St. Louis County example.
+4. **What the answer unlocks:** A conservative Missouri matcher can be built for the current A+ footprint, with all codes that cannot be assigned one official row kept visible as unmatched rather than guessed.
 
 ## North Carolina — no unresolved Ana/Liv decision documented
 
@@ -221,7 +228,7 @@ The batch below comes from a second Layer 2 investigation pass that checked ever
 1. **What was found:** `CA000` (no XATXBD definition at all, not a labeled DO-NOT-USE row) covers 233 of 1,574 active California ship-tos (14.8%), the largest raw-count placeholder bucket found in this project. Separately, roughly 21 Los Angeles-area tax-body codes (~305 ship-tos, ~19% of CA's book) all share one templated local-rate add-on that overcharges the unincorporated-county code by 0.5 point while undercharging nearly every LA city code by 0.25–1.0 point — one shared root cause, not 21 unrelated stale rates. Smaller but similarly systemic stale clusters exist in Sonoma and Santa Clara counties.
 2. **Question to answer:** ~~What governs the 233 `CA000` ship-tos today? Is there a known reason Atlantic applies one flat local add-on across LA-area codes?~~ **Answered: `CA000` is a misinput (standing default). The LA/Sonoma/Santa Clara stale-rate clusters weren't in the original 10-state batch asked about directly, but match the identical "confirmed live stale rate, no known exception" pattern — flagged for correction under the same standing default, subject to Ana/Liv confirming no CA-specific exception exists before the actual A+ fix.**
 3. **Why it matters:** Combined, these findings touch roughly 538 of California's 1,574 active ship-tos (~34%) — by far the largest-scale rate-accuracy question found in any state so far.
-4. **What the answer unlocks:** `CA000` should surface as a visible "misinput — needs correction in A+" exclusion. The LA-area rates can be fixed as one coordinated update (one shared root cause) rather than 21 separate tickets, along with the Sonoma/Santa Clara clusters. California will still need real address-level matching (city name alone doesn't distinguish incorporated-city from unincorporated-county land) before a full comparison can ship — that's a technical follow-on, not a business decision.
+4. **What the answer unlocks:** `CA000` now surfaces as a visible "misinput — needs correction in A+" exclusion. TaxAP's built California tax-body configuration comparison can flag the LA, Sonoma, and Santa Clara rate gaps for review, while a future real address-level matcher remains necessary before TaxAP can validate individual ship-to assignments between an incorporated city and an adjoining unincorporated county.
 
 ### Tennessee — explain `TN000` and correct seven confirmed stale rates — **RESOLVED 2026-08-27: both standing defaults applied**
 

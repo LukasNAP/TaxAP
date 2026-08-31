@@ -97,6 +97,18 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /Upcoming change/);
   assert.match(page, /Open official NCDOR evidence/);
   assert.match(page, /api\/aplus\/states\/\$\{encodeURIComponent\(stateCode\)\}/);
+  assert.match(page, /api\/aplus\/tax-treatment/);
+  assert.match(page, /A\+ tax treatment context/);
+  assert.match(page, /Always taxable/);
+  assert.match(page, /Never taxed/);
+  assert.match(page, /J · Mixed/);
+  assert.match(page, /rateRiskFindings/);
+  assert.match(page, /Rate-risk ship-tos/);
+  assert.match(page, /Treatment-scoped findings/);
+  assert.match(page, /Temporary tax-body configuration needs confirmation/);
+  assert.match(page, /no header-level rate conclusion/);
+  assert.match(page, /rateRiskFindings\.map\(\(finding\)/);
+  assert.match(page, /dashboardCountsReady && needsAttentionCount > 0/);
   assert.match(page, /customer names and ship-to addresses are not returned to the browser/);
   assert.match(page, /LIVE_REFRESH_INTERVAL_MS = 6 \* 60 \* 60 \* 1000/);
   assert.match(page, /matchesJurisdictionFilters/);

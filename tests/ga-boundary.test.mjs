@@ -340,3 +340,31 @@ test("separates cross-state tax bodies from Georgia findings without dropping th
   assert.equal(reconciliation.crossStateAssignments.taxBodies[0].officialRate, null);
   assert.equal(reconciliation.totals.activeShipTos, 3);
 });
+
+test("does not select an arbitrary Georgia jurisdiction for a cross-state tax body assigned in more than one place", () => {
+  const boundaryDataset = parseBoundaryCsv([
+    boundaryRow({ type: "Z", zipLow: "30001", zipHigh: "30001", fipsCounty: "067" }),
+    boundaryRow({ type: "Z", zipLow: "30002", zipHigh: "30002", fipsCounty: "135" }),
+  ].join("\n"));
+  const input = [
+    { streetLine: "1 MAIN ST", city: "ALPHA", zip: "30001", taxBody: "NC060" },
+    { streetLine: "2 MAIN ST", city: "BETA", zip: "30002", taxBody: "NC060" },
+  ];
+  const options = {
+    boundaryDataset,
+    rateSnapshot: { stateRate: 4, rates: [] },
+    taxBodyRates: new Map([["NC060", 8.25]]),
+    taxBodyDescriptions: new Map([["NC060", "North Carolina Mecklenburg"]]),
+    asOfDate: "20260826",
+  };
+
+  const forward = reconcileGeorgiaBoundary({ ...options, addresses: input });
+  const reverse = reconcileGeorgiaBoundary({ ...options, addresses: [...input].reverse() });
+  const forwardFinding = forward.crossStateAssignments.taxBodies[0];
+  const reverseFinding = reverse.crossStateAssignments.taxBodies[0];
+
+  assert.equal(forwardFinding.jurisdictionAssignmentConsistent, false);
+  assert.equal(forwardFinding.jurisdiction, null);
+  assert.equal(forwardFinding.officialRate, null);
+  assert.deepEqual(reverseFinding, forwardFinding);
+});

@@ -31,6 +31,29 @@ type LiveAPlusSnapshot = {
 };
 type StateSummary = { stateCode: string; activeShipTos: number; activeCustomers: number; taxBodyCount: number };
 type StateCoverageSnapshot = { retrievedAt: string; states: StateSummary[]; excludedShipTos: number };
+type TaxTreatmentCode = "0" | "3" | "J" | "other";
+type TaxTreatmentBucket = { treatmentCode: TaxTreatmentCode; activeShipTos: number; activeCustomers: number };
+type TaxBodyTreatment = { taxBody: string | null; treatments: TaxTreatmentBucket[] };
+type TaxTreatmentSnapshot = {
+  retrievedAt: string;
+  treatments: TaxTreatmentBucket[];
+  taxBodies: TaxBodyTreatment[];
+  temporaryTaxBody: {
+    taxBody: "ZTEMP";
+    definitionStatus: "configured" | "missing";
+    configuredRate: number | null;
+    activeShipTos: number;
+    treatments: TaxTreatmentBucket[];
+  };
+};
+type TaxTreatmentStatus = "idle" | "loading" | "ready" | "error";
+type TreatmentAwareFinding = JurisdictionFinding & {
+  totalAssignedShipTos: number;
+  rateRiskShipTos: number | null;
+  neverTaxedShipTos: number | null;
+  lineLevelReviewShipTos: number | null;
+  otherTreatmentShipTos: number | null;
+};
 type StateTaxBody = {
   taxBody: string | null;
   description: string | null;
@@ -372,6 +395,8 @@ export default function Home() {
   const [liveSnapshot, setLiveSnapshot] = useState<LiveAPlusSnapshot | null>(null);
   const [officialSnapshot, setOfficialSnapshot] = useState<OfficialNcSnapshot | null>(validatedOfficialNcFallback);
   const [stateCoverage, setStateCoverage] = useState<StateCoverageSnapshot | null>({ retrievedAt: validatedOfficialNcFallback.retrievedAt, states: validatedStateCoverageFallback, excludedShipTos: 0 });
+  const [taxTreatmentSnapshot, setTaxTreatmentSnapshot] = useState<TaxTreatmentSnapshot | null>(null);
+  const [taxTreatmentStatus, setTaxTreatmentStatus] = useState<TaxTreatmentStatus>("idle");
   const [selectedState, setSelectedState] = useState<StateSummary | null>(null);
   const [stateDetail, setStateDetail] = useState<StateDetail | null>(null);
   const [stateDetailStatus, setStateDetailStatus] = useState<StateDetailStatus>("idle");
@@ -487,12 +512,14 @@ export default function Home() {
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 65_000);
+    setTaxTreatmentStatus("loading");
     try {
       const requestOptions = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
-      const [ratesResponse, statesResponse, officialResponse] = await Promise.all([
+      const [ratesResponse, statesResponse, officialResponse, treatmentResponse] = await Promise.all([
         fetch(`${apiBase}/api/aplus/tax-bodies`, requestOptions),
         fetch(`${apiBase}/api/aplus/states`, requestOptions),
         fetch(`${apiBase}/api/official/nc-rates`, requestOptions).catch(() => null),
+        fetch(`${apiBase}/api/aplus/tax-treatment`, requestOptions).catch(() => null),
       ]);
       if (!ratesResponse.ok || !statesResponse.ok) throw new Error("A+ connector returned an unavailable response.");
       const [nextSnapshot, nextStateCoverage] = await Promise.all([
@@ -503,6 +530,12 @@ export default function Home() {
       const liveCoverage = mergeRateRows(initializeComparisons(countyCoverage), nextSnapshot.standardRows);
       let officialComparison: OfficialNcSnapshot | null = null;
       if (officialResponse?.ok) officialComparison = await officialResponse.json() as OfficialNcSnapshot;
+      if (treatmentResponse?.ok) {
+        setTaxTreatmentSnapshot(await treatmentResponse.json() as TaxTreatmentSnapshot);
+        setTaxTreatmentStatus("ready");
+      } else {
+        setTaxTreatmentStatus("error");
+      }
       setActiveCountyCoverage(officialComparison ? mergeOfficialRates(liveCoverage, officialComparison) : liveCoverage);
       setLiveSnapshot(nextSnapshot);
       setOfficialSnapshot(officialComparison);
@@ -516,6 +549,7 @@ export default function Home() {
     } catch {
       setConnectorStatus("fallback");
       setConnectorMessage("Live A+ data is unavailable; the last validated built-in snapshot remains visible.");
+      setTaxTreatmentStatus("error");
     } finally {
       window.clearTimeout(timeout);
     }
@@ -658,12 +692,37 @@ export default function Home() {
     () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings),
     [dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
-  const needsAttentionCount = openFindings.length + gaFindings.length + dashboardOtherFindings.length;
+  const treatmentByTaxBody = useMemo(() => new Map((taxTreatmentSnapshot?.taxBodies ?? [])
+    .filter((row): row is TaxBodyTreatment & { taxBody: string } => Boolean(row.taxBody))
+    .map((row) => [row.taxBody, new Map(row.treatments.map((treatment) => [treatment.treatmentCode, treatment.activeShipTos]))])), [taxTreatmentSnapshot]);
+  const treatmentAwareInboxFindings = useMemo<TreatmentAwareFinding[]>(() => inboxFindings.map((finding) => {
+    const treatments = treatmentByTaxBody.get(finding.taxBody);
+    if (!treatments) return { ...finding, totalAssignedShipTos: finding.activeShipTos, rateRiskShipTos: null, neverTaxedShipTos: null, lineLevelReviewShipTos: null, otherTreatmentShipTos: null };
+    const rateRiskShipTos = treatments.get("0") ?? 0;
+    const neverTaxedShipTos = treatments.get("3") ?? 0;
+    const lineLevelReviewShipTos = treatments.get("J") ?? 0;
+    const otherTreatmentShipTos = treatments.get("other") ?? 0;
+    return {
+      ...finding,
+      totalAssignedShipTos: rateRiskShipTos + neverTaxedShipTos + lineLevelReviewShipTos + otherTreatmentShipTos,
+      rateRiskShipTos,
+      neverTaxedShipTos,
+      lineLevelReviewShipTos,
+      otherTreatmentShipTos,
+      activeShipTos: rateRiskShipTos,
+    };
+  }), [inboxFindings, treatmentByTaxBody]);
+  const rateRiskFindings = useMemo(() => treatmentAwareInboxFindings
+    .filter((finding) => finding.rateRiskShipTos === null || finding.rateRiskShipTos > 0)
+    .sort((left, right) => right.activeShipTos - left.activeShipTos || left.jurisdictionLabel.localeCompare(right.jurisdictionLabel)), [treatmentAwareInboxFindings]);
+  const lineLevelOnlyFindings = useMemo(() => treatmentAwareInboxFindings.filter((finding) => finding.rateRiskShipTos === 0 && (finding.lineLevelReviewShipTos ?? 0) > 0), [treatmentAwareInboxFindings]);
+  const neverTaxedOnlyFindings = useMemo(() => treatmentAwareInboxFindings.filter((finding) => finding.rateRiskShipTos === 0 && (finding.lineLevelReviewShipTos ?? 0) === 0 && (finding.neverTaxedShipTos ?? 0) > 0), [treatmentAwareInboxFindings]);
+  const needsAttentionCount = rateRiskFindings.length;
   // GA and the other-states batch both take several seconds to load and start empty - without this,
   // needsAttentionCount reads as NC-only (or 0) for the first few seconds of every page load, then
   // visibly jumps once they land. Gating the displayed count on this means it's either a clear
   // "loading" state or the real settled number - never a misleadingly low one.
-  const dashboardCountsReady = gaBoundaryLoaded && otherFindingsLoaded;
+  const dashboardCountsReady = gaBoundaryLoaded && otherFindingsLoaded && taxTreatmentStatus !== "idle" && taxTreatmentStatus !== "loading";
   const openFinding = (finding: JurisdictionFinding) => {
     if (finding.stateCode === "NC") {
       const county = activeCountyCoverage.find((candidate) => candidate.taxBody === finding.taxBody);
@@ -896,7 +955,7 @@ export default function Home() {
               aria-current={activeView === item.id ? "page" : undefined}
             >
               {item.label}
-              {item.id === "attention" && openFindings.length > 0 && <span className="nav-count">{openFindings.length}</span>}
+              {item.id === "attention" && dashboardCountsReady && needsAttentionCount > 0 && <span className="nav-count">{needsAttentionCount}</span>}
               {item.id === "upcoming" && upcomingFindings.length > 0 && <span className="nav-count">{upcomingFindings.length}</span>}
             </button>
           ))}
@@ -927,7 +986,7 @@ export default function Home() {
           <SummaryStats
             openCount={dashboardCountsReady ? needsAttentionCount : null}
             upcomingCount={dashboardCountsReady ? upcomingFindings.length : null}
-            affectedShipTos={dashboardCountsReady ? inboxFindings.reduce((total, finding) => total + finding.activeShipTos, 0) : null}
+            affectedShipTos={dashboardCountsReady ? rateRiskFindings.reduce((total, finding) => total + finding.activeShipTos, 0) : null}
             connectedSources={officialSources.filter((source) => source.status === "connected").length}
             lastRefresh={officialSnapshot?.retrievedAt ?? null}
           />
@@ -940,6 +999,8 @@ export default function Home() {
             </div>
             <button className="secondary-button" type="button" onClick={() => { void refreshLiveSnapshot(); void refreshGaBoundary(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
           </div>
+
+          <TaxTreatmentPanel snapshot={taxTreatmentSnapshot} status={taxTreatmentStatus} connectorStatus={connectorStatus} />
 
           <section className="dashboard-grid">
             <article className="priority-card" aria-labelledby="priority-title">
@@ -958,16 +1019,16 @@ export default function Home() {
               </div>
               <div className="priority-table-wrap">
                 <table className="priority-table">
-                  <thead><tr><th>Effective</th><th>State</th><th>Jurisdiction</th><th>Published rate</th><th>A+ rate</th><th>Ship-tos</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead>
+                  <thead><tr><th>Effective</th><th>State</th><th>Jurisdiction</th><th>Published rate</th><th>A+ rate</th><th>Rate-risk ship-tos</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead>
                   <tbody>
-                    {inboxFindings.length > 0 ? inboxFindings.slice(0, 6).map((finding) => (
+                    {rateRiskFindings.length > 0 ? rateRiskFindings.slice(0, 6).map((finding) => (
                       <tr key={finding.id}>
                         <td>{finding.effectiveDate ?? "Current"}</td>
                         <td>{finding.stateCode}</td>
                         <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{finding.jurisdictionLabel}</strong><small>{finding.taxBody}</small></button></td>
                         <td>{finding.officialRate === null ? "Unavailable" : formatRate(finding.officialRate)}</td>
                         <td>{finding.aplusRate === null ? "Unavailable" : formatRate(finding.aplusRate)}</td>
-                        <td>{finding.activeShipTos.toLocaleString()}</td>
+                        <td>{finding.activeShipTos.toLocaleString()}{(finding.lineLevelReviewShipTos ?? 0) > 0 && <small className="treatment-impact-note">+ {finding.lineLevelReviewShipTos?.toLocaleString()} line-level</small>}</td>
                         <td><ComparisonPill status={finding.comparisonStatus} />{finding.confidence === "unverified" && <span className="rate-warning" title={finding.confidenceNote ?? undefined}> !</span>}</td>
                         <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${finding.jurisdictionLabel}`}>›</button></td>
                       </tr>
@@ -979,6 +1040,9 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+              {dashboardCountsReady && (lineLevelOnlyFindings.length > 0 || neverTaxedOnlyFindings.length > 0) && (
+                <div className="treatment-queue-note" role="status"><strong>Treatment-scoped findings:</strong>{lineLevelOnlyFindings.length > 0 && <> {lineLevelOnlyFindings.length} {lineLevelOnlyFindings.length === 1 ? "finding requires" : "findings require"} line-level review, so no header-level rate conclusion is shown.</>}{neverTaxedOnlyFindings.length > 0 && <> {lineLevelOnlyFindings.length > 0 ? " " : " "}{neverTaxedOnlyFindings.length} {neverTaxedOnlyFindings.length === 1 ? "finding is" : "findings are"} assigned only to never-taxed ship-tos and excluded from rate-risk impact.</>}</div>
+              )}
               <div className="recent-publication">
                 <span className="status-mark">✓</span>
                 <div><span className="section-label">Recently handled publication</span><strong>Mecklenburg County · 8.25% effective July 1, 2026</strong><p>A+ now matches and the prior-rate invoices were handled by the tax team.</p></div>
@@ -992,16 +1056,16 @@ export default function Home() {
                   <span className="section-label">Review activity</span>
                   <h2>{!dashboardCountsReady ? "Loading…" : needsAttentionCount > 0 ? `${needsAttentionCount} rate ${needsAttentionCount === 1 ? "difference" : "differences"}` : upcomingFindings.length > 0 ? `${upcomingFindings.length} upcoming ${upcomingFindings.length === 1 ? "change" : "changes"}` : "No open findings"}</h2>
                 </div>
-                <span className={`count-pill ${inboxFindings.length === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? inboxFindings.length : "…"}</span>
+                <span className={`count-pill ${needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? needsAttentionCount : "…"}</span>
               </div>
               {!dashboardCountsReady ? (
                 <div className="empty-queue compact"><span aria-hidden="true">…</span><div><strong>Loading review activity…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+.</p></div></div>
-              ) : inboxFindings.length === 0 ? (
+              ) : rateRiskFindings.length === 0 ? (
                 <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>The approval queue is clear</strong><p>{officialSnapshot ? "Every current NC county rate in A+ matches the validated NCDOR table, and Georgia's boundary reconciliation has no unresolved difference." : "The official NCDOR comparison is not currently available."}</p></div></div>
-              ) : inboxFindings.slice(0, 4).map((finding) => (
+              ) : rateRiskFindings.slice(0, 4).map((finding) => (
                 <button className="alert-row" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                   <span className={`alert-icon comparison-${finding.comparisonStatus}`} aria-hidden="true">{finding.comparisonStatus === "mismatch" ? "!" : "↗"}</span>
-                  <span className="alert-copy"><strong>{finding.jurisdictionLabel}</strong><span>{finding.stateCode} · A+ {finding.aplusRate === null ? "pending" : formatRate(finding.aplusRate)} · Official {finding.officialRate === null ? "pending" : formatRate(finding.officialRate)}</span><small>{comparisonLabels[finding.comparisonStatus]}{finding.confidence === "unverified" ? " · unverified jurisdiction match" : ""}</small></span>
+                  <span className="alert-copy"><strong>{finding.jurisdictionLabel}</strong><span>{finding.stateCode} · A+ {finding.aplusRate === null ? "pending" : formatRate(finding.aplusRate)} · Official {finding.officialRate === null ? "pending" : formatRate(finding.officialRate)}</span><small>{comparisonLabels[finding.comparisonStatus]}{(finding.lineLevelReviewShipTos ?? 0) > 0 ? ` · ${finding.lineLevelReviewShipTos?.toLocaleString()} line-level review` : ""}{finding.confidence === "unverified" ? " · unverified jurisdiction match" : ""}</small></span>
                   <span className="shipto-count"><strong>{finding.activeShipTos.toLocaleString()}</strong><small>ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
                 </button>
               ))}
@@ -1116,21 +1180,23 @@ export default function Home() {
         <section className="page-content view-page" aria-labelledby="attention-title">
           <PageHeading
             titleId="attention-title"
-            eyebrow="Confirmed differences only"
+            eyebrow="Published changes and A+ impact"
             title="Needs attention"
-            description="A finding appears here only after the official rate and A+ configuration both pass validation."
+            description="This is the same all-state rate-risk inbox shown on the dashboard. It includes only findings with one or more always-taxable ship-tos."
           />
           <section className="queue-panel attention-panel" aria-labelledby="attention-title">
-            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Confirmed A+ differences</h2></div><span className={`count-pill ${openFindings.length === 0 ? "quiet" : ""}`}>{openFindings.length}</span></div>
-            {openFindings.length === 0 ? (
-              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No confirmed A+ differences</strong><p>The August 18 validated NC snapshot has no unresolved rate mismatch. Source refreshes require a separately supervised live-validation step.</p></div></div>
-            ) : openFindings.map((county) => {
-                 const reviewCase = reviewCasesByKey.get(reviewFindingKey(county));
+            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Rate-risk findings</h2></div><span className={`count-pill ${dashboardCountsReady && needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? needsAttentionCount : "…"}</span></div>
+            {!dashboardCountsReady ? (
+              <div className="empty-queue large"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>TaxAP is waiting for the Georgia boundary match and the other wired state comparisons before showing the review queue.</p></div></div>
+            ) : rateRiskFindings.length === 0 ? (
+              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No rate-risk findings</strong><p>No confirmed rate difference currently affects an always-taxable ship-to in the completed all-state comparison.</p></div></div>
+            ) : rateRiskFindings.map((finding) => {
+                 const reviewCase = reviewCasesByKey.get(finding.reviewFindingKey);
                  return (
-                   <button className="history-card finding-card" type="button" key={county.taxBody} onClick={() => setSelectedCounty(county)}>
-                    <span className="status-mark comparison-mismatch">!</span>
-                     <span><strong>{county.county} County</strong><small>{county.taxBody} · {county.activeShipTos.toLocaleString()} active ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}</small></span>
-                     <span className="history-rate">A+ {formatRate(county.currentRate)} → <strong>{county.officialRate === null ? "Pending" : formatRate(county.officialRate)}</strong></span>
+                   <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
+                    <span className={`status-mark comparison-${finding.comparisonStatus}`}>{finding.comparisonStatus === "upcoming" ? "↗" : "!"}</span>
+                     <span><strong>{finding.jurisdictionLabel}</strong><small>{finding.stateCode} · {finding.taxBody} · {finding.activeShipTos.toLocaleString()} rate-risk ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
+                     <span className="history-rate">A+ {finding.aplusRate === null ? "Pending" : formatRate(finding.aplusRate)} → <strong>{finding.officialRate === null ? "Pending" : formatRate(finding.officialRate)}</strong></span>
                      <span className="row-arrow" aria-hidden="true">›</span>
                    </button>
                  );
@@ -1423,6 +1489,41 @@ export default function Home() {
         </Drawer>
       )}
     </main>
+  );
+}
+
+function TaxTreatmentPanel({ snapshot, status, connectorStatus }: { snapshot: TaxTreatmentSnapshot | null; status: TaxTreatmentStatus; connectorStatus: ConnectorStatus }) {
+  if (status === "loading") {
+    return <section className="tax-treatment-panel" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Reading aggregate treatment counts…</strong></section>;
+  }
+  if (status === "error" || !snapshot) {
+    return <section className="tax-treatment-panel tax-treatment-unavailable" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Treatment summary unavailable</strong><p>{connectorStatus === "fallback" ? "Live A+ data is unavailable, so TaxAP is not showing a tax-treatment conclusion." : "TaxAP could not load the aggregate treatment summary. No treatment conclusion is shown."}</p></section>;
+  }
+
+  const bucket = (treatmentCode: TaxTreatmentCode) => snapshot.treatments.find((item) => item.treatmentCode === treatmentCode) ?? { treatmentCode, activeShipTos: 0, activeCustomers: 0 };
+  const alwaysTaxable = bucket("0");
+  const neverTaxed = bucket("3");
+  const lineLevelReview = bucket("J");
+  const other = bucket("other");
+  const temporaryAlwaysTaxable = snapshot.temporaryTaxBody.treatments.find((item) => item.treatmentCode === "0")?.activeShipTos ?? 0;
+
+  return (
+    <section className="tax-treatment-panel" aria-labelledby="tax-treatment-title">
+      <div className="tax-treatment-heading"><div><span className="section-label">A+ tax treatment context</span><h2 id="tax-treatment-title">Rate monitoring is scoped by tax treatment</h2></div><small>Aggregate only · refreshed {new Date(snapshot.retrievedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</small></div>
+      <p className="tax-treatment-intro">This A+ setting guides TaxAP&apos;s monitoring scope; it does not determine a customer&apos;s legal taxability.</p>
+      <div className="tax-treatment-grid">
+        <div><span>0 · Always taxable</span><strong>{alwaysTaxable.activeShipTos.toLocaleString()}</strong><small>Included in rate-comparison impact.</small></div>
+        <div><span>3 · Never taxed</span><strong>{neverTaxed.activeShipTos.toLocaleString()}</strong><small>Intentional exempt activity; excluded from rate-risk impact.</small></div>
+        <div><span>J · Mixed</span><strong>{lineLevelReview.activeShipTos.toLocaleString()}</strong><small>Requires line-level review; no header-level rate conclusion.</small></div>
+        <div><span>Other or blank</span><strong>{other.activeShipTos.toLocaleString()}</strong><small>Unclassified treatment; no rate conclusion.</small></div>
+      </div>
+      {snapshot.temporaryTaxBody.activeShipTos > 0 && (
+        <div className="temporary-tax-alert" role="status">
+          <span aria-hidden="true">!</span>
+          <div><strong>Temporary tax-body configuration needs confirmation</strong><p><code>ZTEMP</code> is assigned to {snapshot.temporaryTaxBody.activeShipTos.toLocaleString()} active ship-tos. {temporaryAlwaysTaxable.toLocaleString()} are marked always taxable.{snapshot.temporaryTaxBody.configuredRate === null ? " Its current A+ rate could not be confirmed." : ` Its configured A+ rate is ${formatRate(snapshot.temporaryTaxBody.configuredRate)}.`} This is displayed as a configuration exception, not an automatic rate mismatch.</p></div>
+        </div>
+      )}
+    </section>
   );
 }
 

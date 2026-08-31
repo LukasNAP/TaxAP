@@ -1,33 +1,53 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+// Extract text in-process so PDF-backed official adapters work on every supported TaxAP host.
+// The earlier Poppler shell-out made a valid source refresh depend on a separately installed
+// `pdftotext` executable, which is not present on the supported Windows development machine.
+// Preserve physical lines: some official PDFs place multiple table columns on the same y-axis.
+function pageTextWithPhysicalLines(items) {
+  const lines = new Map();
+  for (const item of items) {
+    if (!item.str) continue;
+    const y = Math.round(item.transform[5] * 10) / 10;
+    const line = lines.get(y) ?? [];
+    line.push(item);
+    lines.set(y, line);
+  }
+  return [...lines.entries()]
+    .sort(([leftY], [rightY]) => rightY - leftY)
+    .map(([, line]) => line
+      .sort((left, right) => left.transform[4] - right.transform[4])
+      .map((item) => item.str)
+      .join(" "))
+    .join("\n");
+}
 
 /**
- * Shells out to the system `pdftotext` (poppler-utils) with `-table` mode, which keeps a row's
- * wrapped cells glued together correctly - confirmed (server/sc-rates.mjs) to behave better than
- * `-layout` mode for government rate-table PDFs. Factored out here so more than one PDF-sourced
- * adapter (SC's ST-575, NY's Publication 718, ...) doesn't reimplement the temp-file dance.
+ * Extracts PDF text without a host-installed executable. `tmpPrefix` is retained for compatible
+ * adapter calls, but PDF.js reads the in-memory buffer directly and creates no temporary files.
  */
-export async function extractPdfTableText(pdfBuffer, { tmpPrefix = "taxap-pdf-" } = {}) {
-  const dir = await mkdtemp(path.join(tmpdir(), tmpPrefix));
-  const inputPath = path.join(dir, "input.pdf");
+export async function extractPdfTableText(pdfBuffer, { tmpPrefix: _tmpPrefix = "taxap-pdf-" } = {}) {
+  // Preserve the public option for adapters written before this became in-memory only.
+  void _tmpPrefix;
+  const loadingTask = getDocument({
+    data: new Uint8Array(pdfBuffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+  });
   try {
-    await writeFile(inputPath, pdfBuffer);
-    return await new Promise((resolve, reject) => {
-      execFile("pdftotext", ["-table", "-enc", "UTF-8", inputPath, "-"], { maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
-        if (error) {
-          if (error.code === "ENOENT") {
-            reject(new Error("pdftotext (poppler-utils) is not installed on this host; this adapter cannot run without it."));
-          } else {
-            reject(new Error(`pdftotext failed: ${error.message}`));
-          }
-          return;
-        }
-        resolve(stdout);
-      });
-    });
+    const document = await loadingTask.promise;
+    try {
+      const pages = [];
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        pages.push(pageTextWithPhysicalLines(textContent.items));
+      }
+      return pages.join("\n");
+    } finally {
+      await document.destroy();
+    }
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await loadingTask.destroy();
   }
 }

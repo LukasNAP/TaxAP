@@ -213,6 +213,34 @@ button, a { font: inherit; }
 .connector-banner p { margin: 0; color: var(--ap-dgray); font-size: 10px; line-height: 1.5; }
 .connector-banner .secondary-button { flex: none; }
 
+.tax-treatment-panel {
+  margin-bottom: 22px;
+  padding: 20px;
+  border: 1px solid var(--ap-lgray);
+  border-radius: 12px;
+  background: var(--ap-white);
+  box-shadow: var(--shadow);
+}
+.tax-treatment-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.tax-treatment-heading > div { display: grid; gap: 5px; }
+.tax-treatment-heading h2 { margin: 0; color: var(--ap-navy); font-size: 18px; font-weight: var(--ap-weight-bold); }
+.tax-treatment-heading > small { color: var(--ap-dgray); font-size: 10px; white-space: nowrap; }
+.tax-treatment-intro { margin: 8px 0 16px; color: var(--ap-dgray); font-size: 11px; line-height: 1.5; }
+.tax-treatment-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--ap-lgray); background: var(--ap-lgray); gap: 1px; }
+.tax-treatment-grid > div { display: grid; align-content: start; gap: 5px; min-height: 96px; padding: 15px; background: var(--ap-white); }
+.tax-treatment-grid span { color: var(--ap-navy); font-size: 11px; font-weight: var(--ap-weight-bold); }
+.tax-treatment-grid strong { color: var(--ap-blue); font-size: 24px; font-weight: var(--ap-weight-black); }
+.tax-treatment-grid small { color: var(--ap-dgray); font-size: 10px; line-height: 1.4; }
+.temporary-tax-alert { display: flex; align-items: start; gap: 12px; margin-top: 15px; padding: 14px 15px; border-left: 4px solid var(--ap-blue); background: var(--ap-lgray); }
+.temporary-tax-alert > span { width: 24px; height: 24px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--ap-blue); color: var(--ap-white); font-weight: var(--ap-weight-black); }
+.temporary-tax-alert > div { display: grid; gap: 4px; }
+.temporary-tax-alert strong { color: var(--ap-navy); font-size: 12px; }
+.temporary-tax-alert p { margin: 0; color: var(--ap-dgray); font-size: 10px; line-height: 1.5; }
+.temporary-tax-alert code { color: var(--ap-navy); font-weight: var(--ap-weight-bold); }
+.tax-treatment-unavailable { display: grid; gap: 4px; }
+.tax-treatment-unavailable strong { color: var(--ap-navy); font-size: 13px; }
+.tax-treatment-unavailable p { margin: 0; color: var(--ap-dgray); font-size: 10px; }
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.75fr);
@@ -878,6 +906,10 @@ footer { display: flex; justify-content: space-between; padding: 26px 2px 0; col
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
+.treatment-impact-note { display: block; margin-top: 3px; color: var(--ap-dgray); font-size: 9px; font-weight: var(--ap-weight-bold); white-space: nowrap; }
+.treatment-queue-note { padding: 12px 16px; border-top: 1px solid var(--ap-lgray); background: var(--ap-lgray); color: var(--ap-dgray); font-size: 10px; line-height: 1.55; }
+.treatment-queue-note strong { color: var(--ap-navy); }
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -906,6 +938,7 @@ select:focus-visible { outline: 3px solid rgba(69,158,216,.35); outline-offset: 
   .nav button.active::after { top: 0; bottom: auto; }
   .nav-count { top: 9px; right: calc(50% - 43px); }
   .dashboard-grid { grid-template-columns: 1fr; }
+  .tax-treatment-grid { grid-template-columns: repeat(2, 1fr); }
   .inbox-columns { grid-template-columns: repeat(2, 1fr); }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stats article:nth-child(odd) { border-left: 0; }
@@ -932,6 +965,9 @@ select:focus-visible { outline: 3px solid rgba(69,158,216,.35); outline-offset: 
   .intro h1 { font-size: 42px; }
   .primary-button { width: 100%; margin-top: 24px; }
   .stats { grid-template-columns: 1fr; }
+  .tax-treatment-heading { align-items: start; flex-direction: column; }
+  .tax-treatment-heading > small { white-space: normal; }
+  .tax-treatment-grid { grid-template-columns: 1fr; }
   .stats article + article { border-left: 0; border-top: 1px solid var(--line); }
   .inbox-columns { grid-template-columns: 1fr; }
   .recent-publication { grid-template-columns: auto 1fr; }

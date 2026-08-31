@@ -1,5 +1,6 @@
 import { NCDOR_CURRENT_RATES_URL } from "./ncdor-rates.mjs";
 import { CALIFORNIA_DOR_OVERVIEW_URL } from "./ca-rates.mjs";
+import { COLORADO_RATES_URL } from "./co-rates.mjs";
 import { FLORIDA_DOR_RATES_URL } from "./fl-rates.mjs";
 import { MARYLAND_RATE_CHART_URL } from "./md-rates.mjs";
 import { MAINE_RATES_URL } from "./me-rates.mjs";
@@ -68,8 +69,18 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "CA") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-html",
-        coverage: "current city and county total rates", sourceName: "California Department of Tax and Fee Administration",
+        coverage: "current city and county total rates, matched to A+ only where the tax body itself names exactly one CDTFA city or county. Missing definitions and equipment-category tax bodies are visible exclusions; same-named cities across counties remain unmatched rather than guessed.",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/CA/aplus",
+        sourceName: "California Department of Tax and Fee Administration",
         sourceUrl: CALIFORNIA_DOR_OVERVIEW_URL,
+      };
+    }
+    if (stateCode === "CO") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-xlsx",
+        coverage: "Colorado DOR's current location-code totals. A+ matching uses an exact six-digit Colorado jurisdiction code when one is stored; otherwise it compares only unique official location names. Multi-rate cities, county-wide labels, and special-district variants remain unmatched rather than guessed.",
+        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/CO/aplus",
+        sourceName: "Colorado Department of Revenue", sourceUrl: COLORADO_RATES_URL,
       };
     }
     if (stateCode === "TX") {

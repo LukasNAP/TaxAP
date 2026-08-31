@@ -1,12 +1,14 @@
 # CA — findings
 
-Status: **Investigated live (2026-08-26), not ready to build.** A+ needs real ship-to address-level matching (SC/GA-shaped, not NC-shaped) because a single city name in California routinely covers two different real jurisdictions (incorporated city vs. unincorporated county) at two different A+ codes and two different rates, and because A+'s ~143 real configured CA codes cover only ~26% of California's 541 real counties+cities. Independent of that: rate comparability is confirmed **not safe today** — 46 of 143 real, configured, currently-active CA codes (32.2% of codes, 33.6% of the ship-tos sitting on comparable codes) show a live, material difference from CDTFA's current rate, and it is not scattered noise — it clusters into at least three identifiable groups (a Los Angeles-County-wide templated local rate, a Sonoma County cluster, and a Santa Clara County cluster), the largest of which sits on ~305 of CA's 1,574 active ship-tos. **Blocking finding**: `CA000` — not a labeled "DO NOT USE" row but a code with no XATXBD definition visible through the vetted read-only path at all — covers 233 of 1,574 active ship-tos (14.8%), the single largest CA tax-body bucket.
+Status: **A+ tax-body configuration comparison built and wired (2026-08-28); address-assignment validation remains a future boundary-matching task.** `server/ca-aplus.mjs` compares a configured CA tax body only when its own A+ description explicitly identifies exactly one CDTFA county or one unique CDTFA city. It never uses a ship-to address, ZIP, mailing city, or inferred county. A live aggregate-only run on 2026-08-28 compared 1,327 ship-tos, found 46 confirmed current-rate differences affecting 446 ship-tos, and left zero comparable rows unmatched. `CA000`/`CA001`/`CA003` missing definitions (236 ship-tos), `CA1034E` equipment category (1), and 11 cross-state assignments are reported as visible exclusions. The old boundary requirement still matters: this comparison validates the configured rate for the tax body currently assigned; it cannot determine whether an individual ship-to belongs on a different city or unincorporated-county tax body.
 
 Live A+ (`XATXBD` assignments via `readStateDetail("CA")`) checked 2026-08-26: 1,574 active ship-tos, 1,012 active customer assignments, 150 distinct tax-body values in use. Cross-checked against CDTFA's current statewide rate file (541 rows: 58 counties + 483 cities) fetched the same day via `scripts/fetch-official-rates.mjs CA`.
 
 ## Address matching
 
 **Needed — for two independent reasons, neither of which is the classic GA within-ZIP-boundary case, but both point the same direction.**
+
+This is now specifically a **follow-on assignment-validation** need, not a blocker to the configuration comparison above. The configured `TBTXNAM`/description itself has an explicit `Co`/`Co.`/`C` county marker or a city marker/bare city name, so the monitoring app can safely compare that tax body's configured rate to the matching official jurisdiction total. It still must not claim that every ship-to currently using the tax body lies in that jurisdiction without a real address-boundary source.
 
 1. **City vs. unincorporated-county ambiguity under the same place name.** At least six real examples exist where the *same* city name in `TBTXNAM` maps to **two different A+ codes at two different rates** — one for the incorporated city, one for the surrounding unincorporated county — and nothing in a ship-to's ZIP or mailing city name distinguishes which applies:
 
@@ -49,11 +51,11 @@ The `CA1034`/`CA1034E` equipment-tax pair was excluded from this comparison enti
 
 - **Rates:** CDTFA (`https://cdtfa.ca.gov/taxes-and-fees/sales-use-tax-rates.htm`, machine-readable file at `https://cdtfa.ca.gov/taxes-and-fees/rates.aspx`) — 541 current rows (58 counties + 483 cities), `asOfDate` 2026-08-26, statewide base `7.25%`.
 
-## Open questions / do instead if building
+## Remaining follow-on work
 
-- **Before anything else:** get a human decision on what `CA000` (233/1,574, 14.8%) actually is — an undefined/orphaned code, a real "no local nexus" business rule, or something the vetted read-only path simply can't see. Don't compare or silently drop these ship-tos.
-- **Before building a comparison:** decide how to handle the LA-County-wide templated-rate cluster (~305 ship-tos) as a deliberate, single fix rather than 21 separate one-off "stale rate" tickets — it looks like one root cause (a shared local-add-on value applied uniformly instead of per-jurisdiction), not 21 independent staleness events.
-- **Before building matching:** the city-vs-unincorporated-county pairs (Sacramento, San Bernardino, Riverside, San Luis Obispo, Santa Cruz, and the whole LA cluster) mean ZIP or mailing-city text alone cannot pick the right A+ code — real address-level matching (GA/SC-style, ideally against a CDTFA or Streamlined boundary file, not yet fetched in this investigation) is needed before any city-level code can be trusted from a raw address.
+- `CA000`/`CA001`/`CA003` are now visible **misinput** exclusions under the standing project decision. They are not silently dropped and are not compared as 0%.
+- Treat the LA-County-wide templated-rate cluster (~305 ship-tos) as a coordinated A+ correction rather than 21 unrelated tickets. The current comparison surfaces each affected code so Ana/Liv can review it, but the likely operational fix should be planned as one change set.
+- The city-vs-unincorporated-county pairs (Sacramento, San Bernardino, Riverside, San Luis Obispo, Santa Cruz, and the whole LA cluster) still require a verified California address-boundary source before TaxAP can validate or recommend **ship-to reassignments**. ZIP or mailing-city text must not be used as a substitute.
 - Exclude `MX000`/`CN000`/`NV002` (11 ship-tos) from CA findings with a visible count, same as GA's and NV's cross-context outliers.
 - Exclude `CA1034E` (and any other E-suffixed CA codes that turn up once ship-to volume changes) from general-sales rate comparison — it's a different tax category, not a competing rate for the same jurisdiction.
 - Use `SASTXB` (ship-to level), not `CMTXBD` (customer level) — not independently re-verified for CA in this pass, but consistent with every other state investigated so far; check before building.

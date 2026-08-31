@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildStateCoverageQuery,
   buildStateTaxBodyQuery,
+  buildTaxTreatmentSummaryQuery,
   buildTaxBodyDefinitionsQuery,
   buildTaxBodyQuery,
   createConnectorServer,
@@ -47,6 +48,21 @@ test("state queries preserve company joins, active filters, and parameterization
   }
   assert.match(detailQuery, /= @state/);
   assert.doesNotMatch(detailQuery, /NC'|DROP TABLE/);
+});
+
+test("tax treatment summary remains aggregate-only and read-only", () => {
+  const query = buildTaxTreatmentSummaryQuery();
+  assert.match(query, /a\.SATXCD/);
+  assert.match(query, /LTRIM\(RTRIM\(a\.SASTXB\)\) = 'ZTEMP'/);
+  assert.match(query, /'all' AS Scope/);
+  assert.match(query, /'ZTEMP' AS Scope/);
+  assert.match(query, /'tax-body' AS Scope/);
+  assert.match(query, /NULLIF\(LTRIM\(RTRIM\(a\.SASTXB\)\), ''\) AS TaxBody/);
+  assert.match(query, /COUNT\(DISTINCT CONCAT\(a\.SACONO, '\\|', a\.SACSNO\)\)/);
+  assert.match(query, /a\.SACSUS/);
+  assert.match(query, /c\.CMSUSP/);
+  assert.doesNotMatch(query, /SASHNM|SASAD1|SASAD2|SASCTY|SASZIP|OA[A-Z]/);
+  assert.doesNotMatch(query, /\b(?:INSERT|UPDATE|DELETE|MERGE|EXEC|TRUNCATE|DROP|ALTER|CREATE)\b/i);
 });
 
 test("builds a read-only definition lookup for exact assigned tax bodies", () => {
