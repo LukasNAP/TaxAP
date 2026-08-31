@@ -8,6 +8,8 @@ services:
       - .env
     volumes:
       - taxap-review-data:/data
+      # The Entra workload certificate lives only on apdock01, outside Git.
+      - /var/atlanticapps/taxap/secrets/azure-sql-client-cert.pem:/run/secrets/azure-sql-client-cert.pem:ro
     networks:
       - taxap-internal
     logging:
