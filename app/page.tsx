@@ -1033,7 +1033,7 @@ export default function Home() {
                       <tr key={finding.id}>
                         <td>{finding.effectiveDate ?? "Current"}</td>
                         <td>{finding.stateCode}</td>
-                        <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{finding.jurisdictionLabel}</strong><small>{finding.taxBody}</small></button></td>
+                        <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{finding.jurisdictionLabel}</strong></button></td>
                         <td>{finding.officialRate === null ? "Unavailable" : formatRate(finding.officialRate)}</td>
                         <td>{finding.aplusRate === null ? "Unavailable" : formatRate(finding.aplusRate)}</td>
                         <td>{finding.activeShipTos.toLocaleString()}{(finding.lineLevelReviewShipTos ?? 0) > 0 && <small className="treatment-impact-note">+ {finding.lineLevelReviewShipTos?.toLocaleString()} line-level</small>}</td>
@@ -1203,7 +1203,7 @@ export default function Home() {
                  return (
                    <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                     <span className={`status-mark comparison-${finding.comparisonStatus}`}>{finding.comparisonStatus === "upcoming" ? "↗" : "!"}</span>
-                     <span><strong>{finding.jurisdictionLabel}</strong><small>{finding.stateCode} · {finding.taxBody} · {finding.activeShipTos.toLocaleString()} rate-risk ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
+                     <span><strong>{finding.jurisdictionLabel}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} rate-risk ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
                      <span className="history-rate">A+ {finding.aplusRate === null ? "Pending" : formatRate(finding.aplusRate)} → <strong>{finding.officialRate === null ? "Pending" : formatRate(finding.officialRate)}</strong></span>
                      <span className="row-arrow" aria-hidden="true">›</span>
                    </button>

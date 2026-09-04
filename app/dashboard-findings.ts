@@ -4,6 +4,8 @@
 // A state only belongs here once it has real A+ jurisdiction matching, not just an official-rate
 // inventory — see docs/roadmap-50-states.md. Georgia is the only other state that qualifies today.
 
+import { STATE_NAME_BY_CODE } from "./tax-body-policy.ts";
+
 export type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcoming" | "not-checked";
 export type FindingConfidence = "confirmed" | "unverified";
 
@@ -26,6 +28,7 @@ export type JurisdictionFinding = {
 
 export type GaTaxBodyFindingInput = {
   taxBody: string;
+  description: string | null;
   activeShipTos: number;
   officialRate: number | null;
   aplusRate: number | null;
@@ -33,6 +36,20 @@ export type GaTaxBodyFindingInput = {
   hasDifference: boolean;
   jurisdictionAssignmentConsistent: boolean;
 };
+
+function georgiaJurisdictionLabel(row: GaTaxBodyFindingInput) {
+  const configuredName = String(row.description ?? "").replace(/^Georgia\s+/i, "").trim();
+  if (!configuredName) return "Georgia jurisdiction";
+
+  // Georgia's numeric A+ tax bodies represent counties. The lone current suffixed variant is the
+  // Atlanta slice of a county tax body; keep both human place names without exposing its A+ code.
+  if (/A$/i.test(row.taxBody)) {
+    const atlanta = configuredName.match(/^(.+?)\s+Atlanta$/i);
+    if (atlanta) return `Atlanta, ${atlanta[1]} County`;
+    return configuredName;
+  }
+  return /\bCounty$/i.test(configuredName) ? configuredName : `${configuredName} County`;
+}
 
 const UNVERIFIED_JURISDICTION_NOTE =
   "Ship-tos under this tax body resolved to more than one official jurisdiction; this compares against the majority jurisdiction only.";
@@ -53,7 +70,7 @@ export function gaFindingsFromReconciliation(
       id: `GA-${row.taxBody}`,
       reviewFindingKey: `GA-${row.taxBody}-current`,
       stateCode: "GA",
-      jurisdictionLabel: row.taxBody,
+      jurisdictionLabel: georgiaJurisdictionLabel(row),
       taxBody: row.taxBody,
       officialRate: row.officialRate,
       aplusRate: row.aplusRate,
@@ -90,7 +107,7 @@ export function flatStateFindingsFromReconciliation(
     id: `${reconciliation.stateCode}-${reconciliation.expectedTaxBody}`,
     reviewFindingKey: `${reconciliation.stateCode}-${reconciliation.expectedTaxBody}-current`,
     stateCode: reconciliation.stateCode,
-    jurisdictionLabel: reconciliation.expectedTaxBody,
+    jurisdictionLabel: `${STATE_NAME_BY_CODE.get(reconciliation.stateCode) ?? "State"} statewide`,
     taxBody: reconciliation.expectedTaxBody,
     officialRate: reconciliation.officialRate,
     aplusRate: reconciliation.aplusRate,

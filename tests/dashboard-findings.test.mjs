@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { combineFindings, gaFindingsFromReconciliation } from "../app/dashboard-findings.ts";
+import { combineFindings, flatStateFindingsFromReconciliation, gaFindingsFromReconciliation } from "../app/dashboard-findings.ts";
 
 const consistentDifference = {
   taxBody: "GA027",
+  description: "Georgia Chattooga",
   activeShipTos: 7,
   officialRate: 9,
   aplusRate: 7,
@@ -14,6 +15,7 @@ const consistentDifference = {
 
 const inconsistentDifference = {
   taxBody: "GA060A",
+  description: "Georgia Fulton Atlanta",
   activeShipTos: 17,
   officialRate: 7.75,
   aplusRate: 8.9,
@@ -24,6 +26,7 @@ const inconsistentDifference = {
 
 const noDifference = {
   taxBody: "GA155",
+  description: "Georgia Walker",
   activeShipTos: 200,
   officialRate: 7,
   aplusRate: 7,
@@ -34,6 +37,7 @@ const noDifference = {
 
 const zeroShipTos = {
   taxBody: "GA999",
+  description: "Georgia Example",
   activeShipTos: 0,
   officialRate: 8,
   aplusRate: 6,
@@ -60,9 +64,31 @@ test("builds a stable finding shape for the shared inbox", () => {
   assert.equal(finding.id, "GA-GA027");
   assert.equal(finding.reviewFindingKey, "GA-GA027-current");
   assert.equal(finding.stateCode, "GA");
-  assert.equal(finding.jurisdictionLabel, "GA027");
+  assert.equal(finding.jurisdictionLabel, "Chattooga County");
   assert.equal(finding.comparisonStatus, "mismatch");
   assert.equal(finding.effectiveDate, null);
+});
+
+test("uses human jurisdiction names without exposing Georgia tax-body codes", () => {
+  const [county, atlanta] = gaFindingsFromReconciliation([consistentDifference, inconsistentDifference]);
+  assert.equal(county.jurisdictionLabel, "Chattooga County");
+  assert.equal(atlanta.jurisdictionLabel, "Atlanta, Fulton County");
+  assert.notEqual(county.jurisdictionLabel, county.taxBody);
+  assert.notEqual(atlanta.jurisdictionLabel, atlanta.taxBody);
+});
+
+test("uses the state name for flat statewide findings", () => {
+  const [finding] = flatStateFindingsFromReconciliation({
+    stateCode: "NJ",
+    expectedTaxBody: "NJ000",
+    officialRate: 6.625,
+    aplusRate: 0,
+    rateDifference: 6.625,
+    hasDifference: true,
+    totals: { comparedShipTos: 25 },
+  });
+  assert.equal(finding.jurisdictionLabel, "New Jersey statewide");
+  assert.notEqual(finding.jurisdictionLabel, finding.taxBody);
 });
 
 test("returns an empty list rather than throwing when reconciliation has not loaded", () => {
