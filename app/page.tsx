@@ -31,6 +31,20 @@ type LiveAPlusSnapshot = {
 };
 type StateSummary = { stateCode: string; activeShipTos: number; activeCustomers: number; taxBodyCount: number };
 type StateCoverageSnapshot = { retrievedAt: string; states: StateSummary[]; excludedShipTos: number };
+type TaxTreatmentCode = "0" | "3" | "J" | "other";
+type TaxTreatmentBucket = { treatmentCode: TaxTreatmentCode; activeShipTos: number; activeCustomers: number };
+type TaxTreatmentSnapshot = {
+  retrievedAt: string;
+  treatments: TaxTreatmentBucket[];
+  temporaryTaxBody: {
+    taxBody: "ZTEMP";
+    definitionStatus: "configured" | "missing";
+    configuredRate: number | null;
+    activeShipTos: number;
+    treatments: TaxTreatmentBucket[];
+  };
+};
+type TaxTreatmentStatus = "idle" | "loading" | "ready" | "error";
 type StateTaxBody = {
   taxBody: string | null;
   description: string | null;
@@ -77,6 +91,7 @@ type OfficialStateSnapshot = {
   rates: OfficialStateRate[];
   counts: { counties: number; cities: number; specialJurisdictions: number };
   boundaryStatus: string;
+  futureChanges?: { jurisdiction: string; effectiveDate: string; currentRate: number; futureRate: number }[];
 };
 type GaBoundaryJurisdiction = { fipsCounty: string | null; fipsPlace: string | null; specialCode: string | null };
 type GaBoundaryTaxBodyFinding = {
@@ -165,21 +180,36 @@ const SST_SOURCE_STATES = new Set(["GA", "IA", "KS", "MN", "NC", "ND", "NE", "NV
 const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI"]);
 const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
+  if (stateCode === "AL") return { stateCode, stateName, status: "connected", adapter: "state-dor-monthly-general-sales-csv", coverage: "current general sales-tax locality rows plus corporate-limit, county, police-jurisdiction, and available sellers-use rates; address-to-zone and A+ matching remain unresolved", sourceName: "Alabama Department of Revenue", sourceUrl: "https://www.revenue.alabama.gov/sales-use/local-cities-and-counties-tax-rates-text-file/" };
+  if (stateCode === "AK") return { stateCode, stateName, status: "connected", adapter: "local-only-arsstc-xlsx", coverage: "zero state sales tax plus current ARSSTC remote-seller destination rows; nonmember municipalities and address boundaries remain unresolved", sourceName: "Alaska Remote Seller Sales Tax Commission", sourceUrl: "https://arsstc.org/downloads/" };
+  if (stateCode === "AZ") return { stateCode, stateName, status: "connected", adapter: "state-dor-monthly-csv-retail", coverage: "monthly business-code-017 retail inventory across counties, cities, and tribal/special regions; city totals and A+ decisions remain unresolved", sourceName: "Arizona Department of Revenue", sourceUrl: "https://azdor.gov/transaction-privilege-tax/tpt-rates" };
+  if (stateCode === "CO") return { stateCode, stateName, status: "connected", adapter: "state-dor-half-year-layered-xlsx", coverage: "current jurisdiction codes, counties, layered totals, and self-collected-home-rule flags; address-to-district and A+ matching remain unresolved", sourceName: "Colorado Department of Revenue", sourceUrl: "https://tax.colorado.gov/how-to-look-up-sales-use-tax-rates" };
+  if (stateCode === "DC") return { stateCode, stateName, status: "connected", adapter: "district-otr-html-flat-rate", coverage: "citywide 6% general rate through 2026-09-30 and enacted 7% rate beginning 2026-10-01; no local boundary matching required", sourceName: "District of Columbia Office of Tax and Revenue", sourceUrl: "https://otr.cfo.dc.gov/release/district-columbia-tax-changes-take-effect-october-1-2026" };
+  if (stateCode === "HI") return { stateCode, stateName, status: "connected", adapter: "state-dotax-get-policy-html", coverage: "seller-side 4% GET base, county surcharges, Kalawao exemption, and optional pass-on ceiling; not treated as a conventional sales-tax mismatch", sourceName: "Hawaii Department of Taxation", sourceUrl: "https://tax.hawaii.gov/geninfo/get/" };
+  if (stateCode === "ID") return { stateCode, stateName, status: "connected", adapter: "state-tax-commission-html-partial-local", coverage: "validated 6% state rate plus the official separately administered resort-city inventory; central local totals are unavailable and never guessed", sourceName: "Idaho State Tax Commission", sourceUrl: "https://tax.idaho.gov/taxes/sales-use/" };
+  if (stateCode === "LA") return { stateCode, stateName, status: "connected", adapter: "remote-seller-current-parish-html", coverage: "all current domicile-rate rows across 64 parish selectors; reused codes stay parish-qualified and address/A+ matching remains unresolved", sourceName: "Louisiana Sales and Use Tax Commission for Remote Sellers / Louisiana DOR", sourceUrl: "https://remotesellersfiling.la.gov/lookup/lookup.aspx" };
+  if (stateCode === "MO") return { stateCode, stateName, status: "connected", adapter: "state-dor-quarterly-filing-code-xlsx", coverage: "all current city/county/special-district filing-code combinations and published rate categories; address-to-code and A+ matching remain unresolved", sourceName: "Missouri Department of Revenue", sourceUrl: "https://dor.mo.gov/taxation/business/tax-types/sales-use/rate-tables/" };
+  if (stateCode === "MS") return { stateCode, stateName, status: "connected", adapter: "state-dor-html-general-plus-city", coverage: "7% general tangible-property rate plus Jackson and Tupelo general-retail levies; category-specific tourism levies excluded", sourceName: "Mississippi Department of Revenue", sourceUrl: "https://www.dor.ms.gov/business/sales-tax-rates" };
+  if (stateCode === "NM") return { stateCode, stateName, status: "connected", adapter: "state-trd-rgis-grt-csv-archive", coverage: "all current official district location codes and GRT totals, including county remainders, municipalities, special districts, and tribal classes", sourceName: "New Mexico Taxation and Revenue Department / RGIS", sourceUrl: "https://www.tax.newmexico.gov/businesses/geographic-information-system-gis/data-download/" };
+  if (stateCode === "NY") return { stateCode, stateName, status: "connected", adapter: "state-dtf-pdf-combined-rates", coverage: "all current Publication 718 state/local reporting rows; ZIP derivation and A+ alias/discrepancy matching remain unresolved", sourceName: "New York State Department of Taxation and Finance", sourceUrl: "https://www.tax.ny.gov/pubs_and_bulls/publications/sales/rates.htm" };
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
   if (stateCode === "GA") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction components", sourceName: "Georgia DOR via Streamlined Sales Tax rate file", sourceUrl: "https://dor.georgia.gov/sales-tax-rates-general" };
   if (stateCode === "CA") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "current city and county total rates", sourceName: "California Department of Tax and Fee Administration", sourceUrl: "https://cdtfa.ca.gov/taxes-and-fees/sales-use-tax-rates.htm" };
+  if (stateCode === "CT") return { stateCode, stateName, status: "connected", adapter: "state-dor-html-flat-rate", coverage: "flat 6.35% general rate with no additional local-jurisdiction sales tax; special product/service rates remain outside the general-rate comparison", sourceName: "Connecticut Department of Revenue Services", sourceUrl: "https://portal.ct.gov/drs/sales-tax/tax-information" };
   if (stateCode === "TX") return { stateCode, stateName, status: "connected", adapter: "state-comptroller-text-html", coverage: "quarterly combined city and local-area rates", sourceName: "Texas Comptroller of Public Accounts", sourceUrl: "https://comptroller.texas.gov/taxes/file-pay/edi/sales-tax-rates.php" };
   if (stateCode === "FL") return { stateCode, stateName, status: "connected", adapter: "state-dor-xlsx", coverage: "all 67 county discretionary surtax totals", sourceName: "Florida Department of Revenue", sourceUrl: "https://floridarevenue.com/taxes/taxesfees/Pages/discretionary.aspx" };
   if (stateCode === "SC") return { stateCode, stateName, status: "connected", adapter: "state-dor-pdf", coverage: "all 46 county (unincorporated) and municipality totals from ST-575; A+ tax-body matching not yet built", sourceName: "South Carolina Department of Revenue", sourceUrl: "https://dor.sc.gov/sites/dor/files/forms/ST575.pdf" };
   if (stateCode === "PA") return { stateCode, stateName, status: "connected", adapter: "state-dor-rules-census", coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons", sourceName: "Pennsylvania Department of Revenue", sourceUrl: "https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax" };
-  if (stateCode === "IL") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-machine-file-pending", coverage: "official machine-readable sales-tax files; adapter validation pending", sourceName: "Illinois Department of Revenue", sourceUrl: "https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html" };
-  if (stateCode === "VA") return { stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-xlsx-pending", coverage: "official locality lookup and downloadable workbook; adapter validation pending", sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup" };
+  if (stateCode === "IL") return { stateCode, stateName, status: "connected", adapter: "state-dor-fixed-width", coverage: "current jurisdiction-wide standard-merchandise totals from IDOR's fixed-width file; address-override locations and A+ tax-body matching remain intentionally unresolved", sourceName: "Illinois Department of Revenue", sourceUrl: "https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html" };
+  if (stateCode === "VA") return { stateCode, stateName, status: "connected", adapter: "state-dor-xlsx", coverage: "all 95 counties and 38 independent cities with official FIPS codes and current combined rates; address-level and A+ tax-body matching remain unresolved", sourceName: "Virginia Department of Taxation", sourceUrl: "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup" };
   if (stateCode === "MD") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat 6% statewide rate (Tax-General Article Section 11-104); Maryland preempts local general sales tax, so no address matching is ever needed", sourceName: "Comptroller of Maryland", sourceUrl: "https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/Tax_rate_chart.pdf" };
+  if (stateCode === "ME") return { stateCode, stateName, status: "connected", adapter: "state-dor-html-flat-rate", coverage: "flat 5.5% general sales/use-tax rate effective 2026-01-01; special category rates remain outside the general comparison", sourceName: "Maine Revenue Services", sourceUrl: "https://www1.maine.gov/revenue/taxes/sales-use-service-provider-tax/rates-due-dates" };
+  if (stateCode === "MA") return { stateCode, stateName, status: "connected", adapter: "state-dor-html-flat-rate", coverage: "flat 6.25% general sales/use-tax rate for tangible personal property; category-specific local options remain outside the general comparison", sourceName: "Massachusetts Department of Revenue", sourceUrl: "https://www.mass.gov/guides/sales-and-use-tax" };
   if (stateCode === "NJ") return { stateCode, stateName, status: "connected", adapter: "state-flat-rate", coverage: "flat statewide rate (6.625% since 2018), cross-validated live against two independent NJ Division of Taxation pages; no address matching is ever needed. Open caveat: NJ's Urban Enterprise Zone / Salem County reduced rate depends on Atlantic's own seller certification, not modeled", sourceName: "New Jersey Division of Taxation", sourceUrl: "https://www.nj.gov/treasury/taxation/su_10.shtml" };
   if (stateCode === "OH" || stateCode === "TN") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction rate components", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (CONNECTED_GENERIC_SST_STATES.has(stateCode)) return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "jurisdiction rate components, validated 2026-08-26", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   if (NO_GENERAL_SALES_TAX_STATES.has(stateCode)) return { stateCode, stateName, status: "no-general-sales-tax", adapter: "none", coverage: "confirmed 2026-08-26: no general state or local sales/use tax exists in this state; excluded from rate comparison, not an unbuilt adapter", sourceName: "N/A", sourceUrl: null };
-  if (SST_SOURCE_STATES.has(stateCode)) return { stateCode, stateName, status: "machine-readable-source", adapter: "sst-rate-file", coverage: "jurisdiction rate components; adapter pending", sourceName: "Streamlined Sales Tax rate and boundary files", sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
+  if (SST_SOURCE_STATES.has(stateCode)) return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "validated state, county, city, and special-jurisdiction components as published for this state; A+ matching status is documented separately", sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: "https://www.streamlinedsalestax.org/ratesandboundry/Rates/" };
   return { stateCode, stateName, status: "research-needed", adapter: "state-specific", coverage: "official DOR source mapping pending", sourceName: "State tax authority", sourceUrl: null };
 });
 
@@ -324,6 +354,8 @@ export default function Home() {
   const [liveSnapshot, setLiveSnapshot] = useState<LiveAPlusSnapshot | null>(null);
   const [officialSnapshot, setOfficialSnapshot] = useState<OfficialNcSnapshot | null>(validatedOfficialNcFallback);
   const [stateCoverage, setStateCoverage] = useState<StateCoverageSnapshot | null>({ retrievedAt: validatedOfficialNcFallback.retrievedAt, states: validatedStateCoverageFallback, excludedShipTos: 0 });
+  const [taxTreatmentSnapshot, setTaxTreatmentSnapshot] = useState<TaxTreatmentSnapshot | null>(null);
+  const [taxTreatmentStatus, setTaxTreatmentStatus] = useState<TaxTreatmentStatus>("idle");
   const [selectedState, setSelectedState] = useState<StateSummary | null>(null);
   const [stateDetail, setStateDetail] = useState<StateDetail | null>(null);
   const [stateDetailStatus, setStateDetailStatus] = useState<StateDetailStatus>("idle");
@@ -424,12 +456,14 @@ export default function Home() {
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 65_000);
+    setTaxTreatmentStatus("loading");
     try {
       const requestOptions = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
-      const [ratesResponse, statesResponse, officialResponse] = await Promise.all([
+      const [ratesResponse, statesResponse, officialResponse, treatmentResponse] = await Promise.all([
         fetch(`${apiBase}/api/aplus/tax-bodies`, requestOptions),
         fetch(`${apiBase}/api/aplus/states`, requestOptions),
         fetch(`${apiBase}/api/official/nc-rates`, requestOptions).catch(() => null),
+        fetch(`${apiBase}/api/aplus/tax-treatment`, requestOptions).catch(() => null),
       ]);
       if (!ratesResponse.ok || !statesResponse.ok) throw new Error("A+ connector returned an unavailable response.");
       const [nextSnapshot, nextStateCoverage] = await Promise.all([
@@ -440,6 +474,12 @@ export default function Home() {
       const liveCoverage = mergeRateRows(initializeComparisons(countyCoverage), nextSnapshot.standardRows);
       let officialComparison: OfficialNcSnapshot | null = null;
       if (officialResponse?.ok) officialComparison = await officialResponse.json() as OfficialNcSnapshot;
+      if (treatmentResponse?.ok) {
+        setTaxTreatmentSnapshot(await treatmentResponse.json() as TaxTreatmentSnapshot);
+        setTaxTreatmentStatus("ready");
+      } else {
+        setTaxTreatmentStatus("error");
+      }
       setActiveCountyCoverage(officialComparison ? mergeOfficialRates(liveCoverage, officialComparison) : liveCoverage);
       setLiveSnapshot(nextSnapshot);
       setOfficialSnapshot(officialComparison);
@@ -453,6 +493,7 @@ export default function Home() {
     } catch {
       setConnectorStatus("fallback");
       setConnectorMessage("Live A+ data is unavailable; the last validated built-in snapshot remains visible.");
+      setTaxTreatmentStatus("error");
     } finally {
       window.clearTimeout(timeout);
     }
@@ -561,7 +602,14 @@ export default function Home() {
     () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings),
     [gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
-  const needsAttentionCount = openFindings.length + gaFindings.length;
+  // The dashboard inbox is the shared, cross-state finding shape. Upcoming publications remain on
+  // their own calendar page; this subset is the confirmed-difference queue used consistently by
+  // the home summary, navigation badge, and Needs attention page.
+  const attentionFindings = useMemo(
+    () => inboxFindings.filter((finding) => finding.comparisonStatus === "mismatch"),
+    [inboxFindings],
+  );
+  const needsAttentionCount = attentionFindings.length;
   const openFinding = (finding: JurisdictionFinding) => {
     if (finding.stateCode === "NC") {
       const county = activeCountyCoverage.find((candidate) => candidate.taxBody === finding.taxBody);
@@ -769,7 +817,7 @@ export default function Home() {
               aria-current={activeView === item.id ? "page" : undefined}
             >
               {item.label}
-              {item.id === "attention" && openFindings.length > 0 && <span className="nav-count">{openFindings.length}</span>}
+              {item.id === "attention" && needsAttentionCount > 0 && <span className="nav-count">{needsAttentionCount}</span>}
               {item.id === "upcoming" && upcomingFindings.length > 0 && <span className="nav-count">{upcomingFindings.length}</span>}
             </button>
           ))}
@@ -823,6 +871,8 @@ export default function Home() {
             </div>
             <button className="secondary-button" type="button" onClick={() => { void refreshLiveSnapshot(); void refreshGaBoundary(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
           </div>
+
+          <TaxTreatmentPanel snapshot={taxTreatmentSnapshot} status={taxTreatmentStatus} connectorStatus={connectorStatus} />
 
           <section className="dashboard-grid">
             <article className="priority-card" aria-labelledby="priority-title">
@@ -998,19 +1048,19 @@ export default function Home() {
             titleId="attention-title"
             eyebrow="Confirmed differences only"
             title="Needs attention"
-            description="A finding appears here only after the official rate and A+ configuration both pass validation."
+            description="A finding appears here only after the official rate, A+ configuration, and jurisdiction comparison pass validation."
           />
           <section className="queue-panel attention-panel" aria-labelledby="attention-title">
-            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Confirmed A+ differences</h2></div><span className={`count-pill ${openFindings.length === 0 ? "quiet" : ""}`}>{openFindings.length}</span></div>
-            {openFindings.length === 0 ? (
-              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No confirmed A+ differences</strong><p>The August 18 validated NC snapshot has no unresolved rate mismatch. Source refreshes require a separately supervised live-validation step.</p></div></div>
-            ) : openFindings.map((county) => {
-                 const reviewCase = reviewCasesByKey.get(reviewFindingKey(county));
+            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Confirmed A+ differences</h2></div><span className={`count-pill ${needsAttentionCount === 0 ? "quiet" : ""}`}>{needsAttentionCount}</span></div>
+            {attentionFindings.length === 0 ? (
+              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No confirmed A+ differences</strong><p>The last validated comparison has no unresolved differences. Source refreshes require a separately supervised live-validation step.</p></div></div>
+            ) : attentionFindings.map((finding) => {
+                 const reviewCase = reviewCasesByKey.get(finding.reviewFindingKey);
                  return (
-                   <button className="history-card finding-card" type="button" key={county.taxBody} onClick={() => setSelectedCounty(county)}>
+                   <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                     <span className="status-mark comparison-mismatch">!</span>
-                     <span><strong>{county.county} County</strong><small>{county.taxBody} · {county.activeShipTos.toLocaleString()} active ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}</small></span>
-                     <span className="history-rate">A+ {formatRate(county.currentRate)} → <strong>{county.officialRate === null ? "Pending" : formatRate(county.officialRate)}</strong></span>
+                     <span><strong>{finding.jurisdictionLabel}</strong><small>{finding.stateCode} · {finding.taxBody} · {finding.activeShipTos.toLocaleString()} active ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · jurisdiction review needed" : ""}</small></span>
+                     <span className="history-rate">A+ {finding.aplusRate === null ? "Pending" : formatRate(finding.aplusRate)} → <strong>{finding.officialRate === null ? "Pending" : formatRate(finding.officialRate)}</strong></span>
                      <span className="row-arrow" aria-hidden="true">›</span>
                    </button>
                  );
@@ -1126,8 +1176,8 @@ export default function Home() {
           </section>
           <section className="source-next">
             <span className="section-label">Next application milestone</span>
-            <h2>The nationwide source framework is underway.</h2>
-            <p>Official-rate adapters are now connected for North Carolina, Georgia, California, Texas, Florida, Pennsylvania, Ohio, and Tennessee. Illinois and Virginia have machine-readable sources identified; South Carolina and Maryland have official publications identified. They remain intentionally unconnected until their formats and jurisdiction rules pass fixture validation. Jurisdiction-to-A+ matching outside NC and GA is still a separate step.</p>
+            <h2>The nationwide official-source framework is connected.</h2>
+            <p>All 51 jurisdictions are accounted for: 47 have validated official-rate or policy adapters, while Delaware, Montana, New Hampshire, and Oregon are explicitly classified as having no general sales tax. Jurisdiction-to-A+ matching remains a separate state-by-state step and TaxAP will not guess unresolved address boundaries or business exceptions.</p>
             <ol><li><span>1</span>Read active A+ coverage</li><li><span>2</span>Validate official rates</li><li><span>3</span>Match jurisdictions</li><li><span>4</span>Review differences</li></ol>
           </section>
           <AppFooter />
@@ -1305,6 +1355,41 @@ export default function Home() {
   );
 }
 
+function TaxTreatmentPanel({ snapshot, status, connectorStatus }: { snapshot: TaxTreatmentSnapshot | null; status: TaxTreatmentStatus; connectorStatus: ConnectorStatus }) {
+  if (status === "loading") {
+    return <section className="tax-treatment-panel" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Reading aggregate treatment counts…</strong></section>;
+  }
+  if (status === "error" || !snapshot) {
+    return <section className="tax-treatment-panel tax-treatment-unavailable" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Treatment summary unavailable</strong><p>{connectorStatus === "fallback" ? "Live A+ data is unavailable, so TaxAP is not showing a tax-treatment conclusion." : "TaxAP could not load the aggregate treatment summary. No treatment conclusion is shown."}</p></section>;
+  }
+
+  const bucket = (treatmentCode: TaxTreatmentCode) => snapshot.treatments.find((item) => item.treatmentCode === treatmentCode) ?? { treatmentCode, activeShipTos: 0, activeCustomers: 0 };
+  const alwaysTaxable = bucket("0");
+  const neverTaxed = bucket("3");
+  const lineLevelReview = bucket("J");
+  const other = bucket("other");
+  const temporaryAlwaysTaxable = snapshot.temporaryTaxBody.treatments.find((item) => item.treatmentCode === "0")?.activeShipTos ?? 0;
+
+  return (
+    <section className="tax-treatment-panel" aria-labelledby="tax-treatment-title">
+      <div className="tax-treatment-heading"><div><span className="section-label">A+ tax treatment context</span><h2 id="tax-treatment-title">Rate monitoring is scoped by tax treatment</h2></div><small>Aggregate only · refreshed {new Date(snapshot.retrievedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</small></div>
+      <p className="tax-treatment-intro">This A+ setting guides TaxAP&apos;s monitoring scope; it does not determine a customer&apos;s legal taxability.</p>
+      <div className="tax-treatment-grid">
+        <div><span>0 · Always taxable</span><strong>{alwaysTaxable.activeShipTos.toLocaleString()}</strong><small>Included in rate-comparison impact.</small></div>
+        <div><span>3 · Never taxed</span><strong>{neverTaxed.activeShipTos.toLocaleString()}</strong><small>Intentional exempt activity; excluded from rate-risk impact.</small></div>
+        <div><span>J · Mixed</span><strong>{lineLevelReview.activeShipTos.toLocaleString()}</strong><small>Requires line-level review; no header-level rate conclusion.</small></div>
+        <div><span>Other or blank</span><strong>{other.activeShipTos.toLocaleString()}</strong><small>Unclassified treatment; no rate conclusion.</small></div>
+      </div>
+      {snapshot.temporaryTaxBody.activeShipTos > 0 && (
+        <div className="temporary-tax-alert" role="status">
+          <span aria-hidden="true">!</span>
+          <div><strong>Temporary tax-body configuration needs confirmation</strong><p><code>ZTEMP</code> is assigned to {snapshot.temporaryTaxBody.activeShipTos.toLocaleString()} active ship-tos. {temporaryAlwaysTaxable.toLocaleString()} are marked always taxable.{snapshot.temporaryTaxBody.configuredRate === null ? " Its current A+ rate could not be confirmed." : ` Its configured A+ rate is ${formatRate(snapshot.temporaryTaxBody.configuredRate)}.`} This is displayed as a configuration exception, not an automatic rate mismatch.</p></div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function OfficialStateSourcePanel({ source, status, snapshot }: { source: OfficialSourceState | null; status: StateDetailStatus; snapshot: OfficialStateSnapshot | null }) {
   const statusLabel = source?.status === "connected" ? "Connected"
     : source?.status === "machine-readable-source" ? "Machine source identified"
@@ -1326,6 +1411,12 @@ function OfficialStateSourcePanel({ source, status, snapshot }: { source: Offici
             <div><span>Checked</span><strong>{new Date(snapshot.retrievedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong></div>
           </div>
           <p className="official-boundary-note">{snapshot.boundaryStatus}</p>
+          {snapshot.futureChanges && snapshot.futureChanges.length > 0 && (
+            <div className="comparison-note comparison-note-upcoming" role="status">
+              <span aria-hidden="true">↗</span>
+              <div><strong>Official future rate change published</strong><p>{snapshot.futureChanges.map((change) => `${change.jurisdiction}: ${formatRate(change.currentRate)} to ${formatRate(change.futureRate)} effective ${change.effectiveDate}`).join("; ")}.</p></div>
+            </div>
+          )}
           <details className="official-rate-details">
             <summary>View {snapshot.rates.length} official jurisdiction rate records</summary>
             <div className="table-scroll"><table className="coverage-table official-rate-table"><thead><tr><th>Type</th><th>Jurisdiction</th><th>Code</th><th>Component</th><th>Total general rate</th><th>Effective</th></tr></thead><tbody>

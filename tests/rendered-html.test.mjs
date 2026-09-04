@@ -77,6 +77,12 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /View audit history/);
   assert.match(page, /Local review storage is unavailable/);
   assert.match(page, /Official rate-source rollout/);
+  assert.match(page, /All 51 jurisdictions are accounted for: 47 have validated official-rate or policy adapters/);
+  assert.match(page, /stateCode === "MO".*status: "connected".*state-dor-quarterly-filing-code-xlsx/);
+  assert.match(page, /stateCode === "AL".*status: "connected"/);
+  assert.match(page, /stateCode === "CO".*status: "connected"/);
+  assert.match(page, /stateCode === "LA".*status: "connected"/);
+  assert.match(page, /stateCode === "NM".*status: "connected"/);
   assert.match(page, /Machine source identified/);
   assert.match(page, /OfficialStateSourcePanel/);
   assert.match(page, /Pennsylvania Department of Revenue/);
@@ -99,6 +105,13 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /Upcoming change/);
   assert.match(page, /Open official NCDOR evidence/);
   assert.match(page, /api\/aplus\/states\/\$\{encodeURIComponent\(stateCode\)\}/);
+  assert.match(page, /api\/aplus\/tax-treatment/);
+  assert.match(page, /A\+ tax treatment context/);
+  assert.match(page, /Always taxable/);
+  assert.match(page, /Never taxed/);
+  assert.match(page, /J · Mixed/);
+  assert.match(page, /Temporary tax-body configuration needs confirmation/);
+  assert.match(page, /no header-level rate conclusion/);
   assert.match(page, /customer names and ship-to addresses are not returned to the browser/);
   assert.match(page, /LIVE_REFRESH_INTERVAL_MS = 6 \* 60 \* 60 \* 1000/);
   assert.match(page, /matchesJurisdictionFilters/);
@@ -106,6 +119,10 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /Official source/);
   assert.match(page, /Any review status/);
   assert.match(page, /New publications are not automatically treated as A\+ problems|separates newly published government rates from confirmed A\+ differences/);
+  assert.match(page, /const attentionFindings = useMemo/);
+  assert.match(page, /inboxFindings\.filter\(\(finding\) => finding\.comparisonStatus === "mismatch"\)/);
+  assert.match(page, /item\.id === "attention" && needsAttentionCount > 0/);
+  assert.match(page, /attentionFindings\.map\(\(finding\)/);
   assert.match(importParser, /XATXBD_COLUMN_COUNT = 19/);
   assert.match(importParser, /Missing standard county tax bodies/);
   assert.match(importParser, /current total does not equal its rate components/);

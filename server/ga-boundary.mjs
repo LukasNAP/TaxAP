@@ -380,7 +380,13 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
   }
 
   const allTaxBodyFindings = [...perTaxBody.values()].map((bucket) => {
-    const jurisdictions = [...bucket.jurisdictionCounts.values()].sort((a, b) => b.count - a.count);
+    // A+ does not promise row order for the live address query. Counts are normally sufficient to
+    // choose a majority jurisdiction, but tied counts otherwise preserve Map insertion order and
+    // make the returned jurisdiction flip across identical reads. Use the stable jurisdiction key
+    // as the tie-breaker so aggregate output is reproducible.
+    const jurisdictions = [...bucket.jurisdictionCounts.values()].sort((a, b) =>
+      b.count - a.count || jurisdictionKey(a.jurisdiction).localeCompare(jurisdictionKey(b.jurisdiction)),
+    );
     const majority = jurisdictions[0] ?? null;
     const consistent = jurisdictions.length <= 1;
     const officialRate = majority ? officialRateForJurisdiction(majority.jurisdiction, rateSnapshot) : null;
@@ -406,6 +412,10 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     .filter((finding) => describesOtherJurisdiction(finding, "GA"))
     .map((finding) => ({
       ...finding,
+      // Cross-state rows are deliberately excluded from Georgia rate comparison. When their GA
+      // address matches more than one GA jurisdiction, none is an authoritative jurisdiction for
+      // that non-GA tax body, so do not expose a tie-broken value as though it were one.
+      jurisdiction: finding.jurisdictionAssignmentConsistent ? finding.jurisdiction : null,
       officialRate: null,
       rateDifference: null,
       hasDifference: false,

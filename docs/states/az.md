@@ -1,6 +1,8 @@
 # Arizona — findings
 
-Status: **investigated live 2026-08-26, not safe to build without a human call on 3 live discrepancies.** Official CSV source confirmed real and current (`TPT_RATETABLE_ALL_08012026.csv`, resolved from the azdor.gov landing page — the filename date changes monthly, always resolve from the page's link text, don't hardcode).
+Status: **official retail-rate source connected 2026-09-03; automatic A+ matching remains intentionally disabled pending business review.** `server/az-rates.mjs` resolves the newest dated CSV from ADOR's landing page, filters active business-code-017 retail rows, and currently validates 15 counties, 93 cities, and 38 tribal/special regions from the September 1, 2026 file. County/special rows remain combined rates; city rows remain components and are never presented as standalone totals.
+
+The 2026-09-03 aggregate A+ refresh found 336 active Arizona ship-tos and 212 customer assignments across 37 tax-body groups. `AZ000` at 0% covers 47, two use `ZTEMP`, and the previously documented custom/unmatched codes remain. In addition to the three earlier discrepancies, ADOR's September 1 Kingman increase produces a new visible case: county 5.6% plus city 3% = 8.6%, while A+ `AZ650` remains 8.1% for one ship-to. No A+ record was changed.
 
 ## Address matching
 

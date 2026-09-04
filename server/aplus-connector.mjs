@@ -1,14 +1,23 @@
 import { DefaultAzureCredential } from "@azure/identity";
 import sql from "mssql";
+import sqlWindows from "mssql/msnodesqlv8.js";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { validateXatxbdCsv } from "../app/aplus-import.ts";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
 import { buildWantedAddressKeys, readGeorgiaBoundaryArchive, parseBoundaryCsv, reconcileGeorgiaBoundary } from "./ga-boundary.mjs";
 import { readOfficialCaRates } from "./ca-rates.mjs";
+import { readOfficialCtRates } from "./ct-rates.mjs";
+import { readOfficialDcRates } from "./dc-rates.mjs";
 import { readOfficialFlRates } from "./fl-rates.mjs";
+import { readOfficialHiRates } from "./hi-rates.mjs";
+import { readOfficialIlRates } from "./il-rates.mjs";
+import { readOfficialIdRates } from "./id-rates.mjs";
 import { readOfficialNcRates } from "./ncdor-rates.mjs";
 import { readOfficialMdRates } from "./md-rates.mjs";
+import { readOfficialMeRates } from "./me-rates.mjs";
+import { readOfficialMaRates } from "./ma-rates.mjs";
+import { readOfficialMsRates } from "./ms-rates.mjs";
 import { readOfficialNjRates } from "./nj-rates.mjs";
 import { reconcileNewJerseyAplus } from "./nj-aplus.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
@@ -17,6 +26,15 @@ import { createReviewStore } from "./review-store.mjs";
 import { readOfficialScRates } from "./sc-rates.mjs";
 import { readOfficialGaRates, readOfficialSstStateRates } from "./sst-rates.mjs";
 import { readOfficialTxRates } from "./tx-rates.mjs";
+import { readOfficialVaRates } from "./va-rates.mjs";
+import { readOfficialAzRates } from "./az-rates.mjs";
+import { readOfficialNyRates } from "./ny-rates.mjs";
+import { readOfficialAkRates } from "./ak-rates.mjs";
+import { readOfficialNmRates } from "./nm-rates.mjs";
+import { readOfficialAlRates } from "./al-rates.mjs";
+import { readOfficialCoRates } from "./co-rates.mjs";
+import { readOfficialLaRates } from "./la-rates.mjs";
+import { readOfficialMoRates } from "./mo-rates.mjs";
 
 const port = Number(process.env.TAXAP_CONNECTOR_PORT || 3001);
 const host = process.env.TAXAP_CONNECTOR_HOST || "127.0.0.1";
@@ -70,17 +88,19 @@ export function validateStateCode(value) {
 }
 
 function linkedSettings() {
+  const directWindowsConnection = String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase() === "windows";
   return {
-    linkedServer: process.env.TAXAP_SQL_LINKED_SERVER || "SQL03",
+    linkedServer: directWindowsConnection ? null : process.env.TAXAP_SQL_LINKED_SERVER || "SQL03",
     aplusLinkedServer: process.env.TAXAP_APLUS_LINKED_SERVER || "APLUS",
     library: process.env.TAXAP_APLUS_LIBRARY || "APLUSV8FAQ",
   };
 }
 
 function wrapDb2Query(db2Query, { linkedServer = "SQL03", aplusLinkedServer = "APLUS" } = {}) {
-  const safeLinkedServer = safeIdentifier(linkedServer, "TAXAP_SQL_LINKED_SERVER");
   const safeAplusLinkedServer = safeIdentifier(aplusLinkedServer, "TAXAP_APLUS_LINKED_SERVER");
   const sql03Query = `SELECT * FROM OPENQUERY(${safeAplusLinkedServer}, '${escapeSqlLiteral(db2Query)}')`;
+  if (linkedServer === null) return sql03Query;
+  const safeLinkedServer = safeIdentifier(linkedServer, "TAXAP_SQL_LINKED_SERVER");
   return `SELECT * FROM OPENQUERY([${safeLinkedServer}], '${escapeSqlLiteral(sql03Query)}')`;
 }
 
@@ -154,6 +174,33 @@ export function buildStateTaxBodyQuery() {
   ORDER BY ActiveShipTos DESC, TaxBody`;
 }
 
+// Tax treatment is deliberately summarized before it leaves the connector.  The browser receives
+// only treatment-code counts, never a customer, ship-to, address, order, or invoice row.
+export function buildTaxTreatmentSummaryQuery() {
+  const treatmentCode = `CASE
+      WHEN LTRIM(RTRIM(a.SATXCD)) = '0' THEN '0'
+      WHEN LTRIM(RTRIM(a.SATXCD)) = '3' THEN '3'
+      WHEN UPPER(LTRIM(RTRIM(a.SATXCD))) = 'J' THEN 'J'
+      ELSE 'other'
+    END`;
+  const activeShipTos = `FROM dbo.ADDR AS a
+    LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
+    WHERE ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
+      AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'`;
+  return `SELECT 'all' AS Scope, ${treatmentCode} AS TreatmentCode,
+      COUNT(*) AS ActiveShipTos,
+      COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
+    ${activeShipTos}
+    GROUP BY ${treatmentCode}
+    UNION ALL
+    SELECT 'ZTEMP' AS Scope, ${treatmentCode} AS TreatmentCode,
+      COUNT(*) AS ActiveShipTos,
+      COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
+    ${activeShipTos}
+      AND LTRIM(RTRIM(a.SASTXB)) = 'ZTEMP'
+    GROUP BY ${treatmentCode}`;
+}
+
 function csvValue(value) {
   const normalized = value instanceof Date
     ? value.toISOString().slice(0, 10)
@@ -181,6 +228,21 @@ function recordsetToCsv(recordset) {
 async function openPool() {
   const server = requiredSetting("TAXAP_SQL_SERVER");
   const database = requiredSetting("TAXAP_SQL_DATABASE");
+  const authentication = String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase();
+  if (authentication === "windows") {
+    const pool = new sqlWindows.ConnectionPool({
+      server,
+      database,
+      driver: "ODBC Driver 18 for SQL Server",
+      options: { trustedConnection: true, encrypt: false },
+      pool: { max: 1, min: 0, idleTimeoutMillis: 5_000 },
+      connectionTimeout: 20_000,
+      requestTimeout: 60_000,
+    });
+    await pool.connect();
+    return pool;
+  }
+  if (authentication !== "entra") throw new Error("TAXAP_SQL_AUTHENTICATION must be entra or windows.");
   const credential = new DefaultAzureCredential();
   const accessToken = await credential.getToken("https://database.windows.net/.default");
   if (!accessToken?.token) throw new Error("Microsoft Entra ID did not return an Azure SQL access token.");
@@ -330,6 +392,43 @@ export async function readStateDetail(value) {
   }
 }
 
+export async function readTaxTreatmentSummary() {
+  const pool = await openPool();
+  try {
+    const [summaryResult, definitionResult] = await Promise.all([
+      pool.request().query(buildTaxTreatmentSummaryQuery()),
+      pool.request().query(buildTaxBodyDefinitionsQuery(["ZTEMP"], linkedSettings())),
+    ]);
+    const groups = new Map([["all", []], ["ZTEMP", []]]);
+    for (const row of summaryResult.recordset) {
+      const scope = String(rowValue(row, "Scope") || "").trim();
+      const bucket = groups.get(scope);
+      if (!bucket) continue;
+      const rawTreatment = String(rowValue(row, "TreatmentCode") || "other").trim().toUpperCase();
+      bucket.push({
+        treatmentCode: rawTreatment === "0" || rawTreatment === "3" || rawTreatment === "J" ? rawTreatment : "other",
+        activeShipTos: numericValue(rowValue(row, "ActiveShipTos")),
+        activeCustomers: numericValue(rowValue(row, "ActiveCustomers")),
+      });
+    }
+    const definition = definitionResult.recordset[0];
+    const temporaryTreatments = groups.get("ZTEMP") ?? [];
+    return {
+      retrievedAt: new Date().toISOString(),
+      treatments: groups.get("all") ?? [],
+      temporaryTaxBody: {
+        taxBody: "ZTEMP",
+        definitionStatus: definition ? "configured" : "missing",
+        configuredRate: definition ? numericValue(rowValue(definition, "CurrentTotalRate")) : null,
+        activeShipTos: temporaryTreatments.reduce((sum, bucket) => sum + bucket.activeShipTos, 0),
+        treatments: temporaryTreatments,
+      },
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
 export async function readNewJerseyAplusComparison() {
   const [stateDetail, officialSnapshot] = await Promise.all([
     readStateDetail("NJ"),
@@ -438,7 +537,7 @@ export function createConnectorServer({ reviews } = {}) {
       return sendJson(response, 200, {
         status: "ready",
         configured: Boolean(process.env.TAXAP_SQL_SERVER && process.env.TAXAP_SQL_DATABASE),
-        authentication: "Microsoft Entra ID",
+        authentication: String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase() === "windows" ? "Windows Authentication" : "Microsoft Entra ID",
       }, responseOrigin);
     }
 
@@ -494,6 +593,19 @@ export function createConnectorServer({ reviews } = {}) {
       }
     }
 
+    if (url.pathname === "/api/aplus/tax-treatment" && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        const snapshot = await readTaxTreatmentSummary();
+        console.info(JSON.stringify({ event: "aplus_tax_treatment_refresh", ok: true, treatments: snapshot.treatments.length, temporaryShipTos: snapshot.temporaryTaxBody.activeShipTos, retrievedAt: snapshot.retrievedAt }));
+        return sendJson(response, 200, snapshot, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown connector error";
+        console.error(JSON.stringify({ event: "aplus_tax_treatment_refresh", ok: false, message }));
+        return sendJson(response, 503, { error: "The read-only A+ tax-treatment summary is unavailable." }, responseOrigin);
+      }
+    }
+
     if (url.pathname === "/api/official/nc-rates" && (request.method === "GET" || request.method === "POST")) {
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
@@ -517,6 +629,36 @@ export function createConnectorServer({ reviews } = {}) {
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
         const stateCode = validateStateCode(decodeURIComponent(officialStateMatch[1]));
+        if (stateCode === "AL") {
+          const snapshot = await readOfficialAlRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "CO") {
+          const snapshot = await readOfficialCoRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "LA") {
+          const snapshot = await readOfficialLaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "MO") {
+          const snapshot = await readOfficialMoRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "AK") {
+          const snapshot = await readOfficialAkRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "NM") {
+          const snapshot = await readOfficialNmRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
         if (stateCode === "GA") {
           const snapshot = await readOfficialGaRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
@@ -537,13 +679,68 @@ export function createConnectorServer({ reviews } = {}) {
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
-        if (stateCode === "OH" || stateCode === "TN" || stateCode === "AR" || stateCode === "WY" || stateCode === "IN" || stateCode === "KY" || stateCode === "MI" || stateCode === "RI") {
+        if (stateCode === "AZ") {
+          const snapshot = await readOfficialAzRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "HI") {
+          const snapshot = await readOfficialHiRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "CT") {
+          const snapshot = await readOfficialCtRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "DC") {
+          const snapshot = await readOfficialDcRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "IL") {
+          const snapshot = await readOfficialIlRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "ID") {
+          const snapshot = await readOfficialIdRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "VA") {
+          const snapshot = await readOfficialVaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "OH" || stateCode === "TN" || stateCode === "IA" || stateCode === "KS" || stateCode === "MN" || stateCode === "ND" || stateCode === "NE" || stateCode === "NV" || stateCode === "OK" || stateCode === "SD" || stateCode === "UT" || stateCode === "VT" || stateCode === "WA" || stateCode === "WI" || stateCode === "WV" || stateCode === "AR" || stateCode === "WY" || stateCode === "IN" || stateCode === "KY" || stateCode === "MI" || stateCode === "RI") {
           const snapshot = await readOfficialSstStateRates(stateCode);
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
         if (stateCode === "MD") {
           const snapshot = await readOfficialMdRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "ME") {
+          const snapshot = await readOfficialMeRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "MA") {
+          const snapshot = await readOfficialMaRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "MS") {
+          const snapshot = await readOfficialMsRates();
+          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
+          return sendJson(response, 200, snapshot, responseOrigin);
+        }
+        if (stateCode === "NY") {
+          const snapshot = await readOfficialNyRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }

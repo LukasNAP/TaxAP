@@ -1,6 +1,6 @@
 # TaxAP project handoff
 
-Last updated: August 26, 2026 (New Jersey A+ reconciliation wired and live-validated; Georgia outside-jurisdiction assignments separated and live-validated with the correct `SACSUS` active filter; South Carolina RFA matcher attempt stopped safely with verified blockers documented)
+Last updated: September 4, 2026 (all 51 jurisdictions accounted for at the official-source layer; Missouri quarterly filing-code adapter connected)
 
 **This is the single shared handoff doc for this project, regardless of which AI coding assistant you're using (Claude Code or ChatGPT/Codex).** Update it at the end of every session — whichever assistant you used — so the next session (with either tool) starts from the same accurate picture. Don't keep a separate per-assistant copy; this file replaces the earlier split between `CLAUDE-HANDOFF.md` (Claude-side) and `HANDOFF.md` (ChatGPT-side).
 
@@ -41,7 +41,7 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 - Production build passes.
 - ESLint passes.
 - `git diff --check` passes; Git may emit expected LF-to-CRLF warnings on Windows.
-- Test suite: 83 passing tests as of 2026-08-26 (grows most sessions — check `npm test` output rather than trusting this number for long).
+- Test suite: 130 passing tests as of 2026-09-04 (grows most sessions — check `npm test` output rather than trusting this number for long).
 - Work through 2026-08-26 is committed and pushed to the private GitHub repository (`LukasNAP/TaxAP`, `main`). No deployment, A+ write, or external account change has been performed.
 
 Live results verified on August 18, 2026 (still the most recent live A+ check as of 2026-08-26 — re-verify before trusting these numbers if much time has passed):
@@ -55,7 +55,67 @@ Live results verified on August 18, 2026 (still the most recent live A+ check as
 - Recent verified NC case: Mecklenburg changed from 7.25% to 8.25% effective July 1, 2026; A+ now matches. Re-confirmed live again on 2026-08-25 with the same result.
 - Retired definitions such as `DO NOT USE`, `INACTIVE`, `OBSOLETE`, `NCUSE`, and `NC060XXX` are suppressed.
 
+### Tax-treatment monitoring context (added 2026-08-27)
+
+- The dashboard now loads an aggregate-only A+ tax-treatment summary through `GET/POST /api/aplus/tax-treatment`. The connector groups active ship-tos by `ADDR.SATXCD`, never returns customer, ship-to, address, order, or invoice rows, and remains read-only.
+- Confirmed treatment handling: `0` (always taxable) is included in rate-comparison impact; `3` (never taxed) is treated as intentional exempt activity and excluded from rate-risk impact; `J` is mixed and requires line-level review, so TaxAP makes no header-level rate conclusion.
+- `ZTEMP` is surfaced as a visible configuration exception rather than an automatic rate mismatch. The alert shows only aggregate assignment counts and its configured A+ rate. It needs owner confirmation before any follow-up; TaxAP does not modify A+.
+
 South Carolina, added 2026-08-26 (`server/sc-rates.mjs`): official ST-575 rate table is parsed and validated (46/46 counties, 294 municipalities, 340 total rows) by shelling out to `pdftotext -table` (poppler-utils) rather than hand-rolling a PDF parser — **this is the one adapter with a runtime dependency on a system binary, not just npm packages; the connector's host needs poppler-utils installed or `/api/official/states/SC` returns 503.** A+ tax-body matching for SC is not yet built. Full findings: `references/states/sc.md` in the local `taxap-dev` Claude Code skill (see "Where deeper research findings live" below — this is outside the repo, Claude-only today).
+
+Illinois, added 2026-08-31 (`server/il-rates.mjs`): the IDOR fixed-width county/municipality file is live-validated and exposes 1,343 jurisdiction-wide standard-merchandise rates across all 102 counties. The 200 address-override locations are excluded rather than guessed, because IDOR requires its separate address-level source for them. An aggregate-only A+ inventory found 895 active ship-tos across 161 tax-body groups; its mostly location-ID-shaped codes need a strict, fixture-tested matcher before any rate comparison. See `docs/states/il.md`.
+
+Iowa, added 2026-08-31 (`server/sst-rates.mjs`): the latest published SST file validates 99 real county components, 1,013 city components, and 101 special components against Iowa's 6% state rate; the non-county `199` source row is never counted as a 100th county. Aggregate A+ inventory found 268 active ship-tos across 53 tax-body groups, but internal `IAxxx` codes do not map deterministically to FIPS/city identifiers. No comparison is built; see `docs/states/ia.md`.
+
+Kansas, added 2026-08-31 (`server/sst-rates.mjs`): the current Kansas SST file validates a 6.5% state component plus 105 county, 628 city, and 1,412 special-jurisdiction components. Alphanumeric special IDs (for example `11KAN`) are preserved as opaque special components rather than rejected or misclassified. Aggregate A+ inventory found 267 active ship-tos across 57 tax-body groups, but the A+ IDs do not deterministically map to the official county, place, or special IDs. No comparison is built; see `docs/states/ks.md`.
+
+Minnesota, added 2026-09-02 (`server/sst-rates.mjs`): the current Minnesota SST file validates the 6.875% state component plus 62 active county, 63 city, and 11 special-jurisdiction components. Only counties with an active local component appear; TaxAP does not model all 87 counties as taxable local rows. Aggregate A+ inventory found 387 active ship-tos across 55 tax-body groups; `MN000` accounts for 106 ship-tos and has no configured definition, while four assignments use cross-state tax bodies. No comparison is built because Minnesota's layered local taxes require a validated address/boundary mapping; see `docs/states/mn.md`.
+
+North Dakota, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates North Dakota's 5% state component, all 53 county components, and 352 city components. The source resolver was hardened to match the actual state-prefixed filename, preventing `ND` from accidentally selecting Wyoming through path text. Aggregate A+ inventory found 32 active ship-tos, all on `ND000` at 0%; this is treated as an unresolved statewide setup decision, not a normal rate match. Local maximum-tax/refund caps also remain outside the percentage-only model; see `docs/states/nd.md`.
+
+Nebraska, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates Nebraska's 5.5% state component, 270 active city components, five special components, and the one active county component (Dakota County). Aggregate A+ inventory found 115 active ship-tos across 23 groups; `NE000` has no configured definition and covers 21. No comparison is built because Dakota County's tax excludes municipalities imposing their own local tax and the special layers need explicit reconciliation; see `docs/states/ne.md`.
+
+Nevada, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file uses a Nevada-specific combined-total convention—a 0% source state row plus all 17 county/equivalent totals and nine special-jurisdiction totals. TaxAP validates that convention, exposes Nevada's independently verified 6.85% minimum statewide rate, and never adds that base to an already-combined county total. Aggregate A+ inventory found 273 active ship-tos across 14 groups; 11 configured Nevada county codes align by label/rate, `NV000` is undefined for eight ship-tos, and three assignments use out-of-state tax bodies. No number-only comparison is built because A+ uses internal ordinal identifiers rather than county FIPS; see `docs/states/nv.md`.
+
+Oklahoma, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates Oklahoma's 4.5% state component, all 77 county components, 798 municipality rows, and 744 special/combined local identifiers. Explicit active zero-rate municipality rows are preserved. Aggregate A+ inventory found 272 active ship-tos across 61 groups; `OK000` is undefined for two. No comparison is built because Oklahoma totals depend on overlapping delivery-location layers and A+ COPO-like identifiers do not directly equal SST/Census identifiers; see `docs/states/ok.md`.
+
+South Dakota, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates South Dakota's 4.2% state rate, all 66 zero-component county rows, 254 municipality components, and six tribal/special type-49 records. The special rows remain visible without additive totals because the 4.2% special-jurisdiction tax replaces ordinary state reporting. Aggregate A+ inventory found 42 active ship-tos across 13 configured groups; `SD000` is 0% for nine, while a separate no-local code correctly carries 4.2%. No comparison is built pending municipality and tribal-boundary reconciliation; see `docs/states/sd.md`.
+
+Utah, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates Utah's 4.85% general state component, all 29 county components, and 181 city components; the separate 3% food rate remains source evidence rather than being applied to general merchandise. Aggregate A+ inventory found 221 active ship-tos across 45 groups; `UT000` is undefined for 37. No comparison is built because Utah requires buyer-receipt ZIP+4/boundary sourcing and A+ location codes do not directly equal SST/Census identifiers; see `docs/states/ut.md`.
+
+Vermont, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates Vermont's 6% state rate plus 36 municipality local-option components at 1% each. The shared adapter now uses an explicit `flatStatewideRate` invariant, so Vermont's zero county rows can never be mistaken for “no local tax.” Aggregate A+ inventory found 47 active ship-tos across 17 groups; `VT000` is undefined for nine, and a county-labelled 7% group needs business mapping because Vermont's local option is municipal. No comparison is built pending destination and sales-versus-use reconciliation; see `docs/states/vt.md`.
+
+Washington, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates Washington's 6.5% state component, all 39 real county rows, 277 city rows, 1,153 special/location-code rows, and five non-Census county-type identifiers reclassified as special rather than inventing counties. Aggregate A+ inventory found 469 active ship-tos across 62 groups; `WA000` and `WA3500` are undefined for 32 combined. Configured A+ four-digit codes visibly align with sampled SST `L####` location identifiers, but no comparison is claimed until every active mapping and delivery address is reconciled; see `docs/states/wa.md`.
+
+Wisconsin, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates Wisconsin's 5% state component, all 72 county components, and 1,851 municipality rows including explicit zeros. Aggregate A+ inventory found 425 active ship-tos across 51 groups; `WI000` is undefined for 42 and one assignment uses an NC tax body. The active 5.9% Milwaukee County group covers 47 ship-tos, but no 7.9% City of Milwaukee group appeared; address reconciliation is required before concluding those are correct. Premier-resort and local-exposition taxes are outside the SST file; see `docs/states/wi.md`.
+
+West Virginia, added 2026-09-02 (`server/sst-rates.mjs`): the current SST file validates West Virginia's 6% state component plus 101 active municipality components at 1%; zero county rows are explicitly treated as a municipal model, not a flat state. Aggregate A+ inventory found 112 active ship-tos across 30 groups; `WV000` is undefined for 21, `WV0100` is a legitimate 6% no-local group for 23, and `WV961` is labelled “Missouri Lewisburg” for one. No comparison is built pending municipality boundary mapping and exception review; see `docs/states/wv.md`.
+
+Virginia, added 2026-09-02 (`server/va-rates.mjs`): the current Virginia Tax workbook is downloaded and validated as 95 counties plus 38 independent cities, all keyed by official FIPS and reconciled across the 4.3% state, regional, mandatory 1% local, and additional-local components. The official server reports the workbook was updated 2026-01-09, resolving the old 2023 freshness concern. A read-only aggregate A+ audit found 830 active Virginia ship-tos across 107 groups: 106 VA-prefixed groups cover 829 and one `NC092` assignment covers one. Of the VA groups, 104 matched current names/rates after reviewed normalization; `VA071` Pittsylvania County is 5.30% in A+ versus 6.30% officially for seven ship-tos, and retired `VA240` Bedford City is used by one. Official inventory is connected; automatic A+ comparison remains pending those decisions. See `docs/states/va.md`.
+
+Connecticut, added 2026-09-02 (`server/ct-rates.mjs`): the current DRS page is fetched and validated for both the 6.35% general retail rate and its explicit no-additional-local-sales-tax rule. The aggregate A+ audit found 181 active ship-tos and 75 customer assignments, all on the single `CT000` group at 6.35%. This is an exact general-rate match and requires no address boundary layer; special product/service rates remain outside the general comparison. See `docs/states/ct.md`.
+
+Maine, added 2026-09-02 (`server/me-rates.mjs`): the current MRS rate table is fetched and anchored to its January 1, 2026 column, validating matching 5.5% general sales and use-tax rates. The aggregate A+ audit found 76 active ship-tos and 31 customer assignments, all on `ME000` at 5.50%. This is an exact general-rate match; special categories remain outside the comparison. See `docs/states/me.md`.
+
+Massachusetts, added 2026-09-03 (`server/ma-rates.mjs`): the current DOR guide (updated 2026-05-07) is fetched and validated for matching 6.25% sales and use-tax rates on tangible personal property. The aggregate A+ audit found 344 active ship-tos and 123 customer assignments: `MA000` matches 6.25% for 343, while one uses Nevada code `NV002` and remains visibly cross-state/excluded. Category-specific local options remain outside the general comparison. See `docs/states/ma.md`.
+
+District of Columbia, added 2026-09-03 (`server/dc-rates.mjs`): the live OTR notice is fetched and validates the full enacted schedule—6% through 2026-09-30, then 7% beginning 2026-10-01. The future change is visible in the generic official-source panel and the adapter rolls forward automatically. A read-only aggregate A+ audit found 21 active D.C. ship-tos: 20 on `DC000` at 0% and one on Honduras no-tax code `HN000`; no 7% future rate is scheduled. This is documented for tax-owner review, not changed automatically. See `docs/states/dc.md`.
+
+Mississippi, added 2026-09-03 (`server/ms-rates.mjs`): three live DOR pages validate the 7% general tangible-property rate, Jackson's additional 1% general-retail levy, and Tupelo's additional 0.25% levy. The aggregate A+ audit found 271 active ship-tos: 268 use `MS000` at the correct 7% statewide base and three use unrelated country/Missouri codes. No active Mississippi-specific Jackson/Tupelo code appeared, so city-boundary completeness remains open rather than being guessed. See `docs/states/ms.md`.
+
+Idaho, added 2026-09-03 (`server/id-rates.mjs`): current Tax Commission pages validate matching 6% state sales/use rates and an official inventory of 23 resort cities with separately administered local-option taxes. Because Idaho directs taxpayers to each city rather than publishing central local rates, TaxAP exposes that limitation and never guesses local totals. The aggregate A+ audit found 98 active ship-tos: 85 use configured Idaho groups at 6%, 12 use undefined `ID000`, and one uses Minnesota code `MN430`. See `docs/states/id.md`.
+
+Hawaii, added 2026-09-03 (`server/hi-rates.mjs`): three live DOTAX pages validate the seller-side GET model, 4% base, four 0.5% county surcharges through 2030, Kalawao's exemption, and the optional 4.712% maximum visible pass-on. The aggregate A+ audit found 26 active ship-tos and 11 customer assignments, all on `HI000` at 0%. Because customer pass-on is optional, TaxAP exposes the official policy evidence but intentionally does not call 0% a mismatch until Atlantic confirms its practice. See `docs/states/hi.md`.
+
+Arizona, added 2026-09-03 (`server/az-rates.mjs`): the adapter discovers ADOR's newest all-classifications CSV and validates active retail business-code-017 rows. The September 1 file exposes 15 counties, 93 cities, and 38 tribal/special regions; city rows remain components requiring a county join. The current A+ audit found 336 ship-tos across 37 groups, including 47 on `AZ000` at 0% and two on `ZTEMP`. Four current discrepancies are documented—Douglas, Casa Grande, Taylor, and Kingman after its September 1 increase. No automatic comparison or A+ change was made. See `docs/states/az.md`.
+
+New York, added 2026-09-03 (`server/ny-rates.mjs`): the adapter resolves the current Publication 718 PDF from NY DTF's landing page and validates all 77 rate-bearing entries—57 county-area rows, 19 city rows, and the 4% state-only row—while preserving official reporting codes and combined rates. It uses `pdftotext -layout` in deployment and supports an explicitly configured pdfplumber fallback for local Windows verification. ZIP-based jurisdiction derivation is not attempted. A+ comparison remains withheld because Suffolk and Yonkers have confirmed rate differences and several names/codes need reviewed aliases. See `docs/states/ny.md`.
+
+Alaska, added 2026-09-03 (`server/ak-rates.mjs`): the adapter dynamically resolves ARSSTC's current non-ZIP XLSX and validates the workbook's own no-state-tax statement, as-of date, schema, 56 unique filing destinations, and borough/city/total arithmetic. The September 1 workbook exposes 10 borough-area and 46 city/taxing-area rows plus an explicit 0% state row, including current layered and seasonal totals. Coverage is deliberately labeled partial because ARSSTC includes participating remote-seller jurisdictions, not every Alaska municipality. The attempted aggregate A+ audit failed with an Entra token login error, so no A+ count or comparison is claimed. See `docs/states/ak.md`.
+
+Alabama, Colorado, Louisiana, and New Mexico were connected during the September 3–4 nationwide-source pass; their adapters dynamically resolve and validate the current official state files or filing tables without forcing unsafe A+ matches. See `docs/states/al.md`, `docs/states/co.md`, `docs/states/la.md`, and `docs/states/nm.md` for exact source counts and remaining boundary decisions.
+
+Missouri, added 2026-09-04 (`server/mo-rates.mjs`): the adapter dynamically selects the current quarterly DOR XLSX and validates its single worksheet, filing-code schema, 4.225% state component, unique codes, and all six published rate fields. The July–September 2026 workbook exposes 2,550 unique city/county/special-district combinations: 109 county-base, 1,538 city/county without a special suffix, and 903 special-suffix records. `/api/official/states/MO` is connected. A+ matching remains withheld because the historical 92-code catalog uses unrelated internal identifiers and Missouri requires address-specific district selection. See `docs/states/mo.md`.
 
 ## Architecture
 
@@ -70,8 +130,8 @@ Local Node connector on 127.0.0.1:3001
   |     |-- dbo.ADDR
   |     |-- dbo.CUSMS
   |     `-- linked SQL03 -> APLUS -> APLUSV8FAQ.XATXBD
-  |-- state-specific official-source adapters (NC, CA, TX, FL, PA)
-  |-- Streamlined Sales Tax rate-file adapters (GA, OH, TN)
+  |-- state-specific official-source adapters (including AK, AL, AZ, CA, CO, CT, DC, FL, HI, ID, IL, LA, MA, MD, ME, MO, MS, NC, NJ, NM, NY, PA, SC, TX, VA)
+  |-- Streamlined Sales Tax rate-file adapters (GA plus the connected SST states)
   |-- Census Gazetteer jurisdiction names
   `-- local SQLite review database under .data/
 ```
@@ -110,6 +170,21 @@ Consult the local `aplus-erp` skill before changing SQL or assuming A+ field sem
 | `server/ca-rates.mjs` | Validated California effective-dated HTML rate adapter |
 | `server/tx-rates.mjs` | Validated Texas quarterly text plus published-total adapter |
 | `server/fl-rates.mjs` | Validated Florida 67-county workbook adapter |
+| `server/va-rates.mjs` | Validated Virginia 95-county/38-independent-city workbook adapter |
+| `server/ct-rates.mjs` | Validated Connecticut flat 6.35% general-rate/no-local-tax adapter |
+| `server/me-rates.mjs` | Validated Maine 2026 flat 5.5% general sales/use-tax adapter |
+| `server/ma-rates.mjs` | Validated Massachusetts flat 6.25% tangible-property sales/use-tax adapter |
+| `server/dc-rates.mjs` | Validated D.C. current 6% / scheduled 7% citywide general-rate adapter |
+| `server/ms-rates.mjs` | Validated Mississippi 7% general rate plus Jackson/Tupelo general-retail local levies |
+| `server/id-rates.mjs` | Validated Idaho 6% state sales/use rate plus the official 23-city decentralized-local-tax inventory |
+| `server/hi-rates.mjs` | Validated Hawaii seller-side GET policy, county surcharges, Kalawao exemption, and optional pass-on ceiling |
+| `server/az-rates.mjs` | Validated Arizona monthly retail TPT county/city/tribal inventory with city components kept unresolved |
+| `server/al-rates.mjs` | Validated Alabama monthly general sales/locality and police-jurisdiction adapter |
+| `server/co-rates.mjs` | Validated Colorado half-year layered jurisdiction-code workbook adapter |
+| `server/la-rates.mjs` | Validated Louisiana current-filing parish/domicile lookup adapter |
+| `server/mo-rates.mjs` | Validated Missouri quarterly filing-code workbook adapter |
+| `server/nm-rates.mjs` | Validated New Mexico RGIS GRT district archive adapter |
+| `server/il-rates.mjs` | Validated Illinois IDOR fixed-width jurisdiction-rate adapter; address-override locations intentionally excluded |
 | `server/pa-rates.mjs` | Validated Pennsylvania official-rule plus Census county adapter |
 | `server/nj-aplus.mjs` | Aggregate-only `NJ000` versus official-rate reconciliation with visible cross-state/unclassified counts |
 | `server/ga-boundary.mjs` | Georgia boundary-archive discovery/parsing, address normalization, address/ZIP+4/ZIP-5 matching, and tax-body reconciliation |
@@ -145,7 +220,7 @@ Connected adapters:
 **Full research status for every other state (all 42 not connected) was independently verified against live sources on 2026-08-26** — this replaced a lot of earlier unverified guesswork with confirmed facts (real URLs re-fetched, not assumed). Read `docs/roadmap-50-states.md` in this repo before starting work on any new state; do not re-derive this from scratch or trust an older summary of it. Headline corrections from that pass, worth knowing before you go further:
 
 - **Shipped since this was written (2026-08-26, same day, later session):** `server/sst-rates.mjs` gained ZIP-extraction support. AR and WY are wired in as genuine drop-in `GENERIC_SST_STATES`. IN, KY, MI, and RI are special-cased as flat/no-local-tax states (their own `expectedCountyCount: 0` validation, not forced through the per-county check). MD is hardcoded at a flat 6% (`server/md-rates.mjs`, no live fetch needed). DE, MT, NH, and OR are marked `no-general-sales-tax` end to end (registry, connector, dashboard) per Lukas's explicit decision to exclude them entirely. NJ is built (`server/nj-rates.mjs`, cross-validated live against two independent nj.gov pages) — recommended by a live investigation that found its A+ setup is the cleanest of any state checked (one tax body, exact rate match, no local tax at all). The 11 ZIP-blocked states (IA, KS, MN, ND, NE, NV, OK, SD, UT, VT, WA) and WV (place-level, not flat) are **still not wired in** — the adapter can now technically read their files, but nobody has done their live `XATXBD` Step 1/2 investigation yet.
-- **AL, AZ, CO, LA, MO, NY, HI, NM were all investigated live against production A+ on 2026-08-26 and correctly declined to build** — each for a different, real, documented reason (see `docs/state-rollout.md`'s status table and each state's `docs/states/<code>.md`): AL has ~100 real ship-tos on a zeroed-out DO-NOT-USE placeholder that needs explaining first; AZ found 3 live rate discrepancies needing a human call; CO found Denver's home-rule rate is stale by 0.34pt; LA's A+ setup only has 2 codes for the entire state (barely tracks Louisiana's real jurisdiction fragmentation at all); MO's 92 codes don't map to any real jurisdiction-code system; NY found 2 confirmed live rate bugs (Suffolk County, Yonkers City); HI's rate is fully zeroed with no way to tell if that's a data gap or a legitimate policy choice (GET pass-on is optional there); NM's state rate is confirmed stale after a statutory rate-change trigger fired 7/1/2026. **None of these are ready to build without a human decision first** — don't let a future session re-attempt one without reading its file.
+- **AL, AZ, CO, LA, MO, NY, HI, and NM were investigated live against production A+ on 2026-08-26 and each exposed a real state-specific complication.** All now have official evidence adapters that surface those limitations without guessing or forcing an unsafe A+ comparison. Read each state note before proceeding to A+ matching.
 - Hawaii and New Mexico have a structural red flag: HI's tax is legally a General Excise Tax on business receipts, not a buyer-facing sales tax; NM taxes sellers via Gross Receipts Tax. Per Lukas's explicit decision, both are treated as functionally equivalent to a normal sales tax for comparison purposes — that framing question is resolved; what's still open for each is the live data problem described above.
 - Delaware, Montana, New Hampshire, and Oregon genuinely have no general sales tax at all — confirmed, not a research gap. Per Lukas's decision they're excluded entirely from the dashboard (see `server/official-source-registry.mjs`'s `no-general-sales-tax` status), not shown as pending.
 - Several official state tax-agency domains (azdor.gov, tax.colorado.gov, mass.gov, revenue.nh.gov, otr.cfo.dc.gov) block the automated `WebFetch` tool with a 403 even when the page is genuinely live — verify with a direct `curl` and a browser User-Agent before concluding a government source is dead.
@@ -159,7 +234,7 @@ Current source links:
 - Census 2025 Gazetteer page: `https://www.census.gov/geographies/reference-files/2025/geo/gazetter-file.html`
 - Pennsylvania Department of Revenue: `https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax`
 - Illinois machine-readable files: `https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html` (confirmed real 2026-08-26; files are fixed-width `.txt`, not CSV/XLSX — check IDOR's "Addendum Address Files" before building a separate boundary-matching layer)
-- Virginia locality lookup: `https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup` (confirmed real 2026-08-26; the workbook itself is ~3 years stale — re-confirm no newer regional-rate change before trusting it)
+- Virginia locality lookup: `https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup`; direct workbook `https://www.tax.virginia.gov/sites/default/files/inline-files/sales-tax-rates.xlsx` (revalidated 2026-09-02; server `Last-Modified` is 2026-01-09, all 133 localities connected)
 - Maryland: no scrapable source exists (its FAQ page is a JS-rendered SPA); use the PDF rate chart instead: `https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/Tax_rate_chart.pdf` — confirms a flat 6% statewide rate with no local tax at all, so MD needs no ongoing scraping, just a hardcoded rate
 - South Carolina ST-575: `https://dor.sc.gov/sites/dor/files/forms/ST575.pdf` (connected, see `server/sc-rates.mjs`)
 
@@ -179,6 +254,10 @@ Implemented this session. Summary of what shipped:
 **Run end to end against live production on 2026-08-26 and corrected later the same day.** The first run used `SASUSP`, which is a confirmed dead/blank field, and therefore included suspended ship-tos: `2404 = 2293 matched + 92 unmatched + 19 ambiguous`. After every active-state/address query was corrected to the real `SACSUS` flag, the verified result became `2391 = 2280 matched + 92 unmatched + 19 ambiguous`. The no-silent-caps invariant still holds exactly. There are now 125 comparable Georgia tax-body findings, 27 with a real rate difference, and 3 in-state groups visibly excluded for no configured A+ rate.
 
 **Outside-jurisdiction handling is now built and live-verified.** The 5 rate-bearing non-GA tax bodies named by the original finding — `NC060`×4, `NC041`×3, `SC126`×2, `CA1163`, `PA000` — cover 11 ship-tos and are no longer compared against Georgia rates. Two additional zero-rate outside-jurisdiction groups (`DR000`×10 and `CN000`×1) are also kept visible. The API/UI therefore reports 7 outside-jurisdiction groups / 22 ship-tos in total, while identifying the exact 5 rate-bearing groups / 11 ship-tos that would otherwise create apples-to-oranges findings. No ship-to count is silently dropped.
+
+**Follow-up maintenance on 2026-08-27 (offline only):** The dedicated Needs attention page and its navigation badge now use the same shared `inboxFindings` shape as the dashboard, filtered to confirmed `mismatch` rows. This keeps NC and GA findings in one cross-state review queue while leaving published future changes on their separate Upcoming page. A real Georgia output nondeterminism was root-caused without calling production: tied jurisdiction counts were sorted only by count, so JavaScript retained the A+ query's unspecified input order. The matcher now applies a stable jurisdiction-key tie-breaker; a cross-state tax body with conflicting GA boundary assignments reports `jurisdiction: null` rather than presenting either tied location as authoritative. Fixture coverage reverses the input order and verifies identical aggregate output.
+
+**Historical Missouri and Colorado safe stop (2026-08-27):** the later September source pass connected both official inventories without claiming A+ matching. Missouri still lacks a validated mapping from its sparse, nonstandard A+ codes to DOR filing codes. Colorado still has genuinely multi-rate city/district variants, a Canon City jurisdiction ambiguity, and the unresolved Denver rate/business decision. Both require the documented Ana/Liv business decisions before TaxAP can safely match or compare rates.
 
 Still not done / worth knowing for the next session:
 
@@ -217,7 +296,7 @@ Do not assume the same source format across these states. Research and validate 
 
 ## Known limitations
 
-- Official-rate adapters are connected for NC, GA, CA, TX, FL, PA, OH, TN, and (as of 2026-08-26) SC. IL and VA machine sources are confirmed real but not yet built into adapters; MD has no scrapable source and should just be hardcoded at a flat 6%. All other states' sources were verified 2026-08-26 — see `docs/roadmap-50-states.md` before assuming any state's status.
+- All 51 jurisdictions are accounted for at the official-source layer as of 2026-09-04: 47 connected official-rate/policy adapters plus four states correctly marked as having no general sales tax. This does not mean every A+ tax body is matched; address-boundary and business-decision work remains per state. See `docs/roadmap-50-states.md` and the per-state notes.
 - The dashboard currently uses the validated August 18 aggregate fallback in offline mode. It must not describe that evidence as a current live check.
 - Georgia address-boundary matching is implemented and live-validated with the real `SACSUS` active filter. Outside-jurisdiction assignments are separately counted and excluded from GA rate comparisons. The rate-file table's own `totalGeneralRate` column still shows city/special components as `null` since a single component doesn't know which ship-tos it applies to without the boundary reconciliation.
 - Georgia codes `05000` and `17780` are not present in the current Census place Gazetteer and therefore retain safe code-based fallback labels.
@@ -226,7 +305,7 @@ Do not assume the same source format across these states. Research and validate 
 - The Ana/Liv selector is temporary and not authenticated.
 - Entra ID sign-in, shared review persistence, production connector hosting, Docker packaging, and Azure resources remain deferred.
 - Automatic A+ updates are out of scope.
-- Nationwide monitoring still requires a validated official-source adapter and jurisdiction reconciliation for each additional state.
+- Nationwide source monitoring is connected; nationwide A+ comparison still requires safe jurisdiction reconciliation and documented exception handling for each unmatched state.
 
 ## Local setup
 

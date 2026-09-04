@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildStateCoverageQuery,
   buildStateTaxBodyQuery,
+  buildTaxTreatmentSummaryQuery,
   buildTaxBodyDefinitionsQuery,
   buildTaxBodyQuery,
   createConnectorServer,
@@ -27,6 +28,13 @@ test("rejects unsafe linked-server and library identifiers", () => {
   assert.throws(() => buildTaxBodyQuery({ library: "APLUSV8FAQ.XATXBD" }), /unsupported characters/);
 });
 
+test("builds a direct SQL03 A+ query for local Windows Authentication", () => {
+  const query = buildTaxBodyQuery({ linkedServer: null });
+  assert.match(query, /^SELECT \* FROM OPENQUERY\(APLUS/);
+  assert.doesNotMatch(query, /OPENQUERY\(\[SQL03\]/);
+  assert.match(query, /APLUSV8FAQ\.XATXBD/);
+});
+
 test("accepts only official U.S. state codes for state drill-down", () => {
   assert.equal(validateStateCode(" nc "), "NC");
   assert.equal(validateStateCode("dc"), "DC");
@@ -47,6 +55,19 @@ test("state queries preserve company joins, active filters, and parameterization
   }
   assert.match(detailQuery, /= @state/);
   assert.doesNotMatch(detailQuery, /NC'|DROP TABLE/);
+});
+
+test("tax treatment summary remains aggregate-only and read-only", () => {
+  const query = buildTaxTreatmentSummaryQuery();
+  assert.match(query, /a\.SATXCD/);
+  assert.match(query, /LTRIM\(RTRIM\(a\.SASTXB\)\) = 'ZTEMP'/);
+  assert.match(query, /'all' AS Scope/);
+  assert.match(query, /'ZTEMP' AS Scope/);
+  assert.match(query, /COUNT\(DISTINCT CONCAT\(a\.SACONO, '\\|', a\.SACSNO\)\)/);
+  assert.match(query, /a\.SACSUS/);
+  assert.match(query, /c\.CMSUSP/);
+  assert.doesNotMatch(query, /SASHNM|SASAD1|SASAD2|SASCTY|SASZIP|OA[A-Z]/);
+  assert.doesNotMatch(query, /\b(?:INSERT|UPDATE|DELETE|MERGE|EXEC|TRUNCATE|DROP|ALTER|CREATE)\b/i);
 });
 
 test("builds a read-only definition lookup for exact assigned tax bodies", () => {
