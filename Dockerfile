@@ -1,5 +1,9 @@
 FROM node:24-bookworm-slim AS build
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends unixodbc \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -9,7 +13,7 @@ RUN npm run build
 FROM node:24-bookworm-slim AS runtime
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl poppler-utils \
+  && apt-get install -y --no-install-recommends ca-certificates curl poppler-utils unixodbc \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
