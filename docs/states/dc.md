@@ -1,41 +1,23 @@
-# DC — findings
+# District of Columbia — official-rate adapter status
 
-Status: **investigated live 2026-08-26.** No address matching needed — DC has exactly one real A+ tax body (`DC000`) for its one real jurisdiction, matching DC's actual structure (no counties, no home-rule cities). Rate comparability **not yet confirmable** — no official-source adapter exists yet, and the known official page (`otr.cfo.dc.gov/page/dc-tax-rates`) is still 403ing today, re-confirmed with a direct browser-UA `curl` (not just the automated fetch tool). Independent of that: `DC000` is configured at a flat **0%** with no scheduled change, which does not obviously square with DC's known legislated schedule (6.0% → 6.5% effective 10/1/2025 → 7.0% effective 10/1/2026) — this is flagged as an open question for a human, not asserted as a confirmed stale rate, since no live official read was possible this pass.
+## What is connected
 
-## Address matching
+TaxAP reads the District of Columbia Office of Tax and Revenue's current tax-law-change notice. The adapter validates the complete enacted general-rate schedule rather than accepting a single undated percentage:
 
-**Not needed.** DC has no counties and no independently incorporated home-rule cities — it is a single unified jurisdiction (Census Gazetteer / FIPS convention treats the District of Columbia as one county-equivalent, FIPS `11001`, with no sub-jurisdictions to vary by ZIP or address). Live `readStateDetail("DC")` (`SASHST='DC'`, grouped by `SASTXB`) returns exactly one real DC-named tax body: `DC000`. One code for one real jurisdiction is exactly the coverage DC's actual tax structure calls for — this is not a sparse subset the way ND's or LA's single flat code is (those states have dozens of real sub-jurisdictions a single code can't represent); DC genuinely has nothing finer to represent.
+- 6% through September 30, 2026.
+- 7% for periods beginning October 1, 2026.
 
-The other row returned by the live query, `HN000`, is **not a DC tax body at all** — see cross-context findings below.
+The adapter returns the 6% rate before the transition, exposes the announced 7% change to the dashboard, and automatically rolls to 7% on the effective date. It fails closed if either rate or either schedule date disappears or changes. D.C. is one citywide jurisdiction, so no county, city, ZIP, or address boundary matcher is required.
 
-## Rate comparability
+## A+ validation
 
-**Not yet confirmable — no adapter exists**, consistent with `docs/roadmap-50-states.md`'s "Flagged: DC's known source is currently broken" bucket (DC hasn't reached machine-readable-source or research-needed status).
+The supervised read-only aggregate A+ refresh on 2026-09-03 found 21 active D.C. ship-tos across two tax-body assignments:
 
-**Live re-check of the official page performed today (2026-08-26), not just re-asserted from the roadmap note:**
-- Direct `curl` with a real browser `User-Agent` (not the WebFetch tool) still returns **403 Forbidden**. Response headers show `server: cloudflare`, `x-generator: Drupal 7`, and — notably — `cf-cache-status: HIT` with `Age: 10121`, meaning this exact 403 is being served from Cloudflare's edge cache, not freshly evaluated per request. This is a stronger, more specific finding than the roadmap's general "several state domains block WebFetch but a plain browser-UA curl gets through" caveat — for DC specifically, the direct-curl workaround that worked for AZ/CO/MA/NH did **not** work today. This reads as more likely a genuine, currently-standing edge block (WAF rule or bot-management policy) than a WebFetch-tool-specific artifact, though it may still be transient.
-- A Wayback Machine snapshot from 2025-07-10 (`web.archive.org/web/20250710040442/https://otr.cfo.dc.gov/page/dc-tax-rates`) loads fine (200 OK) and was actually read this pass (not just cited from the roadmap note). It turns out to be a link-directory/nav-shell page, not an inline rate table — the one relevant line found is a link titled **"Sales and Use Tax Table at 6% Rate [PDF]"**, consistent with DC's rate still being 6.0% in July 2025 (before the 10/1/2025 step to 6.5%), corroborating the legislated schedule from the task's own background note. It does not itself state a canonical current total rate — the actual rate table lives in a linked PDF that was not fetched.
+- `DC000`, described as `District of Columbia no t`, is configured at 0% and covers 20 ship-tos.
+- `HN000`, described as `HONDURAS no tax`, is configured at 0% and covers one D.C. ship-to. It is a cross-jurisdiction assignment and must not be compared as a D.C. rate.
 
-**Independent of the source being unreachable:** A+'s `DC000` is configured with `TBCBSRT=0`, all four `TBCLRT1-4=0`, `TBCRATE=0`, and no scheduled change (`TBNRATE=0`, `TBTXDAT` sentinel `0001-01-01`). Per the known legislated schedule (background note, not independently re-confirmed live this pass): DC's sales tax should currently be **6.5%** (the 10/1/2025 step has already passed as of today's date) and due to move to **7.0%** on 10/1/2026, about five weeks from now. DC's sales tax is a mandatory transaction tax, not a legally-optional pass-through the way HI's GET is — so a flat 0% covering the large majority of active DC ship-tos looks structurally closer to ND's finding (real, non-optional tax, 0% configured, no apparent policy carve-out) than to HI's (a plausible, legally-optional business choice). This is flagged as an open question for a human, **not** asserted as a confirmed stale rate or comparability gap, since this pass never actually read a live official number to compare against — only the background note and a non-numeric archived page.
+`DC000` differs from the current official 6% rate, and A+ has no 7% next rate or October 1 effective date scheduled. TaxAP records this as a configuration finding and remains read-only; no A+ record was changed.
 
-## Do-not-use and cross-context findings
+## Business decision
 
-- **No DO-NOT-USE-shaped placeholder found in the returned set.** Both `DC000` and `HN000` survived `readStateDetail`'s automatic retired-tax-body exclusion (neither name matches the "DO NOT USE"/"OBSOLETE"/"INACTIVE" filter), so nothing was silently dropped from this state's two-row result. This doesn't rule out a completely separate, zero-active-ship-to retired DC code existing somewhere in raw `XATXBD` — but if so it carries no active ship-tos and so has no effect on the coverage math above.
-- **`HN000` = "HONDURAS no tax" — 1 of 21 active "DC" ship-tos.** This is a ship-to physically in DC (`SASHST='DC'`) whose assigned tax body (`SASTXB`) names Honduras, not DC — the same already-documented `SASTXB` cross-context pattern seen in GA (`NC060`/`NC041`/`SC126`/`CA1163`/`PA000`) and NV (`DR000`/`NCPRST`). It must be excluded from DC-specific findings, not compared as if DC-priced. Excluding it: real DC-tax-body coverage is **20 of 21 active ship-tos (95%) and 14 of 15 customers**, all on `DC000`.
-- `DC000`'s description text came back truncated at 25 characters (`"District of Columbia no t"`), consistent with `TBTXNAM` being a fixed-width field elsewhere confirmed to truncate. Most likely the full text is "District of Columbia no tax," but this wasn't independently confirmed with a wider select (out of scope for the vetted read-only scripts used here) — worth confirming if the exact wording ever matters for a policy decision.
-
-## Real live A+ codes (2026-08-26, `readStateDetail("DC")` — 2 rows total)
-
-| Code | Description (as returned, possibly truncated) | Base | Local 1–4 | Total | Next rate | Active ship-tos | Active customers | Notes |
-|---|---|---|---|---|---|---|---|---|
-| `DC000` | "District of Columbia no t..." | 0 | 0, 0, 0, 0 | 0 | 0 (no scheduled change) | 20 | 14 | Only real DC tax body found |
-| `HN000` | "HONDURAS no tax" | 0 | 0, 0, 0, 0 | 0 | 0 | 1 | 1 | Not DC — cross-context `SASTXB`, exclude from DC findings |
-
-## Open questions / do instead if building
-
-- **Human decision needed:** is `DC000`'s 0% rate an intentional business policy (e.g., Atlantic doesn't collect/remit DC sales tax for some legal or nexus reason), or an unbuilt/never-updated tax-body configuration? DC's sales tax isn't legally optional, so this needs the same kind of resolution ND's `ND000` 0%-on-100%-of-ship-tos finding needed before any comparison work starts.
-- **Re-check the official page again before building.** Still 403 as of today via a direct browser-UA `curl`, served from Cloudflare's edge cache — this looks more like a standing block than the "likely transient" characterization in `docs/roadmap-50-states.md`, though it could still resolve. If it stays blocked, consider asking a human to open it in a real browser (to rule out bot-management vs. a genuinely removed page) and to pull the actual current rate table (only a link to a "Sales and Use Tax Table at 6% Rate" PDF was found in the July 2025 archived shell — the live numeric table itself was never read).
-- **Once a real official number is confirmed** (expected ~6.5% today per the legislated schedule, not yet independently verified live), compare it against `DC000`'s 0% — this is likely to surface as the same shape of blocking finding ND's did, but is not yet a confirmed comparability gap in this pass since no live official source was actually read.
-- **Exclude `HN000`** (1 ship-to) from any DC-specific rate finding, the same treatment as GA's/NV's `SASTXB` cross-context outliers.
-- No wrong-state-named *DC-prefixed* row was found in this pull (only 2 rows total, both eyeballed) — the only non-DC content is `HN000`, already flagged and excluded above.
-- Use `SASTXB` (ship-to level), not `CMTXBD` (customer level), for the same reason already established for NC/GA/NV — not independently re-checked for DC's `CMTXBD` this pass (small sample, 15 customers), but no reason to expect it differs from the general pattern.
+The tax owner should confirm whether the 20 `DC000` assignments and the one `HN000` assignment are documented exempt/no-tax treatments or incomplete jurisdiction setup. If they are ordinary taxable sales, A+ needs supported manual maintenance for the current rate and the scheduled October transition. TaxAP must not infer exemption status from a 0% tax-body description.

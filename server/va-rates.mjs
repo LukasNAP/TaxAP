@@ -1,81 +1,169 @@
 import { createHash } from "node:crypto";
-import { readXlsxRows } from "./xlsx-utils.mjs";
+import { readZipEntries } from "./zip-utils.mjs";
 
-export const VIRGINIA_RATES_URL = "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup";
-export const VIRGINIA_RATES_DOWNLOAD_URL = "https://www.tax.virginia.gov/sites/default/files/inline-files/sales-tax-rates.xlsx";
+export const VIRGINIA_DOR_RATES_URL = "https://www.tax.virginia.gov/sales-tax-rate-and-locality-code-lookup";
+export const VIRGINIA_RATE_DOWNLOAD_URL = "https://www.tax.virginia.gov/sites/default/files/inline-files/sales-tax-rates.xlsx";
+export const VIRGINIA_STATE_RATE = 4.3;
 
-// Confirmed live 2026-08-27: the workbook's own document metadata (dcterms:modified) reads
-// 2023-07-14 - genuinely the state's own currently-hosted file, not a stale mirror, matching the
-// freshness flag already raised in docs/states/va.md. An earlier investigation independently
-// cross-checked A+'s live rates against Virginia Tax's own published bulletins (TB 21-6, TB 22-7)
-// for every real regional/local-option overlay and found no discrepancy - this file's age alone is
-// not treated as disqualifying, but is exposed on the snapshot so it stays visible.
-const KNOWN_STALE_SINCE = "2023-07-14";
+const EXPECTED_HEADERS = [
+  "State Code (FIPS)",
+  "County or City Code (FIPS)",
+  "Locality Name",
+  "Total General Sales Tax",
+  "Total Food & Personal Hygiene Sales Tax",
+  "State General Sales Tax",
+  "State Regional Sales Tax (NVA)",
+  "State Regional Sales Tax (HR)",
+  "State Regional Sales Tax (CVA)",
+  "State Regional Sales Tax (HT)",
+  "Local Sales Tax",
+  "Additional Local Option Sales Tax",
+];
 
-const PLAUSIBLE_RATE_MIN = 4;
-const PLAUSIBLE_RATE_MAX = 9;
-
-function toPercent(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  return Number((number * 100).toFixed(4));
+function decodeXml(value) {
+  return String(value)
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .trim();
 }
 
-/**
- * Parses Virginia Tax's official sales-tax-rates.xlsx. Real, confirmed schema (2026-08-27): row 3
- * is the header, data starts row 4, columns are State FIPS / County-or-City FIPS / Locality Name /
- * Total General Sales Tax / ... Locality Name already distinguishes county vs. independent city
- * with a literal " County" or " City" suffix (e.g. "Accomack County", "Waynesboro City") - this is
- * the real disambiguation Virginia's county/city name-duplicate pairs (Fairfax, Franklin, Richmond,
- * Roanoke) need, not something this adapter has to infer.
- */
-export function parseVirginiaRateWorkbook(buffer) {
-  const rows = readXlsxRows(buffer);
-  const header = rows[2] ?? {};
-  if (header.A !== "State Code (FIPS)" || header.C !== "Locality Name" || header.D !== "Total General Sales Tax") {
-    throw new Error("Virginia's rate workbook header no longer matches the expected column layout.");
-  }
-  const localities = [];
-  for (const row of rows.slice(3)) {
-    if (!row.A || !row.C) continue;
-    if (row.A !== "51") throw new Error(`Virginia's rate workbook contained a non-Virginia state FIPS code (${row.A}).`);
-    const name = String(row.C).trim();
-    const isCity = /\sCity$/i.test(name);
-    const isCounty = /\sCounty$/i.test(name);
-    if (!isCity && !isCounty) throw new Error(`Virginia's rate workbook has a locality name with no recognizable County/City suffix: "${name}".`);
-    const bareName = name.replace(/\s(?:County|City)$/i, "").trim();
-    const totalGeneralRate = toPercent(row.D);
-    if (totalGeneralRate === null || totalGeneralRate < PLAUSIBLE_RATE_MIN || totalGeneralRate > PLAUSIBLE_RATE_MAX) {
-      throw new Error(`Virginia's rate workbook has an implausible total rate for ${name} (${row.D}).`);
+function readSharedStrings(xml) {
+  return [...String(xml).matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/gi)].map((match) =>
+    [...match[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/gi)].map((part) => decodeXml(part[1])).join(""),
+  );
+}
+
+function readWorksheetRows(sheetXml, strings) {
+  return [...String(sheetXml).matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/gi)].map((row) => {
+    const rowNumber = Number(row[1].match(/\br=["'](\d+)["']/i)?.[1]);
+    const values = {};
+    for (const cell of row[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/gi)) {
+      const column = cell[1].match(/\br=["']([A-Z]+)\d+["']/i)?.[1]?.toUpperCase();
+      if (!column) continue;
+      const body = cell[2] ?? "";
+      const raw = body.match(/<v>([\s\S]*?)<\/v>/i)?.[1] ?? "";
+      if (/\bt=["']s["']/i.test(cell[1])) {
+        const index = Number(raw);
+        if (!Number.isInteger(index) || strings[index] === undefined) throw new Error(`Virginia workbook row ${rowNumber} references a missing shared string.`);
+        values[column] = strings[index];
+      } else if (/\bt=["']inlineStr["']/i.test(cell[1])) {
+        values[column] = decodeXml(body);
+      } else {
+        values[column] = raw === "" ? null : raw;
+      }
     }
-    localities.push({
-      jurisdictionType: isCity ? "city" : "county",
-      jurisdictionCode: `51${String(row.B).padStart(3, "0")}`,
+    return { rowNumber, values };
+  });
+}
+
+function decimalPercent(value, label, locality, { allowBlank = false } = {}) {
+  if ((value == null || value === "") && allowBlank) return 0;
+  const decimal = Number(value);
+  if (!Number.isFinite(decimal) || decimal < 0 || decimal > 0.2) {
+    throw new Error(`Virginia workbook has an invalid ${label} for ${locality}.`);
+  }
+  return Number((decimal * 100).toFixed(4));
+}
+
+export function parseVirginiaRateWorkbook(buffer, { expectedLocalities = 133, expectedCounties = 95, expectedCities = 38 } = {}) {
+  const entries = new Map(readZipEntries(Buffer.from(buffer)).map((entry) => [entry.name, entry.data]));
+  const sheetXml = entries.get("xl/worksheets/sheet1.xml")?.toString("utf8");
+  const stringsXml = entries.get("xl/sharedStrings.xml")?.toString("utf8");
+  if (!sheetXml || !stringsXml) throw new Error("Virginia rate workbook is missing its first worksheet or shared strings.");
+
+  const rows = readWorksheetRows(sheetXml, readSharedStrings(stringsXml));
+  const header = rows.find((row) => row.rowNumber === 3)?.values;
+  const columns = "ABCDEFGHIJKL";
+  if (!header || [...columns].some((column, index) => header[column] !== EXPECTED_HEADERS[index])) {
+    throw new Error("Virginia rate workbook headers changed; review the official format before accepting it.");
+  }
+
+  const localityRows = rows.filter((row) => row.rowNumber > 3 && (row.values.A != null || row.values.B != null || row.values.C != null));
+  if (localityRows.some((row) => row.values.A !== "51")) {
+    throw new Error("Virginia rate workbook contains a locality row outside Virginia FIPS 51.");
+  }
+  if (localityRows.length !== expectedLocalities) {
+    throw new Error(`Virginia rate workbook returned ${localityRows.length} localities instead of ${expectedLocalities}.`);
+  }
+
+  const keys = new Set();
+  const rates = localityRows.map(({ rowNumber, values }) => {
+    const localityCode = String(values.B || "").trim();
+    const name = String(values.C || "").trim();
+    if (!/^\d{3}$/.test(localityCode) || !/\S+ (?:County|City)$/.test(name)) {
+      throw new Error(`Virginia workbook row ${rowNumber} has an invalid FIPS code or locality name.`);
+    }
+    const jurisdictionCode = `51${localityCode}`;
+    if (keys.has(jurisdictionCode)) throw new Error(`Virginia workbook has duplicate locality FIPS ${jurisdictionCode}.`);
+    keys.add(jurisdictionCode);
+
+    const totalGeneralRate = decimalPercent(values.D, "total general rate", name);
+    const foodRate = decimalPercent(values.E, "food and personal hygiene rate", name);
+    const stateRate = decimalPercent(values.F, "state rate", name);
+    const regionalRates = ["G", "H", "I", "J"].map((column) => decimalPercent(values[column], "regional rate", name, { allowBlank: true }));
+    const localRate = decimalPercent(values.K, "local rate", name);
+    const additionalLocalRate = decimalPercent(values.L, "additional local-option rate", name, { allowBlank: true });
+    const calculatedTotal = Number((stateRate + regionalRates.reduce((sum, rate) => sum + rate, 0) + localRate + additionalLocalRate).toFixed(4));
+    if (stateRate !== VIRGINIA_STATE_RATE || foodRate !== 1 || localRate !== 1) {
+      throw new Error(`Virginia workbook changed a statewide component for ${name}; review the official rules before accepting it.`);
+    }
+    if (regionalRates.slice(0, 3).some((rate) => rate !== 0 && rate !== 0.7)
+      || ![0, 1].includes(regionalRates[3])
+      || (additionalLocalRate !== 0 && additionalLocalRate !== 1)) {
+      throw new Error(`Virginia workbook has an unexpected regional or local-option component for ${name}.`);
+    }
+    if (calculatedTotal !== totalGeneralRate || ![5.3, 6, 6.3, 7].includes(totalGeneralRate)) {
+      throw new Error(`Virginia workbook components do not reconcile to the published total for ${name}.`);
+    }
+
+    const jurisdictionType = name.endsWith(" County") ? "county" : "city";
+    return {
+      jurisdictionType,
+      jurisdictionCode,
       name,
-      bareName,
-      componentRate: null,
+      componentRate: Number((totalGeneralRate - VIRGINIA_STATE_RATE).toFixed(4)),
       totalGeneralRate,
       generalInterstateRate: totalGeneralRate,
+      foodAndPersonalHygieneRate: foodRate,
       beginDate: null,
       endDate: null,
-    });
+    };
+  }).sort((left, right) => left.name.localeCompare(right.name));
+
+  const counts = {
+    counties: rates.filter((rate) => rate.jurisdictionType === "county").length,
+    cities: rates.filter((rate) => rate.jurisdictionType === "city").length,
+    specialJurisdictions: 0,
+  };
+  if (counts.counties !== expectedCounties || counts.cities !== expectedCities) {
+    throw new Error(`Virginia rate workbook returned ${counts.counties} counties and ${counts.cities} cities instead of ${expectedCounties} and ${expectedCities}.`);
   }
-  if (localities.length !== 133) throw new Error(`Virginia's rate workbook returned ${localities.length} localities instead of the expected 133 (95 counties + 38 independent cities).`);
-  const counties = localities.filter((row) => row.jurisdictionType === "county").length;
-  const cities = localities.filter((row) => row.jurisdictionType === "city").length;
-  if (counties !== 95 || cities !== 38) throw new Error(`Virginia's rate workbook returned ${counties} counties and ${cities} cities instead of the expected 95 and 38.`);
-  return localities;
+  return { rates, counts };
 }
 
-async function fetchWorkbook(url, fetchImpl) {
+async function downloadCurrentWorkbook(fetchImpl) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    const response = await fetchImpl(url, { headers: { "User-Agent": "TaxAP/0.1 official-rate monitor" }, signal: controller.signal });
+    const response = await fetchImpl(VIRGINIA_RATE_DOWNLOAD_URL, {
+      headers: { Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "User-Agent": "TaxAP/0.1 official-rate monitor" },
+      signal: controller.signal,
+    });
     if (!response.ok) throw new Error(`Virginia Tax returned HTTP ${response.status}.`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length < 3_000 || buffer.readUInt32LE(0) !== 0x04034b50) throw new Error("Virginia Tax did not return the expected XLSX rate workbook.");
-    return buffer;
+    const workbook = Buffer.from(await response.arrayBuffer());
+    if (workbook.length < 10_000 || workbook.readUInt32LE(0) !== 0x04034b50) {
+      throw new Error("Virginia Tax did not return the expected XLSX rate workbook.");
+    }
+    const modifiedHeader = response.headers.get("last-modified");
+    const lastModified = modifiedHeader ? new Date(modifiedHeader) : null;
+    if (!lastModified || Number.isNaN(lastModified.getTime())) {
+      throw new Error("Virginia Tax rate workbook did not provide a valid Last-Modified date.");
+    }
+    return { workbook, lastModified };
   } finally {
     clearTimeout(timeout);
   }
@@ -83,27 +171,38 @@ async function fetchWorkbook(url, fetchImpl) {
 
 let cachedSnapshot = null;
 let cacheExpiresAt = 0;
+let inFlightRead = null;
 
 export async function readOfficialVaRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
-  const buffer = await fetchWorkbook(VIRGINIA_RATES_DOWNLOAD_URL, fetchImpl);
-  const rates = parseVirginiaRateWorkbook(buffer);
-  const snapshot = {
-    stateCode: "VA",
-    source: "Virginia Department of Taxation",
-    sourceUrl: VIRGINIA_RATES_URL,
-    machineReadableSourceUrl: VIRGINIA_RATES_DOWNLOAD_URL,
-    retrievedAt: now.toISOString(),
-    asOfDate: KNOWN_STALE_SINCE,
-    stateRate: 4.3,
-    sourceHash: createHash("sha256").update(buffer).digest("hex"),
-    rates,
-    counts: { counties: rates.filter((r) => r.jurisdictionType === "county").length, cities: rates.filter((r) => r.jurisdictionType === "city").length, specialJurisdictions: 0 },
-    boundaryStatus: "All 133 real Virginia counties and independent cities are connected. Virginia's own county/city name-duplicate pairs (Fairfax, Franklin, Richmond, Roanoke) are disambiguated by the workbook's literal County/City suffix, not inferred.",
-  };
-  if (!bypassCache) {
+  if (!bypassCache && inFlightRead) return inFlightRead;
+  const read = (async () => {
+    const { workbook, lastModified } = await downloadCurrentWorkbook(fetchImpl);
+    const parsed = parseVirginiaRateWorkbook(workbook);
+    const asOfDate = lastModified.toISOString().slice(0, 10);
+    const snapshot = {
+      stateCode: "VA",
+      source: "Virginia Department of Taxation",
+      sourceUrl: VIRGINIA_DOR_RATES_URL,
+      machineReadableSourceUrl: VIRGINIA_RATE_DOWNLOAD_URL,
+      retrievedAt: now.toISOString(),
+      asOfDate,
+      stateRate: VIRGINIA_STATE_RATE,
+      sourceHash: createHash("sha256").update(workbook).digest("hex"),
+      rates: parsed.rates,
+      counts: parsed.counts,
+      effectivePeriod: `Current Virginia Tax workbook (server updated ${asOfDate})`,
+      boundaryStatus: "All 95 counties and 38 independent cities are connected by official FIPS code. Address-to-locality and A+ tax-body matching remain separate validation steps.",
+    };
     cachedSnapshot = snapshot;
     cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000;
+    return snapshot;
+  })();
+  if (bypassCache) return read;
+  inFlightRead = read;
+  try {
+    return await read;
+  } finally {
+    inFlightRead = null;
   }
-  return snapshot;
 }

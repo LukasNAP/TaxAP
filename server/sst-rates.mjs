@@ -6,7 +6,7 @@ export const GEORGIA_DOR_RATES_URL = "https://dor.georgia.gov/sales-tax-rates-ge
 export const GEORGIA_COUNTY_NAMES_URL = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_gaz_counties_13.txt";
 export const GEORGIA_PLACE_NAMES_URL = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_gaz_place_13.txt";
 const GEORGIA_STATE_FIPS = "13";
-const JURISDICTION_TYPES = { "45": "state", "00": "county", "01": "city", "63": "special" };
+const JURISDICTION_TYPES = { "45": "state", "00": "county", "01": "city", "49": "special", "63": "special", "79": "special" };
 const JURISDICTION_SORT = { state: 0, county: 1, city: 2, special: 3 };
 const GENERIC_SST_STATES = {
   OH: { stateName: "Ohio", stateFips: "39", expectedCountyCount: 88, sourceUrl: "https://tax.ohio.gov/business/ohio-business-taxes/sales-and-use/information-releases" },
@@ -18,27 +18,52 @@ const GENERIC_SST_STATES = {
   // Confirmed 2026-08-26: these states have NO local-option sales tax at all - their current SST file
   // has zero county/city rows, just the single active statewide rate. expectedCountyCount: 0 makes the
   // existing validation assert exactly that shape rather than silently accepting a broken/empty file.
-  IN: { stateName: "Indiana", stateFips: "18", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/indiana" },
-  KY: { stateName: "Kentucky", stateFips: "21", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/kentucky" },
-  MI: { stateName: "Michigan", stateFips: "26", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/michigan" },
-  RI: { stateName: "Rhode Island", stateFips: "44", expectedCountyCount: 0, sourceUrl: "https://www.streamlinedsalestax.org/state-details/rhode-island" },
-  // Confirmed 2026-08-26: Nevada's 17 real A+ codes (16 counties + Carson City) are all
-  // jurisdictionType "county" in the SST file - no city-level sales tax exists in NV at all -
-  // so the existing state+county totalGeneralRate logic already applies with zero changes.
-  NV: { stateName: "Nevada", stateFips: "32", expectedCountyCount: 17, sourceUrl: "https://www.streamlinedsalestax.org/state-details/nevada" },
-  // Confirmed 2026-08-26: Nebraska's real local-tax variation is entirely city-level (A+ has
-  // zero county-FIPS codes; its NE##### codes are real Census place FIPS numbers). Each city row's
-  // own rate already IS the full local total (no separate county component to stack on top) -
-  // cityRateIsFullLocal opts this one state into computing totalGeneralRate for city rows the same
-  // way as county rows. Do NOT copy this flag to a future state without confirming the same fact -
-  // a state where city and county both layer independently (e.g. Wisconsin's resort-area surtax
-  // cities) would get a silently wrong, too-low total this way.
-  // expectedCountyCount is 1, not Nebraska's real 93 counties: unlike SD (which has a 0%-rate row
-  // for every one of its 66 counties), Nebraska's SST file only includes an active county-type row
-  // for counties that actually levy a county option tax - confirmed live, only Dakota (FIPS 31043)
-  // does today. Verified directly against the live file 2026-08-26; do not assume 93 without
-  // rechecking if this ever throws again.
-  NE: { stateName: "Nebraska", stateFips: "31", expectedCountyCount: 1, cityRateIsFullLocal: true, sourceUrl: "https://www.streamlinedsalestax.org/state-details/nebraska" },
+  IN: { stateName: "Indiana", stateFips: "18", expectedCountyCount: 0, flatStatewideRate: true, sourceUrl: "https://www.streamlinedsalestax.org/state-details/indiana" },
+  KY: { stateName: "Kentucky", stateFips: "21", expectedCountyCount: 0, flatStatewideRate: true, sourceUrl: "https://www.streamlinedsalestax.org/state-details/kentucky" },
+  MI: { stateName: "Michigan", stateFips: "26", expectedCountyCount: 0, flatStatewideRate: true, sourceUrl: "https://www.streamlinedsalestax.org/state-details/michigan" },
+  RI: { stateName: "Rhode Island", stateFips: "44", expectedCountyCount: 0, flatStatewideRate: true, sourceUrl: "https://www.streamlinedsalestax.org/state-details/rhode-island" },
+  // Iowa's live SST file contains 99 real county FIPS rows plus 199, which is not an Iowa
+  // county. Keep 199 visible as a special jurisdiction instead of silently counting Iowa as
+  // having 100 counties or treating it as an ordinary county rate.
+  IA: { stateName: "Iowa", stateFips: "19", expectedCountyCount: 99, countyCodesToTreatAsSpecial: ["199"], sourceUrl: "https://revenue.iowa.gov/taxes/tax-guidance/sales-use-excise-tax/sales-use-tax-guide" },
+  // Kansas's special-jurisdiction identifiers can be alphanumeric (for example, 11KAN).
+  // Preserve them as special components; never force them into a county or city model.
+  KS: { stateName: "Kansas", stateFips: "20", expectedCountyCount: 105, allowedJurisdictionTypes: ["00", "01", "45", "63", "79"], sourceUrl: "https://www.ksrevenue.gov/salesratechanges.html" },
+  // Minnesota publishes rows only for counties/cities with an active local component, rather than
+  // one row for every physical county. The reviewed 2026-09-02 file has 62 active county rows;
+  // fail closed when that shape changes so a future tax start/end receives an explicit review.
+  MN: { stateName: "Minnesota", stateFips: "27", expectedCountyCount: 62, allowedJurisdictionTypes: ["00", "01", "45", "63"], sourceUrl: "https://www.revenue.state.mn.us/local-sales-tax-information" },
+  // North Dakota's current SST file contains all 53 county components plus home-rule city rows.
+  // Local maximum-tax/refund caps are not encoded in this percentage file and remain out of scope.
+  ND: { stateName: "North Dakota", stateFips: "38", expectedCountyCount: 53, allowedJurisdictionTypes: ["00", "01", "45"], sourceUrl: "https://www.tax.nd.gov/sales-and-use-tax/local-taxes-city-and-county-taxes" },
+  // Nebraska local variation is overwhelmingly city-driven. The current file has one active county
+  // component (Dakota County), 270 city rows, and five special rows; do not synthesize 93 county taxes.
+  NE: { stateName: "Nebraska", stateFips: "31", expectedCountyCount: 1, cityRateIsFullLocal: true, allowedJurisdictionTypes: ["00", "01", "45", "63"], sourceUrl: "https://revenue.nebraska.gov/businesses/local-sales-and-use-tax-rates" },
+  // Nevada's SST file is structurally different: its state row is zero and each county/special row
+  // carries the complete combined rate. Preserve the published totals and derive only the local
+  // component relative to Nevada's independently verified 6.85% minimum statewide rate.
+  NV: { stateName: "Nevada", stateFips: "32", expectedCountyCount: 17, allowedJurisdictionTypes: ["00", "45", "63"], expectedSourceStateRate: 0, stateRateOverride: 6.85, jurisdictionRatesAreTotals: true, sourceUrl: "https://tax.nv.gov/tax-types/consumer-use-tax/" },
+  // Oklahoma publishes every county plus municipality and special/combined local identifiers.
+  // Preserve active zero-rate municipality rows because they are explicit source records.
+  OK: { stateName: "Oklahoma", stateFips: "40", expectedCountyCount: 77, allowedJurisdictionTypes: ["00", "01", "45", "63"], sourceUrl: "https://oklahoma.gov/tax/businesses/sales-use-tax.html" },
+  // South Dakota's type-49 rows represent tribal/special reporting jurisdictions, not an additive
+  // local layer. Keep those rows visible and total-less until address/agreement reconciliation exists.
+  SD: { stateName: "South Dakota", stateFips: "46", expectedCountyCount: 66, allowedJurisdictionTypes: ["00", "01", "45", "49"], sourceUrl: "https://dor.sd.gov/individuals/taxes/sales-use-tax/" },
+  // Utah's ordinary SST component file contains all 29 counties plus active city add-ons.
+  // Full destination totals still need ZIP+4/address boundary reconciliation.
+  UT: { stateName: "Utah", stateFips: "49", expectedCountyCount: 29, allowedJurisdictionTypes: ["00", "01", "45"], sourceUrl: "https://tax.utah.gov/business/sales-tax/sales/rates/" },
+  // Vermont has no county sales-tax layer, but it is not a flat state: municipalities may impose
+  // a 1% destination-based local-option sales tax.
+  VT: { stateName: "Vermont", stateFips: "50", expectedCountyCount: 0, allowedJurisdictionTypes: ["01", "45"], sourceUrl: "https://tax.vermont.gov/business/industry/contractors" },
+  // Washington's source has 39 real county FIPS rows plus five non-Census identifiers encoded as
+  // county type. Preserve 079-087 as special jurisdictions rather than inventing five counties.
+  WA: { stateName: "Washington", stateFips: "53", expectedCountyCount: 39, countyCodesToTreatAsSpecial: ["079", "081", "083", "085", "087"], allowedJurisdictionTypes: ["00", "01", "45", "63"], sourceUrl: "https://dor.wa.gov/taxes-rates/sales-use-tax-rates" },
+  // Wisconsin publishes all 72 county rows and every municipality, including explicit zero-rate
+  // city rows. Premier resort area and local exposition taxes are outside this SST file.
+  WI: { stateName: "Wisconsin", stateFips: "55", expectedCountyCount: 72, allowedJurisdictionTypes: ["00", "01", "45"], sourceUrl: "https://www.revenue.wi.gov/Pages/Apps/strb.aspx" },
+  // West Virginia has no county sales-tax layer; participating municipalities add a uniform 1%
+  // to the 6% state rate. Zero county rows therefore does not mean a flat statewide-only tax.
+  WV: { stateName: "West Virginia", stateFips: "54", expectedCountyCount: 0, allowedJurisdictionTypes: ["01", "45"], sourceUrl: "https://tax.wv.gov/business/salesandusetax/municipalsalesandusetax/pages/municipalsalesandusetax.aspx" },
 };
 
 function compactDate(value) {
@@ -60,13 +85,7 @@ export function parseSstRateCsv(csv, { stateFips, asOfDate }) {
     const columns = line.split(",").map((value) => value.trim());
     if (columns.length !== 9) throw new Error(`SST rate row ${index + 1} does not have 9 columns.`);
     const [rowStateFips, jurisdictionType, jurisdictionCode, generalIntrastate, generalInterstate, foodDrugIntrastate, foodDrugInterstate, beginDate, endDate] = columns;
-    // jurisdictionCode is numeric (FIPS-style) for state/county/city rows, but confirmed live
-    // 2026-08-26 that special-district (type 63/79) rows can be alphanumeric - Nebraska's transit
-    // district codes (GL801-GL805), Kansas's type-79 codes (11KAN, AEATC, ALIOL), and Washington's
-    // location codes (L1702 etc.) all use a 5-character letter+digit shape. Accept alphanumeric
-    // codes generally rather than special-casing each state's exact pattern - the state FIPS and
-    // jurisdictionType columns are still strictly numeric and carry the real validation weight.
-    if (!/^\d{2}$/.test(rowStateFips) || !/^\d{1,2}$/.test(jurisdictionType) || !/^[A-Za-z0-9]{2,6}$/.test(jurisdictionCode)) {
+    if (!/^\d{2}$/.test(rowStateFips) || !/^\d{1,2}$/.test(jurisdictionType) || !/^[A-Z0-9]{2,10}$/.test(jurisdictionCode)) {
       throw new Error(`SST rate row ${index + 1} has an invalid jurisdiction identifier.`);
     }
     compactDate(beginDate);
@@ -135,8 +154,11 @@ async function fetchSstRateFileText(url, fetchImpl) {
 }
 
 export function findLatestSstCsv(directoryHtml, stateCode) {
-  const expression = new RegExp(`href=["']([^"']*${stateCode}R[^"']*\\.(?:csv|zip))["']`, "gi");
-  const files = [...String(directoryHtml).matchAll(expression)].map((match) => match[1]);
+  const code = String(stateCode || "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) throw new Error("Choose a valid two-letter state code.");
+  const files = [...String(directoryHtml).matchAll(/href=["']([^"']*\.(?:csv|zip))["']/gi)]
+    .map((match) => match[1])
+    .filter((href) => decodeURIComponent(new URL(href, SST_RATE_DIRECTORY_URL).pathname).split("/").at(-1)?.toUpperCase().startsWith(`${code}R`));
   if (files.length === 0) throw new Error(`No current ${stateCode} SST rate file was listed.`);
   return new URL(files.sort().at(-1), SST_RATE_DIRECTORY_URL).href;
 }
@@ -179,22 +201,46 @@ export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, 
       readCensusNames(config.stateFips, fetchImpl),
     ]);
     const parsed = parseSstRateCsv(rateCsv, { stateFips: config.stateFips, asOfDate });
+    if (config.expectedSourceStateRate !== undefined && parsed.stateRate !== config.expectedSourceStateRate) {
+      throw new Error(`${config.stateName} SST state row changed from the expected ${config.expectedSourceStateRate}% source convention.`);
+    }
+    const stateRate = config.stateRateOverride ?? parsed.stateRate;
+    if (config.allowedJurisdictionTypes) {
+      const allowed = new Set(config.allowedJurisdictionTypes);
+      const unexpected = [...new Set(parsed.activeRows.map((row) => row.jurisdictionType).filter((type) => !allowed.has(type)))];
+      if (unexpected.length > 0) throw new Error(`${config.stateName} SST rate file contains unexpected jurisdiction types: ${unexpected.join(", ")}.`);
+    }
+    const specialCountyCodes = new Set(config.countyCodesToTreatAsSpecial ?? []);
+    for (const code of specialCountyCodes) {
+      if (!parsed.activeRows.some((row) => row.jurisdictionType === "00" && row.jurisdictionCode === code)) {
+        throw new Error(`${config.stateName} SST rate file is missing its expected non-county jurisdiction ${code}.`);
+      }
+    }
     const rates = parsed.activeRows.map((row) => {
-      const jurisdictionType = JURISDICTION_TYPES[row.jurisdictionType] ?? "special";
+      const jurisdictionType = row.jurisdictionType === "00" && specialCountyCodes.has(row.jurisdictionCode)
+        ? "special"
+        : JURISDICTION_TYPES[row.jurisdictionType] ?? "special";
       const name = jurisdictionType === "state" ? config.stateName
         : jurisdictionType === "county" ? names.counties.get(row.jurisdictionCode) ?? `County FIPS ${row.jurisdictionCode}`
           : jurisdictionType === "city" ? names.places.get(row.jurisdictionCode) ?? `Place FIPS ${row.jurisdictionCode}`
             : `Special jurisdiction ${row.jurisdictionCode}`;
+      if (config.jurisdictionRatesAreTotals && jurisdictionType !== "state" && row.generalIntrastateRate < stateRate) {
+        throw new Error(`${config.stateName} SST jurisdiction ${row.jurisdictionCode} has a total below the ${stateRate}% statewide rate.`);
+      }
+      const componentRate = jurisdictionType === "state" ? stateRate
+        : config.jurisdictionRatesAreTotals ? Number((row.generalIntrastateRate - stateRate).toFixed(4))
+          : row.generalIntrastateRate;
+      const totalGeneralRate = jurisdictionType === "state" ? stateRate
+        : config.jurisdictionRatesAreTotals ? row.generalIntrastateRate
+          : jurisdictionType === "county" || (jurisdictionType === "city" && config.cityRateIsFullLocal)
+            ? Number((stateRate + row.generalIntrastateRate).toFixed(4)) : null;
       return {
         jurisdictionType,
         jurisdictionCode: row.jurisdictionCode,
         name,
-        componentRate: row.generalIntrastateRate,
-        totalGeneralRate: jurisdictionType === "state" ? parsed.stateRate
-          : jurisdictionType === "county" ? Number((parsed.stateRate + row.generalIntrastateRate).toFixed(4))
-            : jurisdictionType === "city" && config.cityRateIsFullLocal ? Number((parsed.stateRate + row.generalIntrastateRate).toFixed(4))
-              : null,
-        generalInterstateRate: row.generalInterstateRate,
+        componentRate,
+        totalGeneralRate,
+        generalInterstateRate: jurisdictionType === "state" ? stateRate : row.generalInterstateRate,
         beginDate: row.beginDate,
         endDate: row.endDate,
       };
@@ -214,11 +260,11 @@ export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, 
       machineReadableSourceUrl: rateFileUrl,
       retrievedAt: now.toISOString(),
       asOfDate,
-      stateRate: parsed.stateRate,
+      stateRate,
       sourceHash: createHash("sha256").update(rateCsv).digest("hex"),
       rates,
       counts,
-      boundaryStatus: config.expectedCountyCount === 0
+      boundaryStatus: config.flatStatewideRate
         ? "No local-option sales tax exists in this state - a single flat statewide rate applies to every ship-to. No address or boundary matching is needed."
         : "Official jurisdiction components are connected. City and special totals require boundary reconciliation before comparison with A+.",
     };

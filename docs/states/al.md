@@ -1,6 +1,12 @@
 # Alabama — findings
 
-Status: **investigated live 2026-08-26, not safe to build.** Official CSV source confirmed real (`taxrates_current.csv`, revenue.alabama.gov). A+'s `XATXBD` setup is real but coarse and has one large, unresolved data-quality question that must be answered before any comparison is trustworthy.
+Status: **official source connected 2026-09-03; A+ comparison remains intentionally withheld.** `server/al-rates.mjs` now validates the current monthly `taxrates_current.csv` inventory and the separate 4% state general-rate page. A+'s `XATXBD` setup is real but coarse and has one large, unresolved data-quality question that must be answered before any comparison is trustworthy.
+
+## Connected official inventory
+
+The September 2026 current-only file contains 12,872 active category rows. TaxAP filters explicitly to `TaxType=ST` and `Rate Type=GENER`, yielding 823 general sales-tax locality/county records. It preserves the official municipality-to-county cross-reference instead of collapsing cross-county cities, and expands the `PJ=Y` records into their separately published police-jurisdiction rates.
+
+The normalized inventory has 1,081 records: 189 county-code rows, 634 corporate-limit rows, and 258 police-jurisdiction rows. The state 4% general rate is added to each local component. Where Alabama publishes a corresponding `SU/GENER` row, TaxAP exposes that combined sellers-use rate separately as `generalInterstateRate`; 231 rows have no exact sellers-use counterpart and remain `null` rather than being guessed.
 
 ## Address matching
 
@@ -38,11 +44,11 @@ About 19 of the 146 raw rows are E-suffixed equipment-tax variants (confirms the
 
 ## Step 3 — boundary/rate-detail source
 
-**Not identified or checked this session.** `docs/roadmap-50-states.md` only confirms the flat DOR rate CSV — no address/ZIP boundary file for the PJ/city-limit matching Step 1 shows is needed has been found yet. This is a separate open blocker from AL000 and the comparability question above.
+The DOR provides an interactive address lookup, but no reviewed bulk address/ZIP boundary file has been identified for the PJ/city-limit matching Step 1 shows is needed. This is a separate open blocker from `AL000`; it does not prevent the official inventory from being connected, but it does prevent automatic address/A+ comparison.
 
 ## Do instead
 
 - Resolve what `AL000` actually means (ask Ana/Liv or whoever owns AL billing) before building anything — it's the single biggest bucket of real AL ship-tos.
-- Filter to Rate Type "GEN" specifically in the DOR CSV; never trust `TBCLRT1`/`TBCLRT2` positionally.
+- Keep filtering to `TaxType=ST` and `Rate Type=GENER` specifically in the DOR CSV; never trust `TBCLRT1`/`TBCLRT2` positionally.
 - Don't derive equipment-variant codes by string-appending "E" — confirm each pairing explicitly.
 - Find a real AL address/boundary source before attempting the three-way (uninc/CL/PJ) matching Step 1 requires.

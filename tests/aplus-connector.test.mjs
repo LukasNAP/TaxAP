@@ -28,6 +28,13 @@ test("rejects unsafe linked-server and library identifiers", () => {
   assert.throws(() => buildTaxBodyQuery({ library: "APLUSV8FAQ.XATXBD" }), /unsupported characters/);
 });
 
+test("builds a direct SQL03 A+ query for local Windows Authentication", () => {
+  const query = buildTaxBodyQuery({ linkedServer: null });
+  assert.match(query, /^SELECT \* FROM OPENQUERY\(APLUS/);
+  assert.doesNotMatch(query, /OPENQUERY\(\[SQL03\]/);
+  assert.match(query, /APLUSV8FAQ\.XATXBD/);
+});
+
 test("accepts only official U.S. state codes for state drill-down", () => {
   assert.equal(validateStateCode(" nc "), "NC");
   assert.equal(validateStateCode("dc"), "DC");

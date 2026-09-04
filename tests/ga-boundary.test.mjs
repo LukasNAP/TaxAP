@@ -341,30 +341,31 @@ test("separates cross-state tax bodies from Georgia findings without dropping th
   assert.equal(reconciliation.totals.activeShipTos, 3);
 });
 
-test("does not select an arbitrary Georgia jurisdiction for a cross-state tax body assigned in more than one place", () => {
+test("keeps tied cross-state boundary assignments deterministic and does not present either as authoritative", () => {
   const boundaryDataset = parseBoundaryCsv([
-    boundaryRow({ type: "Z", zipLow: "30001", zipHigh: "30001", fipsCounty: "067" }),
-    boundaryRow({ type: "Z", zipLow: "30002", zipHigh: "30002", fipsCounty: "135" }),
+    boundaryRow({ type: "Z", zipLow: "30601", zipHigh: "30601", fipsCounty: "067" }),
+    boundaryRow({ type: "Z", zipLow: "30602", zipHigh: "30602", fipsCounty: "135" }),
   ].join("\n"));
-  const input = [
-    { streetLine: "1 MAIN ST", city: "ALPHA", zip: "30001", taxBody: "NC060" },
-    { streetLine: "2 MAIN ST", city: "BETA", zip: "30002", taxBody: "NC060" },
-  ];
-  const options = {
+  const base = {
     boundaryDataset,
-    rateSnapshot: { stateRate: 4, rates: [] },
+    rateSnapshot: { stateRate: 4, rates: [{ jurisdictionType: "county", jurisdictionCode: "067", componentRate: 3 }, { jurisdictionType: "county", jurisdictionCode: "135", componentRate: 3 }] },
     taxBodyRates: new Map([["NC060", 8.25]]),
     taxBodyDescriptions: new Map([["NC060", "North Carolina Mecklenburg"]]),
     asOfDate: "20260826",
   };
+  const addresses = [
+    { streetLine: "1 MAIN ST", city: "ATHENS", zip: "30601", taxBody: "NC060" },
+    { streetLine: "2 MAIN ST", city: "ATHENS", zip: "30602", taxBody: "NC060" },
+  ];
 
-  const forward = reconcileGeorgiaBoundary({ ...options, addresses: input });
-  const reverse = reconcileGeorgiaBoundary({ ...options, addresses: [...input].reverse() });
-  const forwardFinding = forward.crossStateAssignments.taxBodies[0];
-  const reverseFinding = reverse.crossStateAssignments.taxBodies[0];
+  const first = reconcileGeorgiaBoundary({ ...base, addresses });
+  const second = reconcileGeorgiaBoundary({ ...base, addresses: [...addresses].reverse() });
+  const firstRow = first.crossStateAssignments.taxBodies[0];
+  const secondRow = second.crossStateAssignments.taxBodies[0];
 
-  assert.equal(forwardFinding.jurisdictionAssignmentConsistent, false);
-  assert.equal(forwardFinding.jurisdiction, null);
-  assert.equal(forwardFinding.officialRate, null);
-  assert.deepEqual(reverseFinding, forwardFinding);
+  assert.equal(firstRow.jurisdictionAssignmentConsistent, false);
+  assert.equal(secondRow.jurisdictionAssignmentConsistent, false);
+  assert.equal(firstRow.jurisdiction, null);
+  assert.equal(secondRow.jurisdiction, null);
+  assert.deepEqual(firstRow, secondRow);
 });

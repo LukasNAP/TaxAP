@@ -37,7 +37,10 @@ function isNyMisinput(row) {
 
 export async function readNewYorkAplusComparison(stateDetail, { readOfficialNyRates: readOfficial = readOfficialNyRates } = {}) {
   const officialSnapshot = await readOfficial();
-  const byKey = new Map(officialSnapshot.rates.map((rate) => [`${rate.jurisdictionType}|${rate.name}`, rate]));
+  const byKey = new Map(officialSnapshot.rates.map((rate) => {
+    const name = rate.jurisdictionType === "city" ? String(rate.name).replace(/\s+\(city\)$/i, "") : rate.name;
+    return [`${rate.jurisdictionType}|${name}`, rate];
+  }));
 
   return {
     ...reconcileDirectMappingAplus({

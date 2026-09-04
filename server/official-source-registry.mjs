@@ -1,19 +1,27 @@
 import { NCDOR_CURRENT_RATES_URL } from "./ncdor-rates.mjs";
 import { CALIFORNIA_DOR_OVERVIEW_URL } from "./ca-rates.mjs";
-import { COLORADO_RATES_URL } from "./co-rates.mjs";
+import { CONNECTICUT_DRS_RATES_URL } from "./ct-rates.mjs";
+import { DISTRICT_OF_COLUMBIA_OTR_RATES_URL } from "./dc-rates.mjs";
 import { FLORIDA_DOR_RATES_URL } from "./fl-rates.mjs";
+import { HAWAII_GET_URL } from "./hi-rates.mjs";
+import { ILLINOIS_IDOR_OVERVIEW_URL } from "./il-rates.mjs";
+import { IDAHO_TAX_COMMISSION_RATES_URL } from "./id-rates.mjs";
 import { MARYLAND_RATE_CHART_URL } from "./md-rates.mjs";
-import { MAINE_RATES_URL } from "./me-rates.mjs";
-import { CT_RATES_URL } from "./ct-rates.mjs";
-import { MA_RATES_URL } from "./ma-rates.mjs";
-import { MS_RATES_URL } from "./ms-rates.mjs";
+import { MAINE_REVENUE_RATES_URL } from "./me-rates.mjs";
+import { MASSACHUSETTS_DOR_RATES_URL } from "./ma-rates.mjs";
+import { MISSISSIPPI_DOR_RATES_URL } from "./ms-rates.mjs";
 import { NJ_USE_TAX_FAQ_URL } from "./nj-rates.mjs";
-import { VIRGINIA_RATES_URL } from "./va-rates.mjs";
-import { NY_PUB718_URL } from "./ny-rates.mjs";
-import { AZ_RATE_TABLE_PAGE_URL } from "./az-rates.mjs";
-import { AL_RATES_PAGE_URL } from "./al-rates.mjs";
 import { PENNSYLVANIA_DOR_RATES_URL } from "./pa-rates.mjs";
 import { TEXAS_DOR_RATES_URL } from "./tx-rates.mjs";
+import { VIRGINIA_DOR_RATES_URL } from "./va-rates.mjs";
+import { ARIZONA_DOR_RATE_TABLE_URL } from "./az-rates.mjs";
+import { NEW_YORK_CURRENT_RATES_URL } from "./ny-rates.mjs";
+import { ALASKA_REMOTE_SELLER_RATES_URL } from "./ak-rates.mjs";
+import { NEW_MEXICO_GIS_DATA_URL } from "./nm-rates.mjs";
+import { ALABAMA_LOCAL_RATES_URL } from "./al-rates.mjs";
+import { COLORADO_RATE_LOOKUP_URL } from "./co-rates.mjs";
+import { LOUISIANA_REMOTE_SELLER_LOOKUP_URL } from "./la-rates.mjs";
+import { MISSOURI_RATE_TABLES_URL } from "./mo-rates.mjs";
 
 export const SST_RATE_DIRECTORY_URL = "https://www.streamlinedsalestax.org/ratesandboundry/Rates/";
 
@@ -27,23 +35,14 @@ const STATES = {
 };
 
 const SST_RATE_STATES = new Set([
-  "GA", "IA", "KS", "MN", "NC", "ND", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV",
+  "GA", "IA", "KS", "MN", "NC", "ND", "NE", "NV", "OH", "OK", "SD", "TN", "UT", "VT", "WA", "WI", "WV",
 ]);
 
 // Confirmed 2026-08-26 (see docs/roadmap-50-states.md): real, current, validated GENERIC_SST_STATES
 // entries in server/sst-rates.mjs - either a clean drop-in county model (AR, WY) or a confirmed flat/
 // no-local-tax state (IN, KY, MI, RI). Listed separately from SST_RATE_STATES above, which is now only
 // the "claimed but not independently wired into a config entry yet" bucket.
-const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "RI", "NV", "NE"]);
-
-// IN/KY/MI (below, alongside MD/ME/CT/MA/MS) are confirmed live 2026-08-26 (see docs/state-rollout.md
-// and each state's docs/states/<code>.md) to be a single flat statewide A+ tax body with no
-// local-option variation, matching its official rate exactly with no blocking finding - the same
-// shape MD and NJ already have wired, so they carry an aplusMatchingStatus/comparisonEndpoint below
-// instead of falling into the generic CONNECTED_GENERIC_SST_STATES case above. Deliberately does NOT
-// include RI here: RI's sole tax body is confirmed live at 0% against RI's real flat 7% rate (see
-// docs/pending-business-decisions.md), an unresolved human decision, not a "wire it" case, even
-// though RI is otherwise a genuine drop-in GENERIC_SST_STATES entry.
+const CONNECTED_GENERIC_SST_STATES = new Set(["AR", "WY", "IN", "KY", "MI", "RI"]);
 
 // Confirmed 2026-08-26: these states impose no general state or local sales/use tax at all (4 of the
 // 5 well-known "NOMAD" states; Alaska is the 5th but has real local-only sales tax and isn't included
@@ -53,6 +52,48 @@ const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 
 export function listOfficialSourceRegistry() {
   return Object.entries(STATES).map(([stateCode, stateName]) => {
+    if (stateCode === "AL") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-monthly-general-sales-csv",
+        coverage: "current general sales-tax locality rows plus explicit corporate-limit, county, police-jurisdiction, and available sellers-use rates; address-to-zone and A+ matching remain unresolved",
+        sourceName: "Alabama Department of Revenue", sourceUrl: ALABAMA_LOCAL_RATES_URL,
+      };
+    }
+    if (stateCode === "AK") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "local-only-arsstc-xlsx",
+        coverage: "zero state sales tax plus 56 current ARSSTC remote-seller destination rows (10 borough-area and 46 city rows); nonmember municipalities and address boundaries remain unresolved",
+        sourceName: "Alaska Remote Seller Sales Tax Commission", sourceUrl: ALASKA_REMOTE_SELLER_RATES_URL,
+      };
+    }
+    if (stateCode === "NM") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-trd-rgis-grt-csv-archive",
+        coverage: "all current official district location codes and GRT totals, including county remainders, municipalities, special districts, and paired tribal classes; address-to-polygon and A+ matching remain unresolved",
+        sourceName: "New Mexico Taxation and Revenue Department / RGIS", sourceUrl: NEW_MEXICO_GIS_DATA_URL,
+      };
+    }
+    if (stateCode === "CO") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-half-year-layered-xlsx",
+        coverage: "current jurisdiction codes, counties, layered totals, and self-collected-home-rule flags; city-name matching is prohibited and address-to-district/A+ matching remain unresolved",
+        sourceName: "Colorado Department of Revenue", sourceUrl: COLORADO_RATE_LOOKUP_URL,
+      };
+    }
+    if (stateCode === "LA") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "remote-seller-current-parish-html",
+        coverage: "all current domicile-rate rows across 64 parish selectors, keyed by parish plus domicile because the same domicile code can have different parish-context rates; address/A+ matching remain unresolved",
+        sourceName: "Louisiana Sales and Use Tax Commission for Remote Sellers / Louisiana DOR", sourceUrl: LOUISIANA_REMOTE_SELLER_LOOKUP_URL,
+      };
+    }
+    if (stateCode === "MO") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-quarterly-filing-code-xlsx",
+        coverage: "all current city/county/special-district filing-code combinations with general sales, use, food, domestic-utility, and AMJ rates; address-to-code and A+ matching remain unresolved",
+        sourceName: "Missouri Department of Revenue", sourceUrl: MISSOURI_RATE_TABLES_URL,
+      };
+    }
     if (stateCode === "NC") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-html",
@@ -69,18 +110,8 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "CA") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-html",
-        coverage: "current city and county total rates, matched to A+ only where the tax body itself names exactly one CDTFA city or county. Missing definitions and equipment-category tax bodies are visible exclusions; same-named cities across counties remain unmatched rather than guessed.",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/CA/aplus",
-        sourceName: "California Department of Tax and Fee Administration",
+        coverage: "current city and county total rates", sourceName: "California Department of Tax and Fee Administration",
         sourceUrl: CALIFORNIA_DOR_OVERVIEW_URL,
-      };
-    }
-    if (stateCode === "CO") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-dor-xlsx",
-        coverage: "Colorado DOR's current location-code totals. A+ matching uses an exact six-digit Colorado jurisdiction code when one is stored; otherwise it compares only unique official location names. Multi-rate cities, county-wide labels, and special-district variants remain unmatched rather than guessed.",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/CO/aplus",
-        sourceName: "Colorado Department of Revenue", sourceUrl: COLORADO_RATES_URL,
       };
     }
     if (stateCode === "TX") {
@@ -93,9 +124,7 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "FL") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-xlsx",
-        coverage: "all 67 county discretionary surtax totals, matched to A+ by real county name (not the FL### code number, which is not a reliable alphabetical index - confirmed live 2026-08-27)",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/FL/aplus",
-        sourceName: "Florida Department of Revenue",
+        coverage: "all 67 county discretionary surtax totals", sourceName: "Florida Department of Revenue",
         sourceUrl: FLORIDA_DOR_RATES_URL,
       };
     }
@@ -109,96 +138,29 @@ export function listOfficialSourceRegistry() {
     if (stateCode === "PA") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-rules-census",
-        coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons. A+ has only 2 real codes (PA000 catch-all, PA001 Philadelphia); Philadelphia's confirmed stale rate already has a scheduled A+ correction (2026-10-01). No A+ code exists for Allegheny at all - a confirmed real gap (64+ ship-tos), not something matching can resolve",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/PA/aplus",
+        coverage: "all 67 counties using the official state rate and Philadelphia/Allegheny add-ons",
         sourceName: "Pennsylvania Department of Revenue", sourceUrl: PENNSYLVANIA_DOR_RATES_URL,
       };
     }
     if (stateCode === "IL") {
       return {
-        stateCode, stateName, status: "machine-readable-source", adapter: "state-dor-machine-file-pending",
-        coverage: "official machine-readable sales-tax files; adapter validation pending",
-        sourceName: "Illinois Department of Revenue", sourceUrl: "https://tax.illinois.gov/research/taxrates/sales-tax-rate-machine-readable-files.html",
+        stateCode, stateName, status: "connected", adapter: "state-dor-fixed-width",
+        coverage: "current jurisdiction-wide standard-merchandise totals from IDOR's fixed-width file; address-override locations and A+ tax-body matching remain intentionally unresolved",
+        sourceName: "Illinois Department of Revenue", sourceUrl: ILLINOIS_IDOR_OVERVIEW_URL,
       };
     }
     if (stateCode === "VA") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-dor-xlsx",
-        coverage: "all 133 real counties and independent cities, matched to A+ by real locality name with Virginia's own County/City suffix disambiguating its 4 name-duplicate pairs (Fairfax, Franklin, Richmond, Roanoke). One confirmed live miscoding (Richmond) and one confirmed stale rate (Pittsylvania) flagged, pending A+ correction",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/VA/aplus",
-        sourceName: "Virginia Department of Taxation", sourceUrl: VIRGINIA_RATES_URL,
-      };
-    }
-    if (stateCode === "NY") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-dor-pdf",
-        coverage: "Publication 718's full jurisdiction rate list (~77 counties/cities incl. one combined New York City rate), matched to A+ by real locality name (not the state's own reporting code number, which does not reliably match A+'s). Two confirmed live stale rates (Suffolk County, Yonkers City) flagged, pending A+ correction",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/NY/aplus",
-        sourceName: "New York State Department of Taxation and Finance", sourceUrl: NY_PUB718_URL,
-      };
-    }
-    if (stateCode === "AZ") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-dor-csv",
-        coverage: "business code 017 (Retail, confirmed default) county and city rates. County rows already include the 5.6% state rate; city rows are summed with their real county (a small verified crosswalk, not AZDOR's own file - Arizona's own county boundaries are stable public geography). 4 confirmed live stale/incomplete rates flagged (Casa Grande, Douglas, Taylor, and the City of Maricopa - a real name-duplicate with Pinal County, not Maricopa County itself), pending A+ correction. Green Valley (AZ3518) is a Census-designated place, not incorporated, and has no official row to match against - still open",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/AZ/aplus",
-        sourceName: "Arizona Department of Revenue", sourceUrl: AZ_RATE_TABLE_PAGE_URL,
-      };
-    }
-    if (stateCode === "AL") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-dor-csv",
-        coverage: "general sales rate only (per Lukas's confirmed decision - equipment and police-jurisdiction rates out of scope), matched to A+ by ADOR's own numeric locality code, which A+ uses directly. A small number of A+ codes for cities spanning more than one county (confirmed: Birmingham, and others found live) reuse a different locality's own code number or have no reliable single-county total - reported as unmatched rather than guessed when the CSV's own locality name doesn't corroborate A+'s description",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/AL/aplus",
-        sourceName: "Alabama Department of Revenue", sourceUrl: AL_RATES_PAGE_URL,
+        coverage: "all 95 counties and 38 independent cities with official FIPS codes and current combined rates; address-level and A+ tax-body matching remain unresolved",
+        sourceName: "Virginia Department of Taxation", sourceUrl: VIRGINIA_DOR_RATES_URL,
       };
     }
     if (stateCode === "MD") {
       return {
         stateCode, stateName, status: "connected", adapter: "state-flat-rate",
         coverage: "flat 6% statewide rate (Tax-General Article Section 11-104); Maryland preempts local general sales tax, so no address matching is ever needed",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/MD/aplus",
         sourceName: "Comptroller of Maryland", sourceUrl: MARYLAND_RATE_CHART_URL,
-      };
-    }
-    if (stateCode === "ME") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
-        coverage: "flat 5.5% statewide rate, live-parsed from Maine Revenue Services' own rate/due-date table; Maine has no local-option sales tax, so no address matching is ever needed",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/ME/aplus",
-        sourceName: "Maine Revenue Services", sourceUrl: MAINE_RATES_URL,
-      };
-    }
-    if (stateCode === "CT") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
-        coverage: "flat 6.35% statewide rate, live-parsed from Connecticut DRS's tax-information page; Connecticut abolished county government in 1960 and has no local-option sales tax, so no address matching is ever needed",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/CT/aplus",
-        sourceName: "Connecticut Department of Revenue Services", sourceUrl: CT_RATES_URL,
-      };
-    }
-    if (stateCode === "MA") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
-        coverage: "flat 6.25% statewide rate, live-parsed from Massachusetts' own sales-and-use-tax guide (requires a non-browser User-Agent - mass.gov bot-blocks browser-style fetches even though the page is live); no general local-option sales tax exists, so no address matching is ever needed",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/MA/aplus",
-        sourceName: "Commonwealth of Massachusetts", sourceUrl: MA_RATES_URL,
-      };
-    }
-    if (stateCode === "MS") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "state-flat-rate",
-        coverage: "flat 7% general retail rate, live-parsed from Mississippi DOR's rate page; no general local-option sales tax exists. Open caveat: Jackson (+1%) and Tupelo (+0.25%) each impose a narrow city-specific levy not modeled here, and A+ has no way to identify a ship-to physically inside either city",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/MS/aplus",
-        sourceName: "Mississippi Department of Revenue", sourceUrl: MS_RATES_URL,
-      };
-    }
-    if (stateCode === "IN" || stateCode === "KY" || stateCode === "MI") {
-      return {
-        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
-        coverage: "flat statewide rate with zero local jurisdiction rows, validated 2026-08-26 - matches A+'s single statewide tax body exactly, no blocking finding",
-        aplusMatchingStatus: "connected", comparisonEndpoint: `/api/official/states/${stateCode}/aplus`,
-        sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: SST_RATE_DIRECTORY_URL,
       };
     }
     if (stateCode === "NJ") {
@@ -209,15 +171,161 @@ export function listOfficialSourceRegistry() {
         sourceName: "New Jersey Division of Taxation", sourceUrl: NJ_USE_TAX_FAQ_URL,
       };
     }
-    if (stateCode === "OH") {
+    if (stateCode === "IA") {
       return {
         stateCode, stateName, status: "connected", adapter: "sst-rate-file",
-        coverage: "state, county, and special-jurisdiction rate components, matched to A+ by real county name. Real ~16-county transit-authority surcharge crosswalk confirmed and folded into the comparison (special jurisdictionCode <A+'s county number>000) - not a naive county-row-only diff, which would have false-flagged Cuyahoga/Franklin/Hamilton/etc.",
-        aplusMatchingStatus: "connected", comparisonEndpoint: "/api/official/states/OH/aplus",
-        sourceName: `${stateName} via Streamlined Sales Tax`, sourceUrl: SST_RATE_DIRECTORY_URL,
+        coverage: "6% statewide rate plus validated county, city, and special local-option components; A+ code-to-jurisdiction matching remains unresolved",
+        sourceName: "Iowa Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://revenue.iowa.gov/taxes/tax-guidance/sales-use-excise-tax/sales-use-tax-guide",
       };
     }
-    if (stateCode === "TN") {
+    if (stateCode === "AZ") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-monthly-csv-retail",
+        coverage: "monthly business-code-017 retail inventory across all 15 counties, cities, and tribal/special regions; city totals and A+ discrepancy decisions remain unresolved",
+        sourceName: "Arizona Department of Revenue", sourceUrl: ARIZONA_DOR_RATE_TABLE_URL,
+      };
+    }
+    if (stateCode === "HI") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dotax-get-policy-html",
+        coverage: "seller-side 4% GET base, four 0.5% county surcharges, Kalawao exemption, and optional 4.712% maximum visible pass-on; not treated as a conventional sales-tax mismatch",
+        sourceName: "Hawaii Department of Taxation", sourceUrl: HAWAII_GET_URL,
+      };
+    }
+    if (stateCode === "ID") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-tax-commission-html-partial-local",
+        coverage: "validated 6% state sales/use rate plus an official inventory of 23 separately administered resort-city local-tax jurisdictions; local rates unavailable centrally and never guessed",
+        sourceName: "Idaho State Tax Commission", sourceUrl: IDAHO_TAX_COMMISSION_RATES_URL,
+      };
+    }
+    if (stateCode === "ME") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-html-flat-rate",
+        coverage: "flat 5.5% general sales/use-tax rate effective 2026-01-01; special category rates remain outside the general comparison",
+        sourceName: "Maine Revenue Services", sourceUrl: MAINE_REVENUE_RATES_URL,
+      };
+    }
+    if (stateCode === "MA") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-html-flat-rate",
+        coverage: "flat 6.25% general sales/use-tax rate for tangible personal property; category-specific local options remain outside the general comparison",
+        sourceName: "Massachusetts Department of Revenue", sourceUrl: MASSACHUSETTS_DOR_RATES_URL,
+      };
+    }
+    if (stateCode === "MS") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-html-general-plus-city",
+        coverage: "7% general tangible-property rate plus Jackson's 1% and Tupelo's 0.25% general-retail levies; other category-specific tourism levies excluded",
+        sourceName: "Mississippi Department of Revenue", sourceUrl: MISSISSIPPI_DOR_RATES_URL,
+      };
+    }
+    if (stateCode === "NY") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dtf-pdf-combined-rates",
+        coverage: "all 77 current Publication 718 state/local reporting rows (57 county areas, 19 cities, and the state-only row); ZIP derivation and A+ alias/discrepancy matching remain intentionally unresolved",
+        sourceName: "New York State Department of Taxation and Finance", sourceUrl: NEW_YORK_CURRENT_RATES_URL,
+      };
+    }
+    if (stateCode === "CT") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "state-dor-html-flat-rate",
+        coverage: "flat 6.35% general rate with no additional local-jurisdiction sales tax; special product/service rates remain outside the general-rate comparison",
+        sourceName: "Connecticut Department of Revenue Services", sourceUrl: CONNECTICUT_DRS_RATES_URL,
+      };
+    }
+    if (stateCode === "DC") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "district-otr-html-flat-rate",
+        coverage: "citywide 6% general rate through 2026-09-30 and the enacted 7% rate beginning 2026-10-01; no local boundary matching required",
+        sourceName: "District of Columbia Office of Tax and Revenue", sourceUrl: DISTRICT_OF_COLUMBIA_OTR_RATES_URL,
+      };
+    }
+    if (stateCode === "KS") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "6.5% statewide rate plus validated county, city, and special-jurisdiction components; address-level and A+ tax-body matching remain intentionally unresolved",
+        sourceName: "Kansas Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://www.ksrevenue.gov/salesratechanges.html",
+      };
+    }
+    if (stateCode === "MN") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "6.875% statewide rate plus validated active county, city, and special-jurisdiction components; address-level and A+ tax-body matching remain unresolved",
+        sourceName: "Minnesota Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://www.revenue.state.mn.us/local-sales-tax-information",
+      };
+    }
+    if (stateCode === "ND") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "5% statewide rate plus validated county and city components; local maximum-tax caps and A+ matching remain unresolved",
+        sourceName: "North Dakota Office of State Tax Commissioner via Streamlined Sales Tax", sourceUrl: "https://www.tax.nd.gov/sales-and-use-tax/local-taxes-city-and-county-taxes",
+      };
+    }
+    if (stateCode === "NE") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "5.5% statewide rate plus validated active city, county, and special-jurisdiction components; complete-total and A+ matching remain unresolved",
+        sourceName: "Nebraska Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://revenue.nebraska.gov/businesses/local-sales-and-use-tax-rates",
+      };
+    }
+    if (stateCode === "NV") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file-total-rates",
+        coverage: "6.85% minimum statewide rate plus all 17 county/equivalent totals and special-jurisdiction totals; A+ matching remains unresolved",
+        sourceName: "Nevada Department of Taxation via Streamlined Sales Tax", sourceUrl: "https://tax.nv.gov/tax-types/consumer-use-tax/",
+      };
+    }
+    if (stateCode === "OK") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "4.5% statewide rate plus validated county, municipality, and special-jurisdiction components; address-level and A+ matching remain unresolved",
+        sourceName: "Oklahoma Tax Commission via Streamlined Sales Tax", sourceUrl: "https://oklahoma.gov/tax/businesses/sales-use-tax.html",
+      };
+    }
+    if (stateCode === "SD") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "4.2% statewide rate plus validated county, municipality, and tribal/special-jurisdiction records; address-level and A+ matching remain unresolved",
+        sourceName: "South Dakota Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://dor.sd.gov/individuals/taxes/sales-use-tax/",
+      };
+    }
+    if (stateCode === "UT") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "4.85% statewide rate plus validated county and city components; ZIP+4/address-level and A+ matching remain unresolved",
+        sourceName: "Utah State Tax Commission via Streamlined Sales Tax", sourceUrl: "https://tax.utah.gov/business/sales-tax/sales/rates/",
+      };
+    }
+    if (stateCode === "VT") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "6% statewide rate plus 1% destination-based municipal local-option components; address-level and A+ matching remain unresolved",
+        sourceName: "Vermont Department of Taxes via Streamlined Sales Tax", sourceUrl: "https://tax.vermont.gov/business/industry/contractors",
+      };
+    }
+    if (stateCode === "WA") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "6.5% statewide rate plus validated county, city, and special/location-code components; address-level and A+ matching remain unresolved",
+        sourceName: "Washington Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://dor.wa.gov/taxes-rates/sales-use-tax-rates",
+      };
+    }
+    if (stateCode === "WI") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "5% statewide rate plus validated county and city components; premier-resort/local-exposition taxes and A+ matching remain unresolved",
+        sourceName: "Wisconsin Department of Revenue via Streamlined Sales Tax", sourceUrl: "https://www.revenue.wi.gov/Pages/Apps/strb.aspx",
+      };
+    }
+    if (stateCode === "WV") {
+      return {
+        stateCode, stateName, status: "connected", adapter: "sst-rate-file",
+        coverage: "6% statewide rate plus validated 1% municipal components; municipal-boundary and A+ matching remain unresolved",
+        sourceName: "West Virginia Tax Division via Streamlined Sales Tax", sourceUrl: "https://tax.wv.gov/business/salesandusetax/municipalsalesandusetax/pages/municipalsalesandusetax.aspx",
+      };
+    }
+    if (stateCode === "OH" || stateCode === "TN") {
       return {
         stateCode, stateName, status: "connected", adapter: "sst-rate-file",
         coverage: "state, county, city, and special-jurisdiction rate components",
@@ -234,20 +342,6 @@ export function listOfficialSourceRegistry() {
       return {
         stateCode, stateName, status: "no-general-sales-tax", adapter: "none",
         coverage: "confirmed 2026-08-26: no general state or local sales/use tax exists in this state; excluded from rate comparison, not an unbuilt adapter",
-        sourceName: "N/A", sourceUrl: null,
-      };
-    }
-    if (stateCode === "HI") {
-      return {
-        stateCode, stateName, status: "no-general-sales-tax", adapter: "none",
-        coverage: "per Lukas's explicit decision (2026-08-27): Hawaii has no buyer-facing sales tax to compare. Its General Excise Tax (GET) legally taxes the seller's gross receipts, not the buyer, and any customer-visible \"rate\" is a voluntary, uncapped-below-4.712% pass-on choice, not a statutory transaction tax. Excluded from the rate-comparison dashboard entirely, the same as DE/MT/NH/OR - not an unbuilt adapter.",
-        sourceName: "N/A", sourceUrl: null,
-      };
-    }
-    if (stateCode === "AK") {
-      return {
-        stateCode, stateName, status: "no-general-sales-tax", adapter: "none",
-        coverage: "per Lukas's explicit decision (2026-08-27): excluded from the comparison dashboard. Unlike Hawaii, Alaska does have real local-only sales tax in 100+ home-rule boroughs/cities - but no state tax exists, and the only public source (ARSSTC) covers just its member jurisdictions, never all of Alaska, so a comparison here could never be complete. Not an unbuilt adapter - a deliberate scope decision.",
         sourceName: "N/A", sourceUrl: null,
       };
     }

@@ -1,142 +1,179 @@
 import { createHash } from "node:crypto";
 
-export const AL_RATES_PAGE_URL = "https://www.revenue.alabama.gov/sales-use/local-cities-and-counties-tax-rates-text-file/";
-export const AL_RATES_CSV_URL = "https://www.revenue.alabama.gov/wp-content/uploads/2024/03/taxrates_current.csv";
-export const AL_STATE_RATE = 4;
+export const ALABAMA_LOCAL_RATES_URL = "https://www.revenue.alabama.gov/sales-use/local-cities-and-counties-tax-rates-text-file/";
+export const ALABAMA_STATE_RATES_URL = "https://www.revenue.alabama.gov/sales-use/state-sales-use-tax-rates/";
+export const ALABAMA_STATE_GENERAL_RATE = 4;
+export const AL_STATE_RATE = ALABAMA_STATE_GENERAL_RATE;
 
-const PLAUSIBLE_RATE_MIN = 4;
-const PLAUSIBLE_RATE_MAX = 14;
+const EXPECTED_HEADERS = [
+  "Locality Code", "Locality Name", "County Number", "TaxType", "Rate Type", "Administered", "Active Date",
+  "Inactive Date", "Rate", "Indicator", "PJ", "County Code", "PJ_Rate",
+];
 
-function parseCsvLine(line) {
-  const fields = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (inQuotes) {
-      if (char === '"' && line[i + 1] === '"') { current += '"'; i++; }
-      else if (char === '"') inQuotes = false;
-      else current += char;
-    } else if (char === '"') inQuotes = true;
-    else if (char === ",") { fields.push(current); current = ""; }
-    else current += char;
-  }
-  fields.push(current);
-  return fields;
+function plainText(html) {
+  return String(html).replace(/<script\b[\s\S]*?<\/script>/gi, " ").replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;|&#038;/gi, "&").replace(/\s+/g, " ").trim();
 }
 
-// Confirmed live 2026-08-27 (see docs/states/al.md): A+'s ALnnnn tax-body codes use ADOR's own
-// numeric "Locality Code" directly - NOT a synthesized or alphabetical scheme, unlike several other
-// states this project has built. Matching by that exact number is far more reliable than any name
-// parsing, and sidesteps A+'s inconsistent description casing/prefix ("Alabama X", "ALABAMA X",
-// bare "X" with no prefix at all - all three appear live). Per Lukas's confirmed decision
-// (2026-08-27): compare only the general sales rate (TaxType "ST", Rate Type "GENER") - equipment
-// ("MACH") and police-jurisdiction rates are out of scope, not modeled here.
-export function parseAlRateCsv(csvText) {
-  const withoutBom = csvText.charCodeAt(0) === 0xfeff ? csvText.slice(1) : csvText;
-  const lines = withoutBom.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  const header = parseCsvLine(lines[0]).map((field) => field.replace(/^"|"$/g, ""));
-  if (header[0] !== "Locality Code" || header[3] !== "TaxType" || header[4] !== "Rate Type") {
-    throw new Error("Alabama's rate file header no longer matches the expected column layout.");
-  }
-  const byCode = new Map();
-  for (const line of lines.slice(1)) {
-    const fields = parseCsvLine(line).map((field) => field.replace(/^"|"$/g, ""));
-    const [code, name, countyNumber, taxType, rateType, , , inactiveDate, rateText] = fields;
-    if (taxType !== "ST" || rateType !== "GENER") continue;
-    if (inactiveDate) continue; // a locality with an inactive date is retired - never a live rate
-    const rate = Number(rateText);
-    if (!Number.isFinite(rate)) throw new Error(`Alabama's rate file has a non-numeric general rate for locality ${code} (${name}).`);
-    // A given locality code can appear more than once (e.g. a city that spans two counties, cross-
-    // referenced once per county) - confirmed live these duplicates always carry the identical
-    // rate, so the first one seen is kept rather than treated as a conflict.
-    if (!byCode.has(code)) byCode.set(code, { code, name: name.trim(), countyNumber: Number(countyNumber), rate });
-  }
-  if (byCode.size < 300) throw new Error(`Alabama's rate file returned only ${byCode.size} general-rate localities, fewer than plausible.`);
-  return byCode;
+export function findCurrentAlabamaCsv(html) {
+  const link = [...String(html).matchAll(/href=["']([^"']*taxrates_current\.csv)["']/gi)][0]?.[1];
+  if (!link) throw new Error("Alabama DOR did not link taxrates_current.csv.");
+  const linkIndex = String(html).search(/taxrates_current\.csv/i);
+  const updated = plainText(String(html).slice(linkIndex, linkIndex + 1_000)).match(/Updated for\s+([A-Z][a-z]+)\s+([12]\d{2})\s*(\d)/i);
+  if (!updated) throw new Error("Alabama DOR did not identify the update month for taxrates_current.csv.");
+  const parsedDate = new Date(`${updated[1]} 1, ${updated[2]}${updated[3]} 00:00:00 UTC`);
+  if (Number.isNaN(parsedDate.getTime())) throw new Error("Alabama DOR listed an invalid CSV update month.");
+  return { url: new URL(link.replaceAll("&amp;", "&"), ALABAMA_LOCAL_RATES_URL).href, asOfDate: parsedDate.toISOString().slice(0, 10) };
 }
 
-async function fetchText(url, fetchImpl, accept) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-  try {
-    const response = await fetchImpl(url, { headers: { Accept: accept, "User-Agent": "TaxAP/0.1 official-rate monitor" }, signal: controller.signal });
-    if (!response.ok) throw new Error(`Alabama Department of Revenue returned HTTP ${response.status} for ${url}.`);
-    return await response.text();
-  } finally {
-    clearTimeout(timeout);
+export function parseAlabamaStateGeneralRate(html) {
+  const text = plainText(html);
+  const rate = text.match(/Sales and Use Tax Rates[\s\S]{0,500}?General:\s*(\d+(?:\.\d+)?)%/i)?.[1];
+  if (Number(rate) !== ALABAMA_STATE_GENERAL_RATE) throw new Error("Alabama state-rate page no longer confirms a 4% general sales-tax rate.");
+  return ALABAMA_STATE_GENERAL_RATE;
+}
+
+function parseCsvRows(csv) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < String(csv).length; index += 1) {
+    const character = String(csv)[index];
+    if (quoted) {
+      if (character === '"' && String(csv)[index + 1] === '"') { field += '"'; index += 1; }
+      else if (character === '"') quoted = false;
+      else field += character;
+    } else if (character === '"') quoted = true;
+    else if (character === ",") { row.push(field); field = ""; }
+    else if (character === "\n") { row.push(field.replace(/\r$/, "")); rows.push(row); row = []; field = ""; }
+    else field += character;
   }
+  if (quoted) throw new Error("Alabama rate CSV has an unterminated quoted field.");
+  if (field || row.length) { row.push(field.replace(/\r$/, "")); rows.push(row); }
+  return rows.filter((values) => values.some((value) => value !== ""));
+}
+
+function ratePercent(value, label) {
+  const rate = Number(value);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1_000) throw new Error(`Alabama rate CSV has an invalid ${label}.`);
+  return Number(rate.toFixed(4));
+}
+
+function dateValue(value, label) {
+  if (!/^\d{8}$/.test(value)) throw new Error(`Alabama rate CSV has an invalid ${label}.`);
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+function localityKey(row) {
+  return `${row.localityCode}:${row.countyCode || "BASE"}`;
+}
+
+export function parseAlabamaCurrentCsv(csv, { asOfDate, minimumSalesRows = 800, expectedCountyNumbers = 67 } = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate || "")) throw new Error("Alabama rate CSV requires its validated update date.");
+  const rows = parseCsvRows(csv);
+  const headers = rows.shift()?.map((value) => value.replace(/^\uFEFF/, ""));
+  if (!headers || headers.length !== EXPECTED_HEADERS.length || headers.some((header, index) => header !== EXPECTED_HEADERS[index])) {
+    throw new Error("Alabama rate CSV headers changed; review the DOR format before accepting it.");
+  }
+  const parsedRows = rows.map((values) => {
+    if (values.length !== headers.length) throw new Error("Alabama rate CSV contains a malformed row.");
+    const source = Object.fromEntries(headers.map((header, index) => [header, values[index].trim()]));
+    if (!/^\d{4}$/.test(source["Locality Code"]) || !/^[79]/.test(source["Locality Code"])) throw new Error("Alabama rate CSV has an invalid locality code.");
+    if (!source["Locality Name"]) throw new Error("Alabama rate CSV has a blank locality name.");
+    if (!/^\d{1,2}$/.test(source["County Number"]) || Number(source["County Number"]) < 1 || Number(source["County Number"]) > 99) throw new Error("Alabama rate CSV has an invalid county-number field.");
+    if (source["County Code"] && !/^7\d{3}$/.test(source["County Code"])) throw new Error("Alabama rate CSV has an invalid municipality county cross-reference.");
+    if (source.PJ && !/^[YN]$/.test(source.PJ)) throw new Error("Alabama rate CSV has an invalid police-jurisdiction flag.");
+    if (source["Inactive Date"]) throw new Error("Alabama current-rate CSV unexpectedly contains an inactive row.");
+    return {
+      localityCode: source["Locality Code"], localityName: source["Locality Name"], countyNumber: Number(source["County Number"]),
+      taxType: source.TaxType, rateType: source["Rate Type"], administeredBy: source.Administered,
+      activeDate: dateValue(source["Active Date"], `${source["Locality Code"]} active date`),
+      localRate: ratePercent(source.Rate, `${source["Locality Code"]} rate`), pj: source.PJ || null,
+      countyCode: source["County Code"] || null, pjRate: source.PJ_Rate === "" ? null : ratePercent(source.PJ_Rate, `${source["Locality Code"]} police-jurisdiction rate`),
+    };
+  });
+  const salesRows = parsedRows.filter((row) => row.taxType === "ST" && row.rateType === "GENER");
+  if (salesRows.length < minimumSalesRows) throw new Error(`Alabama rate CSV returned only ${salesRows.length} general sales-tax locality rows.`);
+  const countyNumbers = new Set(salesRows.filter((row) => row.localityCode.startsWith("7")).map((row) => row.countyNumber));
+  if (countyNumbers.size !== expectedCountyNumbers) throw new Error(`Alabama rate CSV represented ${countyNumbers.size} county numbers instead of ${expectedCountyNumbers}.`);
+  const sellersUse = new Map(parsedRows.filter((row) => row.taxType === "SU" && row.rateType === "GENER").map((row) => [localityKey(row), row]));
+  for (const row of [...salesRows, ...sellersUse.values()]) {
+    if (row.localRate > 10 || (row.pjRate != null && row.pjRate > 10)) throw new Error(`Alabama general sales/use row ${localityKey(row)} has an implausible percentage rate.`);
+  }
+  const seen = new Set();
+  const rates = [];
+  for (const row of salesRows) {
+    const key = localityKey(row);
+    if (seen.has(key)) throw new Error(`Alabama rate CSV repeats general sales-tax locality ${key}.`);
+    seen.add(key);
+    const use = sellersUse.get(key);
+    const jurisdictionType = row.localityCode.startsWith("7") ? "county" : "city";
+    rates.push({
+      jurisdictionType, jurisdictionCode: `AL:${key}:CL`, localityCode: row.localityCode, countyCode: row.countyCode,
+      countyNumber: row.countyNumber, name: row.localityName, zone: jurisdictionType === "city" ? "corporate-limits" : "county",
+      componentRate: row.localRate, totalGeneralRate: Number((ALABAMA_STATE_GENERAL_RATE + row.localRate).toFixed(4)),
+      generalInterstateRate: use ? Number((ALABAMA_STATE_GENERAL_RATE + use.localRate).toFixed(4)) : null,
+      beginDate: row.activeDate, endDate: null, administeredBy: row.administeredBy,
+    });
+    if (jurisdictionType === "city" && row.pj === "Y") {
+      if (row.pjRate == null) throw new Error(`Alabama municipality ${key} levies a police-jurisdiction tax but has no PJ rate.`);
+      rates.push({
+        jurisdictionType: "special", jurisdictionCode: `AL:${key}:PJ`, localityCode: row.localityCode, countyCode: row.countyCode,
+        countyNumber: row.countyNumber, name: `${row.localityName} Police Jurisdiction`, zone: "police-jurisdiction",
+        componentRate: row.pjRate, totalGeneralRate: Number((ALABAMA_STATE_GENERAL_RATE + row.pjRate).toFixed(4)),
+        generalInterstateRate: use?.pjRate == null ? null : Number((ALABAMA_STATE_GENERAL_RATE + use.pjRate).toFixed(4)),
+        beginDate: row.activeDate, endDate: null, administeredBy: row.administeredBy,
+      });
+    }
+  }
+  const counts = {
+    counties: rates.filter((rate) => rate.jurisdictionType === "county").length,
+    cities: rates.filter((rate) => rate.jurisdictionType === "city").length,
+    specialJurisdictions: rates.filter((rate) => rate.jurisdictionType === "special").length,
+  };
+  return { rates: rates.sort((left, right) => left.jurisdictionCode.localeCompare(right.jurisdictionCode)), counts, sourceRows: rows.length, salesRows: salesRows.length };
 }
 
 let cachedSnapshot = null;
 let cacheExpiresAt = 0;
+let inFlightRead = null;
 
 export async function readOfficialAlRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
-  const csvText = await fetchText(AL_RATES_CSV_URL, fetchImpl, "text/csv");
-  const byCode = parseAlRateCsv(csvText);
-
-  // A locality whose own name ends in "COUNTY" already IS the county's own base rate (applies
-  // county-wide, incorporated and unincorporated alike, per Alabama's real tax law - confirmed live
-  // by cross-checking Mobile: state 4% + Mobile County's own 1.5% + Mobile city's own 5% = 10.5%,
-  // matching A+'s live AL9149 exactly). Every other locality (a real city, or a county's own
-  // "Uninc"/abatement variant) needs its parent county's rate added on top of its own.
-  const countyRateByNumber = new Map();
-  const countyRateByName = new Map();
-  for (const locality of byCode.values()) {
-    // "UNABATED <County> COUNTY" is a separate, lower abatement-zone rate for the same county
-    // number - confirmed live to collide with the real base county rate if not excluded (Mobile:
-    // real county rate 1.5%, UNABATED variant 0.5%, both keyed to county number 49).
-    if (/\bCOUNTY$/i.test(locality.name) && !/^UNABATED\b/i.test(locality.name)) {
-      countyRateByNumber.set(locality.countyNumber, locality.rate);
-      countyRateByName.set(locality.name.replace(/\s+COUNTY$/i, "").trim().toUpperCase(), locality.rate);
-    }
-  }
-
-  const rates = [];
-  for (const locality of byCode.values()) {
-    // Police-Jurisdiction-named localities are out of scope entirely per Lukas's confirmed
-    // decision (general sales rate only) - their own rate is exposed for reference, but no total
-    // is computed, since PJ zones don't follow the same state+county+city stacking rule (a PJ
-    // rate is already its own reduced total in some cases, not a component to add onto).
-    const isPoliceJurisdiction = /\bPJ\b/i.test(locality.name);
-    const isCountyItself = !isPoliceJurisdiction && /\bCOUNTY$/i.test(locality.name);
-    const countyRate = isCountyItself ? 0 : countyRateByNumber.get(locality.countyNumber);
-    const total = !isPoliceJurisdiction && (isCountyItself || countyRate !== undefined)
-      ? Number((AL_STATE_RATE + (countyRate ?? 0) + locality.rate).toFixed(4))
-      : null;
-    if (total !== null && (total < PLAUSIBLE_RATE_MIN || total > PLAUSIBLE_RATE_MAX)) {
-      throw new Error(`Alabama's computed total for locality ${locality.code} (${locality.name}) is implausible (${total}%).`);
-    }
-    rates.push({
-      jurisdictionType: isCountyItself ? "county" : "city",
-      jurisdictionCode: locality.code,
-      name: locality.name,
-      componentRate: locality.rate,
-      totalGeneralRate: total,
-      generalInterstateRate: total,
-      beginDate: null,
-      endDate: null,
-    });
-  }
-
-  const snapshot = {
-    stateCode: "AL",
-    source: "Alabama Department of Revenue (general sales rate only, per Lukas's confirmed decision)",
-    sourceUrl: AL_RATES_PAGE_URL,
-    machineReadableSourceUrl: AL_RATES_CSV_URL,
-    retrievedAt: now.toISOString(),
-    asOfDate: now.toISOString().slice(0, 10),
-    stateRate: AL_STATE_RATE,
-    sourceHash: createHash("sha256").update(csvText).digest("hex"),
-    rates,
-    countyRatesByName: Object.fromEntries(countyRateByName),
-    counts: { counties: rates.filter((r) => r.jurisdictionType === "county").length, cities: rates.filter((r) => r.jurisdictionType === "city").length, specialJurisdictions: 0 },
-    boundaryStatus: "Every ADOR locality code with an active general sales rate is connected, keyed by the same numeric locality code A+ uses directly. A county's own rate already applies county-wide (incorporated and unincorporated); a city's total is state + its county + its own local rate. Equipment and police-jurisdiction rates are out of scope per Lukas's confirmed decision. A handful of A+ codes for cities spanning more than one county reuse a different county's own locality number rather than the city's own (confirmed live for Birmingham/Shelby) - server/al-aplus.mjs cross-checks the locality name before trusting a numeric match, and falls back to unmatched rather than guessing when it doesn't line up.",
-  };
-  if (!bypassCache) {
-    cachedSnapshot = snapshot;
-    cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000;
-  }
-  return snapshot;
+  if (!bypassCache && inFlightRead) return inFlightRead;
+  const read = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25_000);
+    try {
+      const headers = { Accept: "text/html,text/csv", "User-Agent": "TaxAP/0.1 official-rate monitor" };
+      const [listingResponse, stateResponse] = await Promise.all([
+        fetchImpl(ALABAMA_LOCAL_RATES_URL, { headers, signal: controller.signal }),
+        fetchImpl(ALABAMA_STATE_RATES_URL, { headers, signal: controller.signal }),
+      ]);
+      if (!listingResponse.ok) throw new Error(`Alabama DOR rate listing returned HTTP ${listingResponse.status}.`);
+      if (!stateResponse.ok) throw new Error(`Alabama DOR state rates returned HTTP ${stateResponse.status}.`);
+      const listingHtml = await listingResponse.text();
+      const stateHtml = await stateResponse.text();
+      parseAlabamaStateGeneralRate(stateHtml);
+      const current = findCurrentAlabamaCsv(listingHtml);
+      if (current.asOfDate > now.toISOString().slice(0, 10)) throw new Error(`Alabama DOR current file is dated ${current.asOfDate}, after the requested snapshot date.`);
+      const csvResponse = await fetchImpl(current.url, { headers, signal: controller.signal });
+      if (!csvResponse.ok) throw new Error(`Alabama DOR current rate CSV returned HTTP ${csvResponse.status}.`);
+      const csv = await csvResponse.text();
+      if (csv.length < 500_000) throw new Error("Alabama DOR current rate CSV was unexpectedly small.");
+      const parsed = parseAlabamaCurrentCsv(csv, { asOfDate: current.asOfDate });
+      const snapshot = {
+        stateCode: "AL", source: "Alabama Department of Revenue", sourceUrl: ALABAMA_LOCAL_RATES_URL,
+        machineReadableSourceUrl: current.url, retrievedAt: now.toISOString(), asOfDate: current.asOfDate,
+        stateRate: ALABAMA_STATE_GENERAL_RATE, sourceHash: createHash("sha256").update(listingHtml).update(stateHtml).update(csv).digest("hex"),
+        rates: parsed.rates, counts: parsed.counts, effectivePeriod: `Current active file updated ${current.asOfDate}`,
+        boundaryStatus: "Current general sales-tax corporate-limit, county, and police-jurisdiction rates are connected. Alabama's official address lookup is interactive rather than a bulk boundary feed, so address-to-zone matching is not built. A+ comparison remains withheld because AL000 is a heavily used retired 0% placeholder and A+'s locality catalog is much coarser than DOR's inventory.",
+      };
+      cachedSnapshot = snapshot; cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000; return snapshot;
+    } finally { clearTimeout(timeout); }
+  })();
+  if (bypassCache) return read;
+  inFlightRead = read;
+  try { return await read; } finally { inFlightRead = null; }
 }

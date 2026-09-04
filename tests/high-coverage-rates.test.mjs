@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCaliforniaRatesHtml, readOfficialCaRates } from "../server/ca-rates.mjs";
+import { parseConnecticutRateRules, readOfficialCtRates } from "../server/ct-rates.mjs";
+import { parseDistrictOfColumbiaRateSchedule, readOfficialDcRates } from "../server/dc-rates.mjs";
 import { parseFloridaSurtaxWorkbook, readOfficialFlRates } from "../server/fl-rates.mjs";
+import { IDAHO_LOCAL_TAX_CITIES, IDAHO_TAX_COMMISSION_CITY_TAX_URL, IDAHO_TAX_COMMISSION_RATES_URL, parseIdahoRateRules, readOfficialIdRates } from "../server/id-rates.mjs";
+import { HAWAII_COUNTY_SURCHARGE_URL, HAWAII_GET_URL, HAWAII_SURCHARGE_EXEMPTIONS_URL, parseHawaiiGetRules, readOfficialHiRates } from "../server/hi-rates.mjs";
+import { parseMaineRateTable, readOfficialMeRates } from "../server/me-rates.mjs";
+import { parseMassachusettsRateRules, readOfficialMaRates } from "../server/ma-rates.mjs";
+import { MISSISSIPPI_DOR_RATES_URL, MISSISSIPPI_JACKSON_TAX_URL, MISSISSIPPI_TUPELO_TAX_URL, parseMississippiGeneralRate, parseMississippiJacksonTax, parseMississippiTupeloTax, readOfficialMsRates } from "../server/ms-rates.mjs";
 import { parseTexasCityRatesHtml, parseTexasRateText, readOfficialTxRates } from "../server/tx-rates.mjs";
+import { parseVirginiaRateWorkbook } from "../server/va-rates.mjs";
+import { findLatestAlaskaWorkbook, parseAlaskaPolicy, parseAlaskaRateWorkbook, readOfficialAkRates } from "../server/ak-rates.mjs";
 
 function crc32(buffer) {
   let crc = ~0;
@@ -90,6 +99,77 @@ function floridaWorkbook() {
   return buildStoredZip({ "xl/sharedStrings.xml": shared, "xl/worksheets/sheet1.xml": sheet });
 }
 
+function virginiaWorkbook() {
+  const headers = [
+    "State Code (FIPS)", "County or City Code (FIPS)", "Locality Name", "Total General Sales Tax",
+    "Total Food & Personal Hygiene Sales Tax", "State General Sales Tax", "State Regional Sales Tax (NVA)",
+    "State Regional Sales Tax (HR)", "State Regional Sales Tax (CVA)", "State Regional Sales Tax (HT)",
+    "Local Sales Tax", "Additional Local Option Sales Tax",
+  ];
+  const column = (index) => String.fromCharCode(65 + index);
+  const textCell = (reference, value) => `<c r="${reference}" t="inlineStr"><is><t>${value.replaceAll("&", "&amp;")}</t></is></c>`;
+  const numberCell = (reference, value) => `<c r="${reference}"><v>${value}</v></c>`;
+  const headerRow = headers.map((value, index) => textCell(`${column(index)}3`, value)).join("");
+  const county = [
+    textCell("A4", "51"), textCell("B4", "001"), textCell("C4", "Alpha County"), numberCell("D4", 0.053),
+    numberCell("E4", 0.01), numberCell("F4", 0.043), numberCell("K4", 0.01),
+  ].join("");
+  const city = [
+    textCell("A5", "51"), textCell("B5", "510"), textCell("C5", "Beta City"), numberCell("D5", 0.07),
+    numberCell("E5", 0.01), numberCell("F5", 0.043), numberCell("G5", 0.007), numberCell("J5", 0.01), numberCell("K5", 0.01),
+  ].join("");
+  const sheet = `<worksheet><sheetData><row r="3">${headerRow}</row><row r="4">${county}</row><row r="5">${city}</row></sheetData></worksheet>`;
+  return buildStoredZip({ "xl/sharedStrings.xml": "<sst></sst>", "xl/worksheets/sheet1.xml": sheet });
+}
+
+function alaskaWorkbook() {
+  const headers = [
+    "Borough / Census Tract Name", "Borough Tax Rate", "Tax Filing Code", "Date adopted Remote Sellers Code",
+    "Remote Sellers Tax Collection Start Date", "Tax Rate Effective Date", "City/Taxing Area",
+    "City / Taxing Area Sales Tax Rate", "Tax Filing Code", "Date adopted Remote Sellers Code",
+    "Remote Sellers Tax Collection Start Date", "Tax Rate Effective Date", "Sales Tax Rate Total",
+  ];
+  const textCell = (reference, value) => `<c r="${reference}" t="inlineStr"><is><t>${value}</t></is></c>`;
+  const numberCell = (reference, value) => `<c r="${reference}"><v>${value}</v></c>`;
+  const columns = "ABCDEFGHIJKLM";
+  const header = headers.map((value, index) => textCell(`${columns[index]}4`, value)).join("");
+  const rows = [];
+  for (let index = 0; index < 10; index++) {
+    const rowNumber = index + 5;
+    rows.push(`<row r="${rowNumber}">${textCell(`A${rowNumber}`, `Borough ${String.fromCharCode(65 + index)}`)}${numberCell(`B${rowNumber}`, 0.03)}${numberCell(`C${rowNumber}`, 800000 + index)}${textCell(`F${rowNumber}`, "4/1/2026")}${numberCell(`M${rowNumber}`, 0.03)}</row>`);
+  }
+  for (let index = 0; index < 46; index++) {
+    const rowNumber = index + 15;
+    const borough = index === 0 ? 0.03 : 0;
+    const city = index === 0 ? 0.04 : 0.05;
+    rows.push(`<row r="${rowNumber}">${textCell(`A${rowNumber}`, "Test Census Area")}${numberCell(`B${rowNumber}`, borough)}${textCell(`G${rowNumber}`, `City ${String.fromCharCode(65 + Math.floor(index / 26))}${String.fromCharCode(65 + (index % 26))}`)}${numberCell(`H${rowNumber}`, city)}${numberCell(`I${rowNumber}`, 9000 + index)}${textCell(`L${rowNumber}`, "9/1/2026")}${numberCell(`M${rowNumber}`, borough + city)}</row>`);
+  }
+  const note = "Note: The State of Alaska does not have a state level remote sellers sales tax.";
+  const sheet = `<worksheet><sheetData><row r="1">${textCell("M1", "As of 9/1/2026")}</row><row r="3">${textCell("A3", note)}</row><row r="4">${header}</row>${rows.join("")}</sheetData></worksheet>`;
+  return buildStoredZip({ "xl/sharedStrings.xml": "<sst></sst>", "xl/worksheets/sheet1.xml": sheet });
+}
+
+test("connects Alaska's current local-only ARSSTC destination rates without inventing a state tax", async () => {
+  const policy = "<main>The State of Alaska does NOT levy a sales tax. Several local municipalities within the state do levy a sales tax.</main>";
+  assert.deepEqual(parseAlaskaPolicy(policy), { stateRate: 0, hasLocalSalesTax: true });
+  assert.throws(() => parseAlaskaPolicy(policy.replace("does NOT levy", "does levy")), /no longer confirms/);
+  const latest = findLatestAlaskaWorkbook('<a href="/old/ARSSTC-Sales-Tax-Rate-Sheet-8-1-26.xlsx">old</a><a href="/new/ARSSTC-Sales-Tax-Rate-Sheet-9-1-26.xlsx">new</a>');
+  assert.equal(latest.date, "2026-09-01");
+  const workbook = alaskaWorkbook();
+  const parsed = parseAlaskaRateWorkbook(workbook);
+  assert.equal(parsed.asOfDate, "2026-09-01");
+  assert.deepEqual(parsed.counts, { counties: 10, cities: 46, specialJurisdictions: 0 });
+  assert.equal(parsed.rates.find((rate) => rate.jurisdictionCode === "AK:9000").totalGeneralRate, 7);
+  const ratesPage = '<a href="https://arsstc.org/files/ARSSTC-Sales-Tax-Rate-Sheet-9-1-26.xlsx">current</a>';
+  const snapshot = await readOfficialAkRates({
+    fetchImpl: async (url) => String(url).endsWith(".xlsx") ? new Response(workbook) : new Response(ratesPage),
+    now: new Date("2026-09-03T12:00:00Z"), bypassCache: true,
+  });
+  assert.equal(snapshot.stateRate, 0);
+  assert.equal(snapshot.rates.length, 57);
+  assert.match(snapshot.boundaryStatus, /does not cover every Alaska municipality/);
+});
+
 test("validates California's effective-dated city and county table", async () => {
   const parsed = parseCaliforniaRatesHtml(caHtml, { expectedCountyCount: 2 });
   assert.equal(parsed.effectiveDate, "2026-07-01");
@@ -98,6 +178,65 @@ test("validates California's effective-dated city and county table", async () =>
   assert.throws(() => parseCaliforniaRatesHtml(caHtml.replaceAll("Alpine", "Alameda"), { expectedCountyCount: 2 }), /duplicate|covers/);
   const snapshot = await readOfficialCaRates({ fetchImpl: async () => new Response(caHtml.padEnd(50_001, " ")), now: new Date("2026-08-25T12:00:00Z"), bypassCache: true }).catch((error) => error);
   assert.match(snapshot.message, /58/);
+});
+
+test("validates Connecticut's flat general rate and explicit absence of local sales tax", async () => {
+  const officialHtml = `<main><p>The sales tax rate of 6.35% applies to the retail sale, lease, or rental of most goods.</p><p>There are no additional sales taxes imposed by local jurisdictions in Connecticut.</p></main>`.padEnd(5_001, " ");
+  assert.deepEqual(parseConnecticutRateRules(officialHtml), { generalRate: 6.35, hasLocalSalesTax: false });
+  assert.throws(() => parseConnecticutRateRules(officialHtml.replace("6.35%", "6.50%")), /changed from/);
+  assert.throws(() => parseConnecticutRateRules(officialHtml.replace("There are no additional sales taxes", "Local sales taxes may apply")), /no longer confirms/);
+  const snapshot = await readOfficialCtRates({ fetchImpl: async () => new Response(officialHtml), now: new Date("2026-09-02T12:00:00Z"), bypassCache: true });
+  assert.equal(snapshot.stateRate, 6.35);
+  assert.equal(snapshot.rates.length, 1);
+  assert.equal(snapshot.counts.counties, 0);
+});
+
+test("validates D.C.'s current rate and scheduled October 2026 increase", async () => {
+  const officialHtml = `<main><p>Sales and Use Tax: Sales Tax Increase Delay Amendment Act of 2025: The general sales tax rate on the gross receipts from the sale of or charges for tangible personal property, digital goods and taxable services, will remain 6.0% through Sept. 30, 2026. The general sales tax rate will increase to 7.0% for periods beginning on and after Oct. 1, 2026.</p></main>`.padEnd(20_001, " ");
+  assert.deepEqual(parseDistrictOfColumbiaRateSchedule(officialHtml), { currentRate: 6, currentEndDate: "2026-09-30", futureRate: 7, futureEffectiveDate: "2026-10-01" });
+  assert.throws(() => parseDistrictOfColumbiaRateSchedule(officialHtml.replace("7.0%", "7.5%")), /changed from/);
+  const current = await readOfficialDcRates({ fetchImpl: async () => new Response(officialHtml), now: new Date("2026-09-03T12:00:00Z"), bypassCache: true });
+  assert.equal(current.stateRate, 6);
+  assert.equal(current.rates[0].endDate, "2026-09-30");
+  assert.equal(current.futureChanges[0].futureRate, 7);
+  const future = await readOfficialDcRates({ fetchImpl: async () => new Response(officialHtml), now: new Date("2026-10-01T12:00:00Z"), bypassCache: true });
+  assert.equal(future.stateRate, 7);
+  assert.equal(future.rates[0].beginDate, "2026-10-01");
+  assert.deepEqual(future.futureChanges, []);
+});
+
+test("validates Maine's current statewide general and use-tax rates", async () => {
+  const officialHtml = `<table><tr><th>Rate Type</th><th>Effective 10/01/2013</th><th>Effective 01/01/2016</th><th>Effective 10/01/2019</th><th>Effective 01/01/2026</th></tr><tr><td>General Sales</td><td>5.5%</td><td>5.5%</td><td>5.5%</td><td>5.5%</td></tr><tr><td>Use Tax</td><td>5.5%</td><td>5.5%</td><td>5.5%</td><td>5.5%</td></tr></table>`.padEnd(5_001, " ");
+  assert.deepEqual(parseMaineRateTable(officialHtml), { generalRate: 5.5, useTaxRate: 5.5, effectiveDate: "2026-01-01" });
+  assert.throws(() => parseMaineRateTable(officialHtml.replaceAll("5.5%", "6%")), /changed from/);
+  const snapshot = await readOfficialMeRates({ fetchImpl: async () => new Response(officialHtml), now: new Date("2026-09-02T12:00:00Z"), bypassCache: true });
+  assert.equal(snapshot.stateRate, 5.5);
+  assert.equal(snapshot.rates[0].generalInterstateRate, 5.5);
+});
+
+test("validates Massachusetts's matching statewide sales and use-tax rates", async () => {
+  const officialHtml = `<main><p>Updated: May 7, 2026</p><p>The Massachusetts sales tax is <strong>6.25%</strong> of the sales price or rental charge of tangible personal property.</p><p>The Massachusetts use tax is <strong>6.25%</strong> of the sales price or rental charge on tangible personal property.</p></main>`.padEnd(20_001, " ");
+  assert.deepEqual(parseMassachusettsRateRules(officialHtml), { salesRate: 6.25, useTaxRate: 6.25, updatedDate: "2026-05-07" });
+  assert.throws(() => parseMassachusettsRateRules(officialHtml.replaceAll("6.25%", "6.5%")), /changed from/);
+  const snapshot = await readOfficialMaRates({ fetchImpl: async () => new Response(officialHtml), now: new Date("2026-09-03T12:00:00Z"), bypassCache: true });
+  assert.equal(snapshot.stateRate, 6.25);
+  assert.equal(snapshot.asOfDate, "2026-05-07");
+});
+
+test("validates Mississippi's general rate and two general-retail city levies", async () => {
+  const generalHtml = `<main><p>The following are subject to sales tax equal to 7% of the gross proceeds.</p><p>Sale of tangible personal property ...... 7%</p></main>`.padEnd(20_001, " ");
+  const jacksonHtml = `<main><p>A 1% tax is imposed on every person making sales of tangible personal property or services within the municipality.</p><p>Effective March 1, 2014. Repeal date July 1, 2035.</p></main>`.padEnd(20_001, " ");
+  const tupeloHtml = `<main><p>A .25% tax is imposed on all retail sales and services in Tupelo which are subject to the general rate of state sales tax.</p><p>Beginning May 1, 2026, the tax applies to the general seven percent (7%) rate.</p></main>`.padEnd(20_001, " ");
+  assert.deepEqual(parseMississippiGeneralRate(generalHtml), { generalRate: 7 });
+  assert.deepEqual(parseMississippiJacksonTax(jacksonHtml), { componentRate: 1, beginDate: "2014-03-01", endDate: "2035-06-30" });
+  assert.deepEqual(parseMississippiTupeloTax(tupeloHtml), { componentRate: 0.25, beginDate: "1989-02-01", endDate: null, scopeConfirmedDate: "2026-05-01" });
+  assert.throws(() => parseMississippiGeneralRate(generalHtml.replaceAll("7%", "8%")), /changed from/);
+  const pages = new Map([[MISSISSIPPI_DOR_RATES_URL, generalHtml], [MISSISSIPPI_JACKSON_TAX_URL, jacksonHtml], [MISSISSIPPI_TUPELO_TAX_URL, tupeloHtml]]);
+  const snapshot = await readOfficialMsRates({ fetchImpl: async (url) => new Response(pages.get(String(url))), now: new Date("2026-09-03T12:00:00Z"), bypassCache: true });
+  assert.equal(snapshot.stateRate, 7);
+  assert.equal(snapshot.rates.find((row) => row.name === "Jackson").totalGeneralRate, 8);
+  assert.equal(snapshot.rates.find((row) => row.name === "Tupelo").totalGeneralRate, 7.25);
+  assert.equal(snapshot.counts.cities, 2);
 });
 
 test("validates Texas control records separately from official combined totals", async () => {
@@ -124,4 +263,46 @@ test("reads Florida's current 67-county download format without accepting missin
   const fetchImpl = async (_url, options = {}) => options.method === "POST" ? new Response(paddedWorkbook) : new Response(getHtml);
   const snapshot = await readOfficialFlRates({ fetchImpl, now: new Date("2026-08-25T12:00:00Z"), bypassCache: true }).catch((error) => error);
   assert.match(snapshot.message, /missing/);
+});
+
+test("validates Idaho's statewide rate without inventing decentralized resort-city rates", async () => {
+  const rateHtml = `<main><p>Idaho’s sales tax rate is 6%. Idaho’s use tax rate is also 6%.</p></main>`.padEnd(20_001, " ");
+  const cityHtml = `<main><p>Some Idaho resort cities have a local sales tax in addition to the state sales tax.</p><p>Contact the following cities directly for questions about their local sales tax:</p><ul>${IDAHO_LOCAL_TAX_CITIES.map((city) => `<li>${city}</li>`).join("")}</ul></main>`.padEnd(20_001, " ");
+  const parsed = parseIdahoRateRules(rateHtml, cityHtml);
+  assert.equal(parsed.generalRate, 6);
+  assert.equal(parsed.localTaxCities.length, 23);
+  assert.throws(() => parseIdahoRateRules(rateHtml, cityHtml.replace("Victor", "Elsewhere")), /missing: Victor/);
+  const pages = new Map([[IDAHO_TAX_COMMISSION_RATES_URL, rateHtml], [IDAHO_TAX_COMMISSION_CITY_TAX_URL, cityHtml]]);
+  const snapshot = await readOfficialIdRates({ fetchImpl: async (url) => new Response(pages.get(String(url))), now: new Date("2026-09-03T12:00:00Z"), bypassCache: true });
+  assert.equal(snapshot.stateRate, 6);
+  assert.equal(snapshot.rates.length, 1);
+  assert.equal(snapshot.unavailableLocalJurisdictions.length, 23);
+});
+
+test("models Hawaii GET as an optional seller-tax pass-on, not a conventional sales-tax mismatch", async () => {
+  const getHtml = `<main><p>GET is NOT a sales tax. GET is a tax on the business itself.</p><table><tr><td>Selling retail goods and services</td><td>4.5%*</td></tr></table></main>`.padEnd(20_001, " ");
+  const surchargeHtml = `<main><p>Businesses may choose to pass on the GET and any applicable county surcharge to its customers but are not required to do so.</p><ul><li>City and County of Honolulu: 4.7120%</li><li>County of Hawaii: 4.7120%</li><li>County of Kauai: 4.7120%</li><li>County of Maui: 4.7120%</li></ul></main>`.padEnd(20_001, " ");
+  const exemptionsHtml = `<main><p>Kalawao County Sales: Sales to Kalawao county is not subject to the county surcharge.</p></main>`.padEnd(20_001, " ");
+  const parsed = parseHawaiiGetRules(getHtml, surchargeHtml, exemptionsHtml);
+  assert.equal(parsed.baseRate, 4);
+  assert.equal(parsed.maximumPassOnRate, 4.712);
+  assert.throws(() => parseHawaiiGetRules(getHtml, surchargeHtml.replace("but are not required", "and are required"), exemptionsHtml), /optional/);
+  const pages = new Map([[HAWAII_GET_URL, getHtml], [HAWAII_COUNTY_SURCHARGE_URL, surchargeHtml], [HAWAII_SURCHARGE_EXEMPTIONS_URL, exemptionsHtml]]);
+  const snapshot = await readOfficialHiRates({ fetchImpl: async (url) => new Response(pages.get(String(url))), now: new Date("2026-09-03T12:00:00Z"), bypassCache: true });
+  assert.equal(snapshot.policyModel, "seller-side-get-optional-pass-on");
+  assert.equal(snapshot.rates.length, 5);
+  assert.equal(snapshot.rates.find((row) => row.jurisdictionCode === "KALAWAO").totalGeneralRate, 4);
+});
+
+test("validates Virginia's locality workbook by FIPS and reconciles every rate component", () => {
+  const workbook = virginiaWorkbook();
+  const parsed = parseVirginiaRateWorkbook(workbook, { expectedLocalities: 2, expectedCounties: 1, expectedCities: 1 });
+  assert.deepEqual(parsed.counts, { counties: 1, cities: 1, specialJurisdictions: 0 });
+  assert.equal(parsed.rates.find((row) => row.name === "Alpha County").jurisdictionCode, "51001");
+  assert.equal(parsed.rates.find((row) => row.name === "Beta City").totalGeneralRate, 7);
+  const broken = Buffer.from(workbook);
+  assert.throws(
+    () => parseVirginiaRateWorkbook(broken, { expectedLocalities: 3, expectedCounties: 1, expectedCities: 2 }),
+    /2 localities instead of 3/,
+  );
 });

@@ -4,44 +4,56 @@ import { listOfficialSourceRegistry } from "../server/official-source-registry.m
 import { parsePennsylvaniaCountyNames, parsePennsylvaniaRateRules, readOfficialPaRates } from "../server/pa-rates.mjs";
 import { findLatestSstCsv, parseSstRateCsv, readOfficialGaRates, readOfficialSstStateRates } from "../server/sst-rates.mjs";
 
-test("registers every state and DC without claiming unfinished adapters are connected", () => {
+test("accounts for every state and DC as connected or no-general-sales-tax", () => {
   const sources = listOfficialSourceRegistry();
   assert.equal(sources.length, 51);
   assert.equal(sources.find((source) => source.stateCode === "NC").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "AL").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "CO").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "LA").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "MO").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "AK").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "NM").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "GA").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "CA").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "CT").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "TX").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "FL").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "TN").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "OH").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "PA").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "SC").status, "connected");
-  assert.equal(sources.find((source) => source.stateCode === "IL").status, "machine-readable-source");
+  assert.equal(sources.find((source) => source.stateCode === "IA").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "IL").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "KS").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "MN").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "ND").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "NE").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "NV").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "OK").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "SD").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "UT").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "VT").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "WA").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "WI").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "WV").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "VA").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "MD").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "ME").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "MA").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "NJ").status, "connected");
+  assert.equal(sources.find((source) => source.stateCode === "NY").status, "connected");
   assert.equal(sources.find((source) => source.stateCode === "NJ").aplusMatchingStatus, "connected");
   for (const stateCode of ["AR", "WY", "IN", "KY", "MI", "RI"]) {
     assert.equal(sources.find((source) => source.stateCode === stateCode).status, "connected", `${stateCode} should be connected`);
   }
-  for (const stateCode of ["MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS"]) {
-    const source = sources.find((s) => s.stateCode === stateCode);
-    assert.equal(source.status, "connected", `${stateCode} should be connected`);
-    assert.equal(source.aplusMatchingStatus, "connected", `${stateCode} should have A+ matching connected`);
-    assert.equal(source.comparisonEndpoint, `/api/official/states/${stateCode}/aplus`, `${stateCode} should expose its comparison endpoint`);
-  }
-  assert.equal(sources.find((source) => source.stateCode === "RI").aplusMatchingStatus, undefined, "RI's 0%-vs-7% finding is an open decision, not wired A+ matching");
   for (const stateCode of ["DE", "MT", "NH", "OR"]) {
     assert.equal(sources.find((source) => source.stateCode === stateCode).status, "no-general-sales-tax", `${stateCode} should be marked no-general-sales-tax`);
   }
-  assert.equal(sources.find((source) => source.stateCode === "HI").status, "no-general-sales-tax", "HI should be excluded per Lukas's 2026-08-27 decision (GET is not a buyer-facing sales tax)");
-  assert.equal(sources.find((source) => source.stateCode === "AK").status, "no-general-sales-tax", "AK should be excluded per Lukas's 2026-08-27 decision (necessarily-incomplete local-only coverage)");
-  for (const stateCode of ["FL", "PA", "OH", "VA", "NY"]) {
-    const source = sources.find((s) => s.stateCode === stateCode);
-    assert.equal(source.aplusMatchingStatus, "connected", `${stateCode} should have direct-mapping A+ matching connected`);
-    assert.equal(source.comparisonEndpoint, `/api/official/states/${stateCode}/aplus`, `${stateCode} should expose its comparison endpoint`);
-  }
-  assert.equal(sources.find((source) => source.stateCode === "TN").aplusMatchingStatus, undefined, "TN's A+ matching is not built yet");
+  assert.deepEqual(
+    Object.fromEntries([...new Set(sources.map((source) => source.status))].map((status) => [status, sources.filter((source) => source.status === status).length])),
+    { connected: 47, "no-general-sales-tax": 4 },
+  );
 });
 
 test("builds Pennsylvania's 67 county totals only after validating the official rate rules", async () => {

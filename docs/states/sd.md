@@ -1,27 +1,19 @@
-# South Dakota — findings
+# South Dakota — official-rate adapter status
 
-Status: **investigated live 2026-08-26, not safe to build.** Official source is real and current (SST rate file `SDR2026Q3JUN02.zip`, boundary file `SDB2026Q3JUN04.zip`, both confirmed). Strategy is boundary-matching — confirmed with a live same-ZIP example, not just structurally — but a blocking placeholder needs resolving first.
+## What is connected
 
-## Address matching
+TaxAP reads South Dakota's current effective-dated Streamlined Sales Tax rate file and retains the South Dakota Department of Revenue's guidance as the human-readable authority.
 
-**Yes — confirmed live on real ship-to data.** Two active South Dakota ship-tos share the exact same city+ZIP (Yankton, 57078) but carry different real A+ tax bodies: `SD1000` "No Local Rt" at 4.2% vs. `SD4052` "Yankton" at 6.2% — a ZIP alone cannot disambiguate. SD's own SST rate file also confirms city-level local rates are non-uniform statewide (230 of 254 active cities at 2%, but 21 at 1%, plus isolated 1.5%/1.95%/3% rows), so no flat per-city assumption is safe beyond what's individually verified.
+- State sales/use-tax rate: 4.2%.
+- Live validation on 2026-09-02: 327 active records — one state row, all 66 county rows, 254 municipality components, and six tribal/special-jurisdiction records.
+- County rows are retained even though their current general component is 0%; South Dakota's ordinary local variation is municipal rather than county-level.
+- SST type-49 records are preserved as special jurisdictions without a computed combined total. Department guidance says qualifying Indian-country sales use special reporting codes and the 4.2% special-jurisdiction tax replaces rather than stacks on top of ordinary state tax.
+- The adapter validates state FIPS, active effective dates, unique jurisdiction keys, all 66 counties, and South Dakota's reviewed state/county/city/type-49 shape.
 
-## Rate comparability
+The Department says municipalities may impose a general municipal rate up to 2%. Delivery within a municipality or tribal special jurisdiction therefore requires boundary/agreement reconciliation before TaxAP can claim a complete total.
 
-**Yes, for correctly-coded tax bodies — confirmed live and cross-checked against the real SST rate file.** State rate is 4.2% (active since 2023-07-01). All 66 real SD counties carry 0% local tax (no county-option sales tax in SD — confirmed both via A+, which has zero county-named tax bodies, and via the SST county rows, all literally 0.00000). Every one of A+'s 11 real named-city tax bodies (Aberdeen, Box Elder, Brookings, Huron, Mitchell, Pierre, Rapid City, Sioux Falls, Vermillion, Watertown, Yankton) shows `TBCBSRT=4.2 + TBCLRT1=2 = TBCRATE 6.2`, and cross-referencing each city's real Census place FIPS against the SST file confirms every one of those 11 cities' official local rate is exactly 2.0% today — full agreement, no discrepancy found. `SD1000` ("No Local Rt", 4.2%) also matches the current state-only rate correctly.
+## A+ matching: not built
 
-## The blocking finding: SD000
+A read-only aggregate A+ inventory on 2026-09-02 found 42 active South Dakota ship-tos across 13 configured tax-body groups. Nine ship-tos use `SD000` at 0%, one uses a separately labelled 4.2% no-local-rate code, and the remaining groups are municipality-labelled at 6.2%.
 
-`SD000` ("South Dakota" catch-all) has `TBCBSRT=0`/`TBCLRT1=0`/`TBCRATE=0` — not the real 4.2% state floor, an apparent placeholder — and is live on **9 of 43 active SD ship-tos (~21%)**, scattered across cities (Aberdeen, Brookings, Rapid City, Sioux Falls) that also have correctly-coded ship-tos elsewhere in the same city. The same `AL000`/`MN000`/`NE000`-shaped blocking pattern: real revenue-bearing ship-tos silently showing 0% when they should show at least 4.2%.
-
-## Other findings
-
-- Full unfiltered `SD%` pull = 14 rows (small state, no truncation risk). `SD001` is the only `DO NOT USE` row; no wrong-state contamination found in the remaining 13.
-- Real SST boundary file confirmed and directly fetched: `SDB2026Q3JUN04.zip`, 89 columns (matches GA/OK's schema exactly), 231,736 rows, record types 4 (ZIP-range)/A (address-range)/Z — a `ga-boundary.mjs`-pattern build looks structurally viable, not yet attempted.
-- SST rate file confirms: FIPS 46, 66 counties all 0%, 254 active city rows (matches prior research exactly) with non-uniform rates. A 15-row "type 49" jurisdiction category also exists (6 currently active, numeric codes resembling CBSA-style codes, meaning unconfirmed) with no corresponding A+ tax body found — low materiality today (0 ship-tos observed on it), same shape as KS's undecoded type 79.
-
-## Do instead
-
-- Resolve `SD000` (9/43 ship-tos) before building anything.
-- The Yankton same-ZIP example is a ready-made test case for whatever address matcher gets built — use it to validate the matcher actually disambiguates correctly.
-- Decode "type 49" before including any of its 6 active rows in a comparison.
+The municipality-labelled rates are plausible, but `SD000` cannot be treated as an ordinary statewide result because South Dakota's base is 4.2%. A future matcher needs an explicit reviewed municipality map and a separate special-jurisdiction path; it must not infer tribal status from a city or ZIP alone. No customer/address records may reach the browser, and TaxAP must never write to A+.

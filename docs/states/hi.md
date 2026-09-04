@@ -1,6 +1,8 @@
 # Hawaii — findings
 
-Status: **investigated 2026-08-26, not safe to build yet.** A+ carries exactly one tax-body row for the entire state, at a 0% rate, for every real HI ship-to and customer sampled. This is a fundamentally different shape of problem than any state investigated so far — not an address-matching or surcharge-layering question, but an open business-policy question about whether Atlantic currently passes Hawaii's General Excise Tax (GET) on to customers at all. Needs a human decision, not an engineering one, before any comparison logic is built.
+Status: **official policy/rate source connected 2026-09-03; automatic A+ mismatch comparison intentionally disabled pending the existing business-policy decision.** TaxAP now validates the 4% retail GET base, the four 0.5% county surcharges, Kalawao's surcharge exemption, and the optional 4.712% maximum visible pass-on. It does not equate a voluntary ceiling with a mandatory customer rate.
+
+The 2026-09-03 supervised aggregate refresh found 26 active Hawaii ship-tos and 11 customer assignments, all on `HI000` at 0%. This newer count supersedes the 29/9 snapshot below but does not change the policy question: 0% may be intentional because visible pass-on is optional. No A+ record was changed.
 
 ## Structural note (pre-existing decision, carried into this investigation)
 
@@ -54,7 +56,13 @@ Either way, this surfaces a mechanism question the other investigated states did
 
 **This has to be resolved by a human (Ana/Liv, or whoever owns Atlantic's HI billing practice) before building anything:** is 0% intentional (no pass-on charged) or a gap? If intentional, what does "monitoring HI tax accuracy" even mean for a voluntary ceiling rather than a mandatory floor — the NC/GA/SC/NY notion of "mismatch = wrong" doesn't transfer cleanly to a tax that's compliant at any rate from 0% up to the cap.
 
-## Do instead
+## Connected implementation and remaining decision
+
+`server/hi-rates.mjs` now reads three live Hawaii DOTAX pages. It returns five county-equivalent rows: 4.5% statutory retail GET totals for Honolulu, Hawaii, Kauai, and Maui (4% base plus 0.5% surcharge), and 4% for surcharge-exempt Kalawao. It also preserves 4.712% as `maximumVisiblePassOnRate`, not as the mandatory comparison rate. The adapter fails closed if the seller-tax framing, optional-pass-on rule, county evidence, or Kalawao exemption disappears.
+
+Automatic A+ comparison remains intentionally unavailable until Ana/Liv confirms whether Atlantic passes GET to Hawaii customers and where that charge is represented.
+
+## Original do-instead guidance
 
 - Don't build a rate comparison for HI yet. Treat `TBCRATE = 0` as an open question, not a confirmed gap or a confirmed non-issue.
 - Before any adapter work: get an explicit answer on whether Atlantic passes GET on to HI customers today, and if so, where that shows up in A+ (confirm it's actually `XATXBD`/`TBCRATE`-driven before assuming the same mechanism NC/GA/SC use applies).

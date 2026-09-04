@@ -1,6 +1,12 @@
 # Louisiana — findings
 
-Status: **investigated 2026-08-26 (Step 1/2 only). No official-source adapter built, no A+ matching built. Not recommended for build yet — see "Do instead" below.** Official source (Louisiana Sales and Use Tax Commission for Remote Sellers, "Domicile Rate Listing" XLSX) was identified in an earlier research pass but not yet fetched or parsed in this session.
+Status: **official source connected 2026-09-03; A+ comparison remains intentionally withheld.** The previously identified XLSX is stale, so `server/la-rates.mjs` instead reads the official filing lookup's selected current period and validates every parish table. No A+ matching is built.
+
+## Connected official inventory
+
+The official lookup selected September 2026 and exposed all 64 parish selectors. TaxAP performs the same server-side postback the public form uses, validates each returned table, and combines the local rates with Louisiana DOR's separately validated 5% state rate effective January 1, 2025.
+
+The current crawl returns 439 source rows that normalize to 438 composite jurisdictions: 56 parish-base rows, 155 city/town/village rows, and 227 special domicile rows. French Quarter domicile `3601` publishes two stackable local rows in the same parish context; TaxAP validates their matching administrative rates and adds their 0.245% and 5% local components instead of dropping one. Domicile codes reused across different parishes remain separate—for example `0108` is 8.25% combined in Acadia context and 7.45% in St. Landry context.
 
 ## Step 1 — address matching: needed, but the real finding is more severe than "needed"
 
@@ -44,12 +50,10 @@ Total ADDR rows with `SASHST = 'LA'`: 353. **346 of 353 (98%) of Louisiana ship-
 
 ## Step 2 — is TBCRATE comparable to the official source's total?
 
-Can't be meaningfully assessed yet, for two compounding reasons:
+The official side is now understood: the filing lookup's displayed `Tax Rate` is the local component, and the normalized comparison total is the current 5% state rate plus that component. A+ still cannot be meaningfully assessed automatically, for two compounding reasons:
 
 1. **Sample size of 2** rows is nowhere near enough to tell whether `TBCRATE` (= `TBCBSRT + TBCLRT1`, both rows: `TBCLRT2-4` are 0) reflects the same total the official Domicile Rate Listing reports, or whether it's a rough/approximate figure someone typed in once. Louisiana's real local tax structure often stacks *more* than one local layer (parish sales tax, school board, law enforcement district, economic development district, etc.) inside a single domicile's total rate — a two-field `base + local1` model may not have room to represent that even if it were populated per-domicile.
-2. The official source's own column structure (Jurisdiction Code, Domicile Code, Tax Rate) implies domicile-level totals that may already be fully-loaded combined rates — but there's no A+ per-domicile row to check this against except the single Jefferson Parish entry, and Jefferson Parish itself likely contains multiple domicile codes with different rates in the real LDR file (the parish is not tax-uniform internally per the official-source description), so even `LA001`'s single 10% figure is probably already an oversimplification of something that varies within the parish.
-
-**No known example jurisdiction has been checked against the official file yet** (the XLSX hasn't been fetched in this session) — this needs to happen before any comparability claim, confirmed or not.
+2. The official source has 438 current parish-context domicile combinations, while A+ has no per-domicile row to check except the single Jefferson Parish entry. Jefferson itself contains multiple domicile combinations, so `LA001`'s single 10% figure remains an oversimplification.
 
 ## What this means for building
 
@@ -61,7 +65,7 @@ This state doesn't fit either of the state-rollout.md "Do instead" build pattern
 
 ## Do instead
 
-- **Don't build a Louisiana adapter or comparison yet.** The finding here isn't "state needs harder matching," it's "there may be nothing meaningful to compare on the A+ side for 98% of Louisiana ship-tos" — that's a product/data question for Ana/Liv (does Atlantic actually collect/remit at the granular per-parish level for LA sales, or does `LA000`'s flat rate reflect a real, intentional business simplification?) before any engineering investment, the same way DE/MT/NH/OR's "no general sales tax" and HI/NM's GET/GRT structural questions were flagged as human decisions rather than engineering ones in `docs/roadmap-50-states.md`.
-- If Ana/Liv confirm real per-parish/domicile granularity matters and should be tracked, then: (a) fetch and parse the official Domicile Rate Listing XLSX (Step 3, not done), (b) determine whether Louisiana publishes any address/ZIP-to-domicile-code boundary file (unconfirmed — LA's system is described as fragmented enough that this may not exist in a usable form, unlike GA/SC), and (c) treat this as a much bigger build than GA/SC, since it requires *adding* jurisdiction-level tax-body granularity to A+ itself or maintaining an entirely separate ship-to→domicile mapping outside A+, not just reconciling codes that already exist.
+- **Do not build automatic Louisiana comparison yet.** The official current-rate adapter is complete, but there may be nothing meaningful to compare on the A+ side for 98% of Louisiana ship-tos. Ana/Liv still need to decide whether `LA000` is an intentional flat business treatment or an unfinished configuration.
+- If granular collection is required, determine whether the official interactive Sales Tax Explorer supports an approved address-to-domicile workflow, then treat this as a larger build than GA/SC: A+ needs jurisdiction granularity or TaxAP needs a separately maintained ship-to→domicile mapping.
 - Exclude `AL9137` and `HN000` from any Louisiana ship-to aggregate — both are `SASHST` contamination (per the existing dead/dirty-column finding in `docs/aplus-data-findings.md`), not real Louisiana assignments.
 - Re-run this Step 1 query if Atlantic's LA business grows — 2 codes may reflect "we don't have enough LA volume to justify more codes today," which could change.

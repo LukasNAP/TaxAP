@@ -1,30 +1,16 @@
-# Kansas — findings
+# Kansas — official-rate adapter status
 
-Status: **investigated live 2026-08-26, not safe to build.** Official source is real and current (SST rate file, boundary file `KSB2026Q3MAY20.zip`, both confirmed). Strategy is boundary-matching — real address ambiguity confirmed live — but a parser-breaking code type and very sparse A+ coverage keep it from being built yet.
+## What is connected
 
-## Address matching
+TaxAP reads the current Kansas Streamlined Sales Tax rate file selected from the publisher's directory, with Kansas Department of Revenue's quarterly local-sales-tax update page retained as the primary human-readable source.
 
-**Yes — confirmed live, not just structurally.** A+'s 62 non-retired codes already have to split several cities into 2–3 county-specific variants for the exact same place: Bonner Springs → `KS078` Johnson Co./`KS079` Leavenworth Co./`KS080` Wyandotte Co., all different rates (9.725/9.25/9.25); DeSoto → `KS172` Johnson Co./`KS173` Leavenworth Co.; Manhattan → `KS545` Pottawatomie Co./`KS546` Riley Co. Direct live evidence a place-name-to-rate mapping alone is insufficient — the same city genuinely carries different combined rates depending on which county the ship-to falls in.
+- Kansas state sales/use-tax component: 6.5%.
+- Live validation on 2026-08-31: 2,146 active components — 105 county rows, 628 city rows, and 1,412 special-jurisdiction rows.
+- Kansas special-jurisdiction identifiers are not always numeric. For example, `11KAN` is preserved as an opaque special-jurisdiction identifier, never interpreted as a county or city code.
+- The adapter validates the state FIPS, exactly 105 county rows, active effective dates, duplicate jurisdiction keys, and the known Kansas jurisdiction-type set (`00`, `01`, `45`, `63`, `79`). Any unexpected type fails closed.
 
-## Rate comparability
+## A+ matching: not built
 
-**Unclear/partial.** The state component matches exactly — A+'s `TBCBSRT` is 6.500 on every row, matching the live SST file's single active state row. But full-total comparability is unconfirmed for two reasons:
-1. A+ has only 62 non-retired jurisdiction codes state-wide, versus the official file's 105 active county + 628 active city + 304 active type-63 special-district rows (2,146 active rows total) — A+ covers roughly 9% of real jurisdictions.
-2. **The official file's jurisdiction type "79" — 1,108 of 2,146 active rows (51.6%, the single largest bucket) — uses alphanumeric codes** (`11KAN`, `AEATC`, `ALIOL`) that are not in the code's `JURISDICTION_TYPES` map and are not numeric FIPS-style codes. What a type-79 row actually represents (a combined city+district total vs. a separate overlay on top of county+city) was not decoded — so A+'s per-city `TBCRATE` can't yet be confirmed to measure the same total as the matching official row.
+An aggregate-only local A+ inventory on 2026-08-31 found 267 active Kansas ship-tos across 57 assigned tax-body groups. The A+ codes are internal tax-body identifiers and do not deterministically correspond to Kansas's county FIPS, Census place IDs, or the SST special-jurisdiction IDs. Kansas also has substantial place and special-district variation, so a county-level fallback would be inaccurate.
 
-**Update 2026-08-26 (later pass):** the parser itself no longer throws on type-79's alphanumeric codes — `parseSstRateCsv`'s jurisdiction-code regex was widened from numeric-only to alphanumeric while wiring in Nebraska (which hit the identical problem with its `GL80x` codes). That fixes the crash, but **what type "79" rows actually mean is still undecoded** — this is a meaning question, not a parsing question, and remains open.
-
-## Other findings
-
-- 65 raw rows, 3 legitimately excluded as retired (`KS000` "KansasDO NOT USE", `KS438` "DO NOT USE", `KS572XXX` "KS McPhers-OLD DO NOT USE" — the standard filter caught all three), leaving 62 real active codes.
-- No wrong-state contamination — every `TBTXNAM` names a real Kansas city/county (the one row without a literal "Kansas" prefix, `KSFORBB` "Fort Scott (Bourbon Co.)", is a genuine KS place).
-- `KS672` and `KS685` are both named "Iola" with the identical rate 8.75% — a duplicate/orphaned code pair, not a conflict, but don't silently pick one without checking which ship-tos use which.
-- Arithmetic is internally consistent everywhere (`TBCBSRT` + `TBCLRT1` + `TBCLRT2` = `TBCRATE`, `TBCLRT3`/`4` always 0).
-- A real, current SST boundary file exists (`KSB2026Q3MAY20.zip`) — same `GAB*.zip`-style naming `ga-boundary.mjs` already parses for GA, so the discovery pattern should port directly once the type-79 question is resolved.
-- Confirmed 105 counties two independent ways (Census gazetteer + the SST file's own active type-00 row count), matching prior research.
-
-## Do instead
-
-- Decode what jurisdiction type "79" actually represents before building any comparison — check a known example against Kansas DOR's own published total.
-- Reconcile A+'s sparse 62-code coverage against the official file's much larger jurisdiction set before assuming a comparison is complete.
-- Don't silently resolve the `KS672`/`KS685` Iola duplicate — check real ship-to assignment first.
+No rate comparison was added. A future matcher needs a separately validated crosswalk from each A+ tax body to the specific Kansas jurisdiction combination, must make any unmatched or cross-state assignments visible as aggregate exclusions, and must not use a plausible-name or address fallback. No customer, ship-to, or address row may be sent to the browser, and TaxAP must never write to A+.

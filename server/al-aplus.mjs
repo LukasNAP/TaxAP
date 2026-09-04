@@ -39,8 +39,12 @@ function alCountyHint(description) {
 
 export async function readAlabamaAplusComparison(stateDetail, { readOfficialAlRates: readOfficial = readOfficialAlRates } = {}) {
   const officialSnapshot = await readOfficial();
-  const byCode = new Map(officialSnapshot.rates.map((rate) => [rate.jurisdictionCode, rate]));
-  const countyRatesByName = officialSnapshot.countyRatesByName ?? {};
+  const byCode = new Map(officialSnapshot.rates.map((rate) => [rate.localityCode ?? rate.jurisdictionCode, rate]));
+  const countyRatesByName = officialSnapshot.countyRatesByName ?? Object.fromEntries(
+    officialSnapshot.rates
+      .filter((rate) => rate.jurisdictionType === "county")
+      .map((rate) => [String(rate.name).replace(/\s+COUNTY$/i, "").toUpperCase(), Number(rate.componentRate)]),
+  );
 
   return {
     ...reconcileDirectMappingAplus({
