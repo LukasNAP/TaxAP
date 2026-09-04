@@ -63,6 +63,8 @@ test("tax treatment summary remains aggregate-only and read-only", () => {
   assert.match(query, /LTRIM\(RTRIM\(a\.SASTXB\)\) = 'ZTEMP'/);
   assert.match(query, /'all' AS Scope/);
   assert.match(query, /'ZTEMP' AS Scope/);
+  assert.match(query, /'tax-body' AS Scope/);
+  assert.match(query, /NULLIF\(LTRIM\(RTRIM\(a\.SASTXB\)\), ''\) AS TaxBody/);
   assert.match(query, /COUNT\(DISTINCT CONCAT\(a\.SACONO, '\\|', a\.SACSNO\)\)/);
   assert.match(query, /a\.SACSUS/);
   assert.match(query, /c\.CMSUSP/);

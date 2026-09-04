@@ -7,34 +7,46 @@ import { validateXatxbdCsv } from "../app/aplus-import.ts";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
 import { buildWantedAddressKeys, readGeorgiaBoundaryArchive, parseBoundaryCsv, reconcileGeorgiaBoundary } from "./ga-boundary.mjs";
 import { readOfficialCaRates } from "./ca-rates.mjs";
-import { readOfficialCtRates } from "./ct-rates.mjs";
-import { readOfficialDcRates } from "./dc-rates.mjs";
 import { readOfficialFlRates } from "./fl-rates.mjs";
-import { readOfficialHiRates } from "./hi-rates.mjs";
-import { readOfficialIlRates } from "./il-rates.mjs";
-import { readOfficialIdRates } from "./id-rates.mjs";
 import { readOfficialNcRates } from "./ncdor-rates.mjs";
 import { readOfficialMdRates } from "./md-rates.mjs";
 import { readOfficialMeRates } from "./me-rates.mjs";
+import { readOfficialCtRates } from "./ct-rates.mjs";
 import { readOfficialMaRates } from "./ma-rates.mjs";
 import { readOfficialMsRates } from "./ms-rates.mjs";
+import { flatStateFindingsFromReconciliation, directMappingFindingsFromReconciliation } from "../app/dashboard-findings.ts";
 import { readOfficialNjRates } from "./nj-rates.mjs";
 import { reconcileNewJerseyAplus } from "./nj-aplus.mjs";
+import { reconcileFlatStateAplus } from "./flat-state-aplus.mjs";
+import { readFloridaAplusComparison } from "./fl-aplus.mjs";
+import { readPennsylvaniaAplusComparison } from "./pa-aplus.mjs";
+import { readOhioAplusComparison } from "./oh-aplus.mjs";
+import { readVirginiaAplusComparison } from "./va-aplus.mjs";
+import { readOfficialVaRates } from "./va-rates.mjs";
+import { readNewYorkAplusComparison } from "./ny-aplus.mjs";
+import { readOfficialNyRates } from "./ny-rates.mjs";
+import { readArizonaAplusComparison } from "./az-aplus.mjs";
+import { readOfficialAzRates } from "./az-rates.mjs";
+import { readAlabamaAplusComparison } from "./al-aplus.mjs";
+import { readOfficialAlRates } from "./al-rates.mjs";
+import { readTexasAplusComparison } from "./tx-aplus.mjs";
+import { readCaliforniaAplusComparison } from "./ca-aplus.mjs";
+import { readColoradoAplusComparison } from "./co-aplus.mjs";
+import { readOfficialCoRates } from "./co-rates.mjs";
+import { readOfficialAkRates } from "./ak-rates.mjs";
+import { readOfficialDcRates } from "./dc-rates.mjs";
+import { readOfficialHiRates } from "./hi-rates.mjs";
+import { readOfficialIdRates } from "./id-rates.mjs";
+import { readOfficialIlRates } from "./il-rates.mjs";
+import { readOfficialLaRates } from "./la-rates.mjs";
+import { readOfficialMoRates } from "./mo-rates.mjs";
+import { readOfficialNmRates } from "./nm-rates.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 import { listOfficialSourceRegistry, officialSourceForState } from "./official-source-registry.mjs";
 import { createReviewStore } from "./review-store.mjs";
 import { readOfficialScRates } from "./sc-rates.mjs";
 import { readOfficialGaRates, readOfficialSstStateRates } from "./sst-rates.mjs";
 import { readOfficialTxRates } from "./tx-rates.mjs";
-import { readOfficialVaRates } from "./va-rates.mjs";
-import { readOfficialAzRates } from "./az-rates.mjs";
-import { readOfficialNyRates } from "./ny-rates.mjs";
-import { readOfficialAkRates } from "./ak-rates.mjs";
-import { readOfficialNmRates } from "./nm-rates.mjs";
-import { readOfficialAlRates } from "./al-rates.mjs";
-import { readOfficialCoRates } from "./co-rates.mjs";
-import { readOfficialLaRates } from "./la-rates.mjs";
-import { readOfficialMoRates } from "./mo-rates.mjs";
 
 const port = Number(process.env.TAXAP_CONNECTOR_PORT || 3001);
 const host = process.env.TAXAP_CONNECTOR_HOST || "127.0.0.1";
@@ -174,8 +186,8 @@ export function buildStateTaxBodyQuery() {
   ORDER BY ActiveShipTos DESC, TaxBody`;
 }
 
-// Tax treatment is deliberately summarized before it leaves the connector.  The browser receives
-// only treatment-code counts, never a customer, ship-to, address, order, or invoice row.
+// Tax treatment is summarized before it leaves the connector. The browser receives only
+// aggregate treatment-code counts, never customer, ship-to, address, order, or invoice rows.
 export function buildTaxTreatmentSummaryQuery() {
   const treatmentCode = `CASE
       WHEN LTRIM(RTRIM(a.SATXCD)) = '0' THEN '0'
@@ -187,18 +199,24 @@ export function buildTaxTreatmentSummaryQuery() {
     LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
     WHERE ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
       AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'`;
-  return `SELECT 'all' AS Scope, ${treatmentCode} AS TreatmentCode,
+  return `SELECT 'all' AS Scope, NULL AS TaxBody, ${treatmentCode} AS TreatmentCode,
       COUNT(*) AS ActiveShipTos,
       COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
     ${activeShipTos}
     GROUP BY ${treatmentCode}
     UNION ALL
-    SELECT 'ZTEMP' AS Scope, ${treatmentCode} AS TreatmentCode,
+    SELECT 'ZTEMP' AS Scope, NULL AS TaxBody, ${treatmentCode} AS TreatmentCode,
       COUNT(*) AS ActiveShipTos,
       COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
     ${activeShipTos}
       AND LTRIM(RTRIM(a.SASTXB)) = 'ZTEMP'
-    GROUP BY ${treatmentCode}`;
+    GROUP BY ${treatmentCode}
+    UNION ALL
+    SELECT 'tax-body' AS Scope, NULLIF(LTRIM(RTRIM(a.SASTXB)), '') AS TaxBody, ${treatmentCode} AS TreatmentCode,
+      COUNT(*) AS ActiveShipTos,
+      COUNT(DISTINCT CONCAT(a.SACONO, '|', a.SACSNO)) AS ActiveCustomers
+    ${activeShipTos}
+    GROUP BY NULLIF(LTRIM(RTRIM(a.SASTXB)), ''), ${treatmentCode}`;
 }
 
 function csvValue(value) {
@@ -225,7 +243,7 @@ function recordsetToCsv(recordset) {
   }).join(",")).join("\n");
 }
 
-async function openPool() {
+export async function openPool() {
   const server = requiredSetting("TAXAP_SQL_SERVER");
   const database = requiredSetting("TAXAP_SQL_DATABASE");
   const authentication = String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase();
@@ -339,6 +357,52 @@ export async function readStateSummaries() {
   }
 }
 
+export async function readTaxTreatmentSummary() {
+  const pool = await openPool();
+  try {
+    const [summaryResult, definitionResult] = await Promise.all([
+      pool.request().query(buildTaxTreatmentSummaryQuery()),
+      pool.request().query(buildTaxBodyDefinitionsQuery(["ZTEMP"], linkedSettings())),
+    ]);
+    const groups = new Map([["all", []], ["ZTEMP", []]]);
+    const treatmentsByTaxBody = new Map();
+    for (const row of summaryResult.recordset) {
+      const scope = String(rowValue(row, "Scope") || "").trim();
+      const rawTreatment = String(rowValue(row, "TreatmentCode") || "other").trim().toUpperCase();
+      const treatment = {
+        treatmentCode: rawTreatment === "0" || rawTreatment === "3" || rawTreatment === "J" ? rawTreatment : "other",
+        activeShipTos: numericValue(rowValue(row, "ActiveShipTos")),
+        activeCustomers: numericValue(rowValue(row, "ActiveCustomers")),
+      };
+      if (scope === "tax-body") {
+        const taxBody = rowValue(row, "TaxBody") ? String(rowValue(row, "TaxBody")).trim() : null;
+        const bucket = treatmentsByTaxBody.get(taxBody) ?? [];
+        bucket.push(treatment);
+        treatmentsByTaxBody.set(taxBody, bucket);
+        continue;
+      }
+      const bucket = groups.get(scope);
+      if (bucket) bucket.push(treatment);
+    }
+    const definition = definitionResult.recordset[0];
+    const temporaryTreatments = groups.get("ZTEMP") ?? [];
+    return {
+      retrievedAt: new Date().toISOString(),
+      treatments: groups.get("all") ?? [],
+      taxBodies: [...treatmentsByTaxBody.entries()].map(([taxBody, treatments]) => ({ taxBody, treatments })),
+      temporaryTaxBody: {
+        taxBody: "ZTEMP",
+        definitionStatus: definition ? "configured" : "missing",
+        configuredRate: definition ? numericValue(rowValue(definition, "CurrentTotalRate")) : null,
+        activeShipTos: temporaryTreatments.reduce((sum, bucket) => sum + bucket.activeShipTos, 0),
+        treatments: temporaryTreatments,
+      },
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
 export async function readStateDetail(value) {
   const stateCode = validateStateCode(value);
   const pool = await openPool();
@@ -392,49 +456,107 @@ export async function readStateDetail(value) {
   }
 }
 
-export async function readTaxTreatmentSummary() {
-  const pool = await openPool();
-  try {
-    const [summaryResult, definitionResult] = await Promise.all([
-      pool.request().query(buildTaxTreatmentSummaryQuery()),
-      pool.request().query(buildTaxBodyDefinitionsQuery(["ZTEMP"], linkedSettings())),
-    ]);
-    const groups = new Map([["all", []], ["ZTEMP", []]]);
-    for (const row of summaryResult.recordset) {
-      const scope = String(rowValue(row, "Scope") || "").trim();
-      const bucket = groups.get(scope);
-      if (!bucket) continue;
-      const rawTreatment = String(rowValue(row, "TreatmentCode") || "other").trim().toUpperCase();
-      bucket.push({
-        treatmentCode: rawTreatment === "0" || rawTreatment === "3" || rawTreatment === "J" ? rawTreatment : "other",
-        activeShipTos: numericValue(rowValue(row, "ActiveShipTos")),
-        activeCustomers: numericValue(rowValue(row, "ActiveCustomers")),
-      });
-    }
-    const definition = definitionResult.recordset[0];
-    const temporaryTreatments = groups.get("ZTEMP") ?? [];
-    return {
-      retrievedAt: new Date().toISOString(),
-      treatments: groups.get("all") ?? [],
-      temporaryTaxBody: {
-        taxBody: "ZTEMP",
-        definitionStatus: definition ? "configured" : "missing",
-        configuredRate: definition ? numericValue(rowValue(definition, "CurrentTotalRate")) : null,
-        activeShipTos: temporaryTreatments.reduce((sum, bucket) => sum + bucket.activeShipTos, 0),
-        treatments: temporaryTreatments,
-      },
-    };
-  } finally {
-    await pool.close();
-  }
-}
-
 export async function readNewJerseyAplusComparison() {
   const [stateDetail, officialSnapshot] = await Promise.all([
     readStateDetail("NJ"),
     readOfficialNjRates(),
   ]);
   return { ...reconcileNewJerseyAplus({ stateDetail, officialSnapshot }), stateDetail };
+}
+
+// States confirmed live (2026-08-26) to be a single flat statewide A+ tax body with no local-option
+// variation - see each state's docs/states/<code>.md. IN/KY/MI read through the same generic SST
+// adapter OH/TN/AR/WY/NV/NE already use (server/sst-rates.mjs's expectedCountyCount:0 special case);
+// the other four have their own dedicated adapters (server/md-rates.mjs, me-rates.mjs, ct-rates.mjs,
+// ma-rates.mjs, ms-rates.mjs).
+const FLAT_STATE_APLUS_ADAPTERS = {
+  MD: { expectedTaxBody: "MD000", readOfficial: readOfficialMdRates },
+  IN: { expectedTaxBody: "IN000", readOfficial: () => readOfficialSstStateRates("IN") },
+  KY: { expectedTaxBody: "KY000", readOfficial: () => readOfficialSstStateRates("KY") },
+  MI: { expectedTaxBody: "MI000", readOfficial: () => readOfficialSstStateRates("MI") },
+  ME: { expectedTaxBody: "ME000", readOfficial: readOfficialMeRates },
+  CT: { expectedTaxBody: "CT000", readOfficial: readOfficialCtRates },
+  MA: { expectedTaxBody: "MA000", readOfficial: readOfficialMaRates },
+  MS: { expectedTaxBody: "MS000", readOfficial: readOfficialMsRates },
+};
+
+export async function readFlatStateAplusComparison(stateCode) {
+  const config = FLAT_STATE_APLUS_ADAPTERS[stateCode];
+  if (!config) throw new Error(`No flat-state A+ reconciliation is configured for ${stateCode}.`);
+  const [stateDetail, officialSnapshot] = await Promise.all([
+    readStateDetail(stateCode),
+    config.readOfficial(),
+  ]);
+  return {
+    ...reconcileFlatStateAplus({ stateCode, expectedTaxBody: config.expectedTaxBody, stateDetail, officialRate: officialSnapshot.stateRate }),
+    stateDetail,
+  };
+}
+
+// States confirmed live (2026-08-26/27) to have many A+ tax-body codes that each map directly to
+// one real jurisdiction (NC-style: no address/boundary matching needed) via server/direct-mapping-
+// aplus.mjs. Texas is an intentionally constrained variant: bare-city codes with divergent official
+// county slices remain unmatched, while uniform-rate slices and explicit county hints are safe to
+// compare. AR still needs a real city-to-county crosswalk before a city total can be calculated.
+// California is also deliberately constrained: its A+ description must itself identify exactly one
+// CDTFA city or county row. Same-named cities across counties remain unmatched rather than guessed.
+// Missouri still needs its own official-source adapter and mapping investigation.
+const DIRECT_MAPPING_APLUS_READERS = {
+  FL: readFloridaAplusComparison,
+  PA: readPennsylvaniaAplusComparison,
+  OH: readOhioAplusComparison,
+  VA: readVirginiaAplusComparison,
+  NY: readNewYorkAplusComparison,
+  AZ: readArizonaAplusComparison,
+  AL: readAlabamaAplusComparison,
+  TX: readTexasAplusComparison,
+  CA: readCaliforniaAplusComparison,
+  CO: readColoradoAplusComparison,
+};
+
+export async function readDirectMappingAplusComparison(stateCode) {
+  const reader = DIRECT_MAPPING_APLUS_READERS[stateCode];
+  if (!reader) throw new Error(`No direct-mapping A+ reconciliation is configured for ${stateCode}.`);
+  const stateDetail = await readStateDetail(stateCode);
+  return { ...(await reader(stateDetail)), stateDetail };
+}
+
+/**
+ * Reads every wired state's A+ comparison (NJ, the flat-rate states, and the direct-mapping
+ * states) in parallel and converts each into the dashboard's shared JurisdictionFinding shape, so
+ * the "Needs attention" inbox can show every confirmed mismatch on initial dashboard load instead
+ * of only after a user manually opens that specific state's drawer. NC and GA are NOT included
+ * here - they already have their own dedicated, independently-refreshed dashboard fetch paths
+ * (readOfficialNcRates / readGeorgiaBoundaryReconciliation) that page.tsx calls directly. A single
+ * state's failure (e.g. Massachusetts' bot-block, Mississippi's TLS quirk) never fails the batch -
+ * it's just omitted, the same fail-quiet-but-don't-guess behavior every other dashboard fetch uses.
+ */
+export async function readAllWiredStateFindings() {
+  const flatStateCodes = Object.keys(FLAT_STATE_APLUS_ADAPTERS);
+  const directMappingCodes = Object.keys(DIRECT_MAPPING_APLUS_READERS);
+  const [njResult, flatResults, directResults] = await Promise.all([
+    readNewJerseyAplusComparison().then((value) => ({ status: "fulfilled", value })).catch((error) => ({ status: "rejected", reason: error })),
+    Promise.allSettled(flatStateCodes.map((code) => readFlatStateAplusComparison(code))),
+    Promise.allSettled(directMappingCodes.map((code) => readDirectMappingAplusComparison(code))),
+  ]);
+
+  const findings = [];
+  const failedStates = [];
+
+  if (njResult.status === "fulfilled") findings.push(...flatStateFindingsFromReconciliation(njResult.value));
+  else failedStates.push("NJ");
+
+  flatResults.forEach((result, index) => {
+    if (result.status === "fulfilled") findings.push(...flatStateFindingsFromReconciliation(result.value));
+    else failedStates.push(flatStateCodes[index]);
+  });
+
+  directResults.forEach((result, index) => {
+    if (result.status === "fulfilled") findings.push(...directMappingFindingsFromReconciliation(result.value));
+    else failedStates.push(directMappingCodes[index]);
+  });
+
+  return { findings, failedStates, retrievedAt: new Date().toISOString() };
 }
 
 export function buildGeorgiaAddressQuery() {
@@ -629,33 +751,27 @@ export function createConnectorServer({ reviews } = {}) {
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
         const stateCode = validateStateCode(decodeURIComponent(officialStateMatch[1]));
-        if (stateCode === "AL") {
-          const snapshot = await readOfficialAlRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "CO") {
-          const snapshot = await readOfficialCoRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "LA") {
-          const snapshot = await readOfficialLaRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "MO") {
-          const snapshot = await readOfficialMoRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "AK") {
-          const snapshot = await readOfficialAkRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "NM") {
-          const snapshot = await readOfficialNmRates();
+        const dedicatedReaders = {
+          AK: readOfficialAkRates,
+          AL: readOfficialAlRates,
+          AZ: readOfficialAzRates,
+          CO: readOfficialCoRates,
+          CT: readOfficialCtRates,
+          DC: readOfficialDcRates,
+          HI: readOfficialHiRates,
+          ID: readOfficialIdRates,
+          IL: readOfficialIlRates,
+          LA: readOfficialLaRates,
+          MA: readOfficialMaRates,
+          ME: readOfficialMeRates,
+          MO: readOfficialMoRates,
+          MS: readOfficialMsRates,
+          NM: readOfficialNmRates,
+          NY: readOfficialNyRates,
+          VA: readOfficialVaRates,
+        };
+        if (Object.prototype.hasOwnProperty.call(dedicatedReaders, stateCode)) {
+          const snapshot = await dedicatedReaders[stateCode]();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
@@ -679,68 +795,13 @@ export function createConnectorServer({ reviews } = {}) {
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
-        if (stateCode === "AZ") {
-          const snapshot = await readOfficialAzRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "HI") {
-          const snapshot = await readOfficialHiRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "CT") {
-          const snapshot = await readOfficialCtRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "DC") {
-          const snapshot = await readOfficialDcRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "IL") {
-          const snapshot = await readOfficialIlRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "ID") {
-          const snapshot = await readOfficialIdRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "VA") {
-          const snapshot = await readOfficialVaRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "OH" || stateCode === "TN" || stateCode === "IA" || stateCode === "KS" || stateCode === "MN" || stateCode === "ND" || stateCode === "NE" || stateCode === "NV" || stateCode === "OK" || stateCode === "SD" || stateCode === "UT" || stateCode === "VT" || stateCode === "WA" || stateCode === "WI" || stateCode === "WV" || stateCode === "AR" || stateCode === "WY" || stateCode === "IN" || stateCode === "KY" || stateCode === "MI" || stateCode === "RI") {
+        if (["AR", "IA", "IN", "KS", "KY", "MI", "MN", "ND", "NE", "NV", "OH", "OK", "RI", "SD", "TN", "UT", "VT", "WA", "WI", "WV", "WY"].includes(stateCode)) {
           const snapshot = await readOfficialSstStateRates(stateCode);
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
         if (stateCode === "MD") {
           const snapshot = await readOfficialMdRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "ME") {
-          const snapshot = await readOfficialMeRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "MA") {
-          const snapshot = await readOfficialMaRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "MS") {
-          const snapshot = await readOfficialMsRates();
-          console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
-          return sendJson(response, 200, snapshot, responseOrigin);
-        }
-        if (stateCode === "NY") {
-          const snapshot = await readOfficialNyRates();
           console.info(JSON.stringify({ event: "official_state_refresh", ok: true, stateCode, rates: snapshot.rates.length, retrievedAt: snapshot.retrievedAt }));
           return sendJson(response, 200, snapshot, responseOrigin);
         }
@@ -814,6 +875,61 @@ export function createConnectorServer({ reviews } = {}) {
         const message = error instanceof Error ? error.message : "Unknown New Jersey reconciliation error";
         console.error(JSON.stringify({ event: "nj_aplus_reconciliation", ok: false, message }));
         return sendJson(response, 503, { error: "The New Jersey A+ rate reconciliation is unavailable or failed validation." }, responseOrigin);
+      }
+    }
+
+    const flatStateAplusMatch = url.pathname.match(/^\/api\/official\/states\/([^/]+)\/aplus$/);
+    if (flatStateAplusMatch && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      const stateCode = decodeURIComponent(flatStateAplusMatch[1]).toUpperCase();
+      if (stateCode === "NJ") {
+        // Handled by the dedicated block above (NJ's own UEZ-caveat-aware reconciler) - this
+        // generic route only serves the flat-state/direct-mapping configs, not NJ.
+      } else if (Object.prototype.hasOwnProperty.call(FLAT_STATE_APLUS_ADAPTERS, stateCode)) {
+        try {
+          const reconciliation = await readFlatStateAplusComparison(stateCode);
+          console.info(JSON.stringify({
+            event: "flat_state_aplus_reconciliation", ok: true, stateCode,
+            activeShipTos: reconciliation.totals.activeShipTos,
+            comparedShipTos: reconciliation.totals.comparedShipTos,
+            crossStateShipTos: reconciliation.totals.crossStateShipTos,
+            retrievedAt: reconciliation.retrievedAt,
+          }));
+          return sendJson(response, 200, reconciliation, responseOrigin);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : `Unknown ${stateCode} reconciliation error`;
+          console.error(JSON.stringify({ event: "flat_state_aplus_reconciliation", ok: false, stateCode, message }));
+          return sendJson(response, 503, { error: `The ${stateCode} A+ rate reconciliation is unavailable or failed validation.` }, responseOrigin);
+        }
+      } else if (Object.prototype.hasOwnProperty.call(DIRECT_MAPPING_APLUS_READERS, stateCode)) {
+        try {
+          const reconciliation = await readDirectMappingAplusComparison(stateCode);
+          console.info(JSON.stringify({
+            event: "direct_mapping_aplus_reconciliation", ok: true, stateCode,
+            activeShipTos: reconciliation.totals.activeShipTos,
+            comparedShipTos: reconciliation.totals.comparedShipTos,
+            mismatches: reconciliation.findings.filter((finding) => finding.hasDifference).length,
+            retrievedAt: reconciliation.retrievedAt,
+          }));
+          return sendJson(response, 200, reconciliation, responseOrigin);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : `Unknown ${stateCode} reconciliation error`;
+          console.error(JSON.stringify({ event: "direct_mapping_aplus_reconciliation", ok: false, stateCode, message }));
+          return sendJson(response, 503, { error: `The ${stateCode} A+ rate reconciliation is unavailable or failed validation.` }, responseOrigin);
+        }
+      }
+    }
+
+    if (url.pathname === "/api/official/findings" && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        const result = await readAllWiredStateFindings();
+        console.info(JSON.stringify({ event: "all_wired_state_findings", ok: true, findings: result.findings.length, failedStates: result.failedStates, retrievedAt: result.retrievedAt }));
+        return sendJson(response, 200, result, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown wired-state findings error";
+        console.error(JSON.stringify({ event: "all_wired_state_findings", ok: false, message }));
+        return sendJson(response, 503, { error: "The wired-state findings batch is unavailable." }, responseOrigin);
       }
     }
 

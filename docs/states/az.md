@@ -39,5 +39,5 @@ The CSV is one row per (RegionCode, BusinessCode) pair. Business code `017` (RET
 
 - Never interpret `TBCLRT1`/`TBCLRT2` positionally — diff `TBCRATE` only.
 - Confirm business code `017` is actually right for Atlantic's product mix before using it as a default.
-- Get a human call on the Douglas/Cochise, Casa Grande, and Taylor discrepancies before deciding whether they're bugs to surface or carve-outs to explain away.
+- Get a human call on the Douglas/Cochise, Casa Grande, and Taylor discrepancies before deciding whether they're stale rates needing an A+ update or carve-outs to explain away.
 - Resolve `AZ203` and Green Valley's "no official counterpart" gap explicitly (ambiguous/excluded), don't drop them silently.

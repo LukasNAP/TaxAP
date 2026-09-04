@@ -4,6 +4,20 @@ export const ARIZONA_DOR_RATE_TABLE_URL = "https://azdor.gov/business/transactio
 export const ARIZONA_RETAIL_BUSINESS_CODE = "017";
 export const ARIZONA_STATE_RETAIL_RATE = 5.6;
 
+// Stable incorporated-place geography used only to combine AZDOR's city component with its
+// county total. Tax rates themselves still come from the current official file.
+export const AZ_CITY_COUNTY = new Map([
+  ["PHOENIX", "MARICOPA"], ["TUCSON", "PIMA"], ["CHANDLER", "MARICOPA"], ["TEMPE", "MARICOPA"],
+  ["SCOTTSDALE", "MARICOPA"], ["GLENDALE", "MARICOPA"], ["MESA", "MARICOPA"], ["NOGALES", "SANTA CRUZ"],
+  ["YUMA", "YUMA"], ["GILBERT", "MARICOPA"], ["GOODYEAR", "MARICOPA"], ["TOLLESON", "MARICOPA"],
+  ["LAKE HAVASU CITY", "MOHAVE"], ["DOUGLAS", "COCHISE"], ["SAN LUIS", "YUMA"], ["LITCHFIELD PARK", "MARICOPA"],
+  ["BULLHEAD CITY", "MOHAVE"], ["PRESCOTT VALLEY", "YAVAPAI"], ["PRESCOTT", "YAVAPAI"], ["QUEEN CREEK", "MARICOPA"],
+  ["PEORIA", "MARICOPA"], ["SURPRISE", "MARICOPA"], ["CASA GRANDE", "PINAL"], ["COTTONWOOD", "YAVAPAI"],
+  ["ELOY", "PINAL"], ["FLAGSTAFF", "COCONINO"], ["EL MIRAGE", "MARICOPA"], ["KINGMAN", "MOHAVE"],
+  ["ORO VALLEY", "PIMA"], ["SAFFORD", "GRAHAM"], ["APACHE JUNCTION", "PINAL"], ["AVONDALE", "MARICOPA"],
+  ["MARICOPA", "PINAL"], ["PIMA", "GRAHAM"],
+]);
+
 const COUNTY_REGION_CODES = new Set(["APA", "COH", "COC", "GLA", "GRA", "GRN", "LAP", "MAR", "MOH", "NAV", "PMA", "PNL", "STC", "YAV", "YMA"]);
 
 function decodeHtml(value) {

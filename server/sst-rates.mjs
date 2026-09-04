@@ -38,7 +38,7 @@ const GENERIC_SST_STATES = {
   ND: { stateName: "North Dakota", stateFips: "38", expectedCountyCount: 53, allowedJurisdictionTypes: ["00", "01", "45"], sourceUrl: "https://www.tax.nd.gov/sales-and-use-tax/local-taxes-city-and-county-taxes" },
   // Nebraska local variation is overwhelmingly city-driven. The current file has one active county
   // component (Dakota County), 270 city rows, and five special rows; do not synthesize 93 county taxes.
-  NE: { stateName: "Nebraska", stateFips: "31", expectedCountyCount: 1, allowedJurisdictionTypes: ["00", "01", "45", "63"], sourceUrl: "https://revenue.nebraska.gov/businesses/local-sales-and-use-tax-rates" },
+  NE: { stateName: "Nebraska", stateFips: "31", expectedCountyCount: 1, cityRateIsFullLocal: true, allowedJurisdictionTypes: ["00", "01", "45", "63"], sourceUrl: "https://revenue.nebraska.gov/businesses/local-sales-and-use-tax-rates" },
   // Nevada's SST file is structurally different: its state row is zero and each county/special row
   // carries the complete combined rate. Preserve the published totals and derive only the local
   // component relative to Nevada's independently verified 6.85% minimum statewide rate.
@@ -232,7 +232,8 @@ export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, 
           : row.generalIntrastateRate;
       const totalGeneralRate = jurisdictionType === "state" ? stateRate
         : config.jurisdictionRatesAreTotals ? row.generalIntrastateRate
-          : jurisdictionType === "county" ? Number((stateRate + row.generalIntrastateRate).toFixed(4)) : null;
+          : jurisdictionType === "county" || (jurisdictionType === "city" && config.cityRateIsFullLocal)
+            ? Number((stateRate + row.generalIntrastateRate).toFixed(4)) : null;
       return {
         jurisdictionType,
         jurisdictionCode: row.jurisdictionCode,

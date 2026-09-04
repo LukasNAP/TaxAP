@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 export const ALABAMA_LOCAL_RATES_URL = "https://www.revenue.alabama.gov/sales-use/local-cities-and-counties-tax-rates-text-file/";
 export const ALABAMA_STATE_RATES_URL = "https://www.revenue.alabama.gov/sales-use/state-sales-use-tax-rates/";
 export const ALABAMA_STATE_GENERAL_RATE = 4;
+export const AL_STATE_RATE = ALABAMA_STATE_GENERAL_RATE;
 
 const EXPECTED_HEADERS = [
   "Locality Code", "Locality Name", "County Number", "TaxType", "Rate Type", "Administered", "Active Date",
