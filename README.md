@@ -1,206 +1,193 @@
 # TaxAP
 
-TaxAP is an internal sales and use tax rate monitoring application for Atlantic Packaging. Its dashboard helps Ana distinguish newly published government rates, jurisdictions relevant to Atlantic ship-tos, confirmed A+ differences, and completed human reviews. TaxAP presents evidence and aggregate impact for review; it does not update A+.
+TaxAP is Atlantic Packaging's internal, read-only sales and use tax monitoring application. It compares authoritative state tax-rate publications with the tax bodies assigned to active A+ ship-to records, surfaces discrepancies for human review, and preserves aggregate evidence. It does **not** calculate customer tax or update A+.
 
-## MVP scope
+## Current status
 
-- Dashboard-first rate-change inbox with separate attention, upcoming, jurisdiction, history, and source views
-- Read-only A+ state coverage across official U.S. state codes when the connector is explicitly enabled
-- Official-rate adapters for North Carolina, Georgia, California, Texas, Florida, Pennsylvania, Ohio, and Tennessee, plus a preserved Georgia rate/boundary adapter
-- General sales and use tax rates only
-- Only jurisdictions containing active A+ ship-to addresses
-- Read-only extraction from A+
-- Planned scheduled source checks and effective-dated comparisons
-- Human confirmation or dismissal of every discrepancy
-- Audit evidence for the source, time checked, effective date, and decision
-- No automatic A+ changes
+Status as of September 8, 2026:
 
-The repository contains a working local MVP, not a tax calculation system. An owner-only private preview is hosted at `https://taxap-atlantic.atlantic-pac-7667.chatgpt.site`. The hosted preview uses the validated offline snapshot and cannot contact A+, save shared reviews, or authenticate Ana and Liv through Entra ID. The map-based workflow was retired on August 25, 2026. No customer names, addresses, invoice numbers, or other record-level data are stored in the application or repository.
+- The application UI and Docker deployment are working.
+- The official-source registry covers all 50 states plus the District of Columbia: 47 entries have connected source adapters, while Delaware, Montana, New Hampshire, and Oregon are intentionally excluded because they have no general sales tax.
+- Automatic A+ comparison logic is currently wired for 21 states: Alabama, Arizona, California, Colorado, Connecticut, Florida, Georgia, Indiana, Kentucky, Maine, Maryland, Massachusetts, Michigan, Mississippi, New Jersey, New York, North Carolina, Ohio, Pennsylvania, Texas, and Virginia.
+- Other connected official sources can be viewed and refreshed, but they do not yet produce automatic A+ discrepancy findings.
+- The local Windows application can read A+ through the existing `SQL03` to `APLUS` linked-server path using the signed-in Windows account.
+- The deployment on `apdock01` serves the application over HTTPS, but its A+ connector remains on the validated fallback snapshot until a non-interactive Microsoft Entra identity receives read-only SQL access.
+- The legacy owner-only Sites preview is also snapshot-only and cannot contact A+ or provide shared review storage.
 
-## Working application
+An HTTP 200 response from the proxy proves that the interface is available; it does **not** prove that the hosted A+ connector is live. Check the connector status and refresh result in the application.
 
-- Open directly to a rate-change dashboard showing needs-attention, upcoming-change, affected-ship-to, source-coverage, and freshness summaries.
-- Keep government publication, Atlantic relevance, A+ comparison, and human review as distinct workflow stages.
-- Use dedicated **Needs attention**, **Upcoming**, **All jurisdictions**, and **Review history** views.
-- Search and filter jurisdiction records by state, jurisdiction type, effective-date state, review status, A+ comparison status, official-source availability, jurisdiction name, and tax-body code.
-- Select any covered U.S. state to query its aggregate active ship-to/customer assignments and A+ tax-body rates when supervised live access is enabled.
-- Validate the official NCDOR 100-county current-rate table and compare every county with its A+ `XATXBD` configuration when supervised live access is enabled.
-- Show matched rates, current differences, announced future changes, and unavailable sources with distinct statuses instead of geographic color coding.
-- Preserve the official source URL, retrieval time, effective period, and SHA-256 evidence fingerprint for each comparison refresh.
-- Select any North Carolina county to inspect its A+ tax body, configured rate components, and aggregate coverage.
-- Search and filter all 100 counties, including the seven without active ship-tos.
-- Export the aggregate county inventory and configured A+ rates as CSV.
-- Review the empty approval queue and the resolved Mecklenburg audit case.
-- Inspect official and internal evidence sources, including active special-purpose A+ tax bodies outside the standard county inventory. Explicitly retired definitions are suppressed.
-- Read and validate the current XATXBD tax-body master through the local read-only A+ connector only when that connector is explicitly started.
-- In a supervised connected environment, refresh A+ rates when the application opens, every six hours while it remains open, or when an administrator selects **Refresh now**.
-- Use the CSV importer only as an administrator fallback when the connector is unavailable or an export needs testing.
-- Close detail panels with the close button, backdrop, or Escape key.
+## What the application does
 
-When the connector is running, configured rates are read live from `APLUSV8FAQ.XATXBD` and validated before display. Aggregate ship-to counts still come from the dated DWStage snapshot of August 17, 2026. If the live read fails, TaxAP clearly falls back to its validated August 18 rate snapshot; it does not claim that fallback data is live.
+- Shows newly published rates, upcoming effective dates, source coverage, affected A+ ship-tos, and review history.
+- Keeps four stages distinct: government publication, Atlantic relevance, A+ comparison, and human review.
+- Filters official jurisdictions to locations relevant to active A+ ship-tos whenever a supported comparison adapter is available.
+- Displays human-readable county or jurisdiction names instead of raw tax-body codes where a validated mapping exists.
+- Preserves source URL, retrieval time, effective period, and a SHA-256 evidence fingerprint.
+- Flags mismatches, unavailable sources, and ambiguous jurisdiction matches without guessing.
+- Stores local review decisions and audit events separately from A+.
+- Supports an administrator CSV import as a temporary, session-only fallback.
+- Never writes tax rates or assignments back to A+.
 
-### Read-only A+ connector
+## Coverage model
 
-- Runs as a local backend service on port 3001; database credentials and Microsoft tokens never enter browser code.
-- Uses Microsoft Entra ID passwordless authentication through `DefaultAzureCredential`. Local development uses the signed-in Azure CLI identity; a hosted service can later use an approved managed identity.
-- Connects to Azure SQL `DWStage`, reads aggregate active ship-to assignments from `ADDR`/`CUSMS`, then follows the existing `SQL03` → `APLUS` linked-server path for matching `APLUSV8FAQ.XATXBD` definitions.
-- Validates exactly 100 standard county rows before replacing the displayed rates. Failed connections or invalid results leave the last validated snapshot visible.
-- Returns only state-level and tax-body-level aggregate counts, definitions, and rates—no customer names, addresses, ship-to records, or invoices.
-- Filters state coverage to the 50 official state codes plus the District of Columbia; international, blank, full-name, and malformed A+ state values are excluded from the U.S. jurisdiction inventory and counted only as data-quality exclusions.
+TaxAP tracks two different kinds of coverage:
 
-### Official North Carolina comparison
+1. **Official-source coverage** means TaxAP can retrieve and validate a state's authoritative rate publication.
+2. **A+ comparison coverage** means TaxAP can also map that state's A+ tax bodies or ship-tos to the official jurisdictions and produce findings.
 
-- Reads NCDOR's official historical total general state, local, and transit sales/use tax table and selects the column explicitly marked current.
-- Requires exactly one valid rate for each of North Carolina's 100 counties before accepting the source.
-- Reads NCDOR's separate local/transit effective-date table for future component changes.
-- Refreshes on application startup, every six hours while open, or through **Refresh now**; the backend caches a validated source snapshot for six hours.
-- Marks an A+ rate difference only after both the A+ and official datasets pass validation. Source failures produce an unavailable state, never a guessed match or mismatch.
-- Suppresses known retired codes and definitions explicitly marked `DO NOT USE`, `DONT USE`, `DON'T USE`, `INACTIVE`, or `OBSOLETE` from state drill-down results and the displayed special-tax-body inventory.
-- Stores review ownership, decisions, notes, and timestamped audit events in a local SQLite database under `.data/`. Review records are separate from A+ and survive local application restarts.
-- Uses a temporary Ana/Liv reviewer selector until Microsoft Entra ID sign-in supplies the authenticated identity.
-- Maintains a 50-state-plus-DC official-source registry, ordered in the interface by active A+ ship-to coverage. The registry distinguishes connected adapters, identified machine-readable sources, official document sources awaiting reliable parsing, and states that still require source research.
-- Connects Georgia's current Streamlined Sales Tax rate file with Georgia DOR provenance and Census Gazetteer jurisdiction names. The adapter validates one active state rate and all 159 county rate components before returning data.
-- Displays Georgia's state, county, city, and special-jurisdiction rate components from the official file.
-- Matches active Georgia ship-to addresses against the official Streamlined boundary archive (address, then ZIP+4, then ZIP-5 fallback) entirely on the backend, and reconciles the result by A+ tax body. No ship-to address or customer data reaches the browser; only matched/unmatched/ambiguous aggregate counts and rate comparisons are returned.
-- Connects California's effective-dated CDTFA city and county table and requires coverage of all 58 counties before accepting a refresh.
-- Connects Texas's quarterly Comptroller control file with its published city/combined-area totals. Overlapping local components are retained as evidence and never naively summed.
-- Connects Florida's downloadable Department of Revenue workbook, deduplicates identical rows safely, and requires all 67 counties before accepting its current state-plus-surtax totals.
-- Reuses the validated Streamlined rate-file contract for Ohio and Tennessee while enforcing their complete county counts (88 and 95 respectively).
-- Connects Pennsylvania's official 6% statewide rule and the published Allegheny/Philadelphia local add-ons, then requires all 67 Census counties before accepting the normalized county totals.
-- Identifies Illinois and Virginia machine-readable sources and Maryland's official guidance without claiming those pending adapters are connected.
-- Identifies South Carolina's official ST-575 municipality/unincorporated-area publication but leaves it unconnected until a reliable PDF-table parser is validated.
+These counts should not be treated as interchangeable. A state may have a connected official source while its address-to-jurisdiction or A+ mapping is still unfinished.
 
-Copy `.env.example` to `.env.local` and fill in the non-secret server settings. Run `az login` before local development; `npm run dev` starts both the web application and connector.
+Detailed status and unresolved mapping work are documented in [`docs/roadmap-50-states.md`](docs/roadmap-50-states.md), [`docs/state-rollout.md`](docs/state-rollout.md), and the individual files under [`docs/states/`](docs/states/).
 
-For interface work that must not contact production, run only the web application in explicit offline mode:
+## Architecture
+
+```text
+Browser
+  |
+  +-- TaxAP web application
+        |
+        +-- official state source adapters
+        +-- review/audit store
+        +-- private A+ connector (port 3001)
+              |
+              +-- SQL03 / DWStage
+                    |
+                    +-- APLUS linked server / APLUSV8FAQ
+```
+
+The connector returns only aggregate coverage, tax-body definitions, and rates. Customer names, street addresses, invoice numbers, Microsoft tokens, and database credentials are not sent to browser code or committed to the repository.
+
+## Run locally with live A+ data
+
+Local live access uses Windows Authentication and the same `SQL03` connection available through SQL Server tools. Copy `.env.example` to `.env.local` and use:
+
+```env
+TAXAP_SQL_AUTHENTICATION=windows
+TAXAP_SQL_SERVER=SQL03
+TAXAP_SQL_DATABASE=DWStage
+TAXAP_SQL_LINKED_SERVER=SQL03
+TAXAP_APLUS_LINKED_SERVER=APLUS
+TAXAP_APLUS_LIBRARY=APLUSV8FAQ
+TAXAP_CONNECTOR_HOST=127.0.0.1
+TAXAP_CONNECTOR_PORT=3001
+TAXAP_ALLOWED_ORIGIN=http://localhost:3000
+```
+
+Do not add a password to this file. Start both the web application and connector from a PowerShell terminal running as the Windows user that already has database access:
+
+```powershell
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. Confirm that the header reports a live A+ connection and that **Refresh now** succeeds. If it falls back to a dated snapshot, inspect the connector output in the same terminal rather than treating the UI as live.
+
+### Offline interface mode
+
+For interface work that must not contact A+, start only the web application:
 
 ```powershell
 $env:NEXT_PUBLIC_TAXAP_OFFLINE_MODE = "true"
 npm run dev:web
 ```
 
-Offline mode uses the August 18 validated fallback snapshot, disables refresh controls, does not start the connector, and does not call `/api/aplus/*`. Live read-only validation is a separate supervised step.
+Offline mode disables live refresh and uses the bundled validated snapshot.
 
-### Administrator CSV fallback
+## Deploy on apdock01
 
-- Accepts `.csv` files up to 2 MB in the verified 19-column XATXBD export order, with or without a header row.
-- Requires exactly one row for every standard county tax body from `NC001` through `NC100`.
-- Verifies numeric ranges, duplicate and missing codes, current and next rate-component totals, and effective dates for scheduled rates.
-- Separates noncounty tax bodies from the standard county inventory and previews representative transit-rate counties.
-- Applies validated rates only to the current browser session. It does not upload the CSV, persist it, or write to A+.
+The deployment files are under [`deployment/apdock01/`](deployment/apdock01/). Docker runs the web application and private connector together; Nginx is the only published service and exposes HTTPS on port 5017. The connector's port 3001 must remain private.
 
-## A+ county rate snapshot
+On `apdock01`:
 
-- 100 standard county definitions (`NC001` through `NC100`)
-- 50 counties configured at 6.75%
-- 46 counties configured at 7.00%
-- Wake (`NC092`) configured at 7.25%
-- Durham (`NC032`) and Orange (`NC068`) configured at 7.50%
-- Mecklenburg (`NC060`) configured at 8.25%
-- No future rate or effective date populated on any standard county row
-- 10 noncounty definitions exist in the verified NC master; the two explicitly marked `DO NOT USE` are suppressed from TaxAP queries and displays
+```bash
+cd /var/atlanticapps/taxap
+git -c core.sshCommand='ssh -i /home/lukasn/.ssh/id_ed25519_taxap -o IdentitiesOnly=yes' pull --ff-only
+docker compose -f deployment/apdock01/docker-compose.yml up -d --build
+docker compose -f deployment/apdock01/docker-compose.yml ps
+curl -kI https://localhost:5017
+```
 
-## Verified pilot case
+The Docker image includes the ODBC runtime required by `msnodesqlv8` and the PDF tooling used by official-source adapters. TLS certificate and key paths are supplied through the deployment `.env` and mounted read-only.
 
-- Jurisdiction: Mecklenburg County (`NC060`)
-- Previous rate: 7.25%
-- Current rate: 8.25%
-- Effective date: July 1, 2026
-- Active NC ship-to snapshot: 5,518 NC-address records; 5,498 are assigned to 93 standard county tax bodies
-- Mecklenburg assignment snapshot: 783 active ship-tos
-- Review population: 78 prior-rate invoices across 39 customers
-- Positive taxable sales reviewed: $91,211.53
-- Initial one-percentage-point review estimate: $912.12
-- Resolution: A+ rate changed and the prior-rate invoices were handled by the tax team
+### Hosted A+ prerequisite
 
-These figures are preserved as aggregate audit evidence. The estimate is not an outstanding balance, and TaxAP did not change A+.
+Windows Authentication works for the local process under the user's Windows identity; it does not transfer into a Linux container. The hosted connector therefore needs all of the following:
 
-## Atlantic branding
+1. An IT-approved, non-interactive Entra application/service principal with a certificate credential.
+2. Read-only permission to the required `DWStage` queries and the existing `SQL03` to `APLUS` linked-server path.
+3. Network access from `apdock01` to the SQL endpoint.
+4. The combined client certificate and private key mounted at the path expected by the Compose deployment.
+5. Tenant ID, client ID, and certificate path configured in `deployment/apdock01/.env` without committing secrets.
 
-- Product name: **TaxAP**
-- Official Atlantic Packaging horizontal logo in the application header
-- Official stacked logo as the browser icon
-- Atlantic brand blue, green, navy, black, gray, and white only
-- Gotham-compatible Montserrat web typography
-- Supplied brand tokens are stored in `app/brand-tokens.css`
-- Logos are embedded without recoloring, distortion, or rearrangement
+Until those checks pass, the hosted application is suitable for interface review but must identify its A+ data as fallback or snapshot data.
 
-## Intended workflow
+### User access control is separate
 
-1. Read aggregate active ship-to coverage from A+.
-2. Associate the relevant tax-body coverage with its official jurisdiction.
-3. Retrieve current and announced rates from authoritative state sources.
-4. Compare the authoritative rate and effective date with the current A+ assignment.
-5. Create a review flag when the values differ or the address cannot be resolved confidently.
-6. Let the tax administrator confirm the discrepancy, reject it, or defer it.
-7. Create an A+ maintenance work item for confirmed discrepancies.
+The Entra identity above authenticates the backend workload to SQL. It does not sign Ana into TaxAP. Before broad internal distribution, put the approved OAuth2 proxy or equivalent single-tenant access control in front of TaxAP and restrict it to the intended users. This can be completed after the workload connection, but it remains a production-readiness item.
 
-## Relevant A+ fields
+See [`deployment/apdock01/README.md`](deployment/apdock01/README.md) for the host-specific checklist.
 
-The available A+ warehouse dictionary identifies these read-side fields:
+## Review storage
+
+Local review decisions, notes, ownership, and audit events are stored in SQLite under `.data/`. The Docker deployment uses the `taxap-review-data` named volume so those records survive container replacement. This is independent of A+ and does not write review decisions into the ERP.
+
+## Administrator CSV fallback
+
+- Accepts `.csv` files up to 2 MB in the verified 19-column `XATXBD` export order, with or without a header.
+- Validates required tax bodies, numeric ranges, duplicates, current and future components, and effective dates.
+- Applies data only to the current browser session.
+- Does not upload the file, persist the imported data, or write to A+.
+
+## Relevant A+ data
+
+The read path uses these warehouse fields:
 
 | Purpose | Table and field |
 | --- | --- |
-| Company | `ADDR.SACONO` |
-| Customer number | `ADDR.SACSNO` |
-| Ship-to number | `ADDR.SASHP#` |
-| Ship-to street | `ADDR.SASAD1` through `ADDR.SASAD4` |
-| City | `ADDR.SASCTY` |
-| State | `ADDR.SASHST` |
-| ZIP code | `ADDR.SASZIP` |
-| Current tax body | `ADDR.SASTXB` |
-| Taxable code | `ADDR.SATXCD` |
-| Geographic code | `ADDR.SAGEOC` |
-| Possible Vertex identifier | `ADDR.SAVTSH` |
-| Last maintenance date | `ADDR.SALMDT` |
-| Order tax body and rate | `ORHED.OHSTXB`, `ORHED.OHTXPC` |
-| Historical tax body and rate | `HSHED.OATXBD`, `HSHED.OATXPC` |
+| Company, customer, and ship-to | `ADDR.SACONO`, `ADDR.SACSNO`, `ADDR.SASHP#` |
+| Ship-to address | `ADDR.SASAD1`-`ADDR.SASAD4`, `ADDR.SASCTY`, `ADDR.SASHST`, `ADDR.SASZIP` |
+| Tax body and taxable code | `ADDR.SASTXB`, `ADDR.SATXCD` |
+| Geographic/possible Vertex values | `ADDR.SAGEOC`, `ADDR.SAVTSH` |
+| Current tax body and description | `XATXBD.TBTXBOD`, `XATXBD.TBTXNAM` |
+| Current base/local/total rates | `XATXBD.TBCBSRT`, `XATXBD.TBCLRT1`-`TBCLRT4`, `XATXBD.TBCRATE` |
+| Next rates and effective date | `XATXBD.TBNBSRT`, `XATXBD.TBNLRT1`-`TBNLRT4`, `XATXBD.TBNRATE`, `XATXBD.TBTXDAT` |
 
-The operational DB2 library `APLUSV8FAQ` contains the current tax-body master in `XATXBD`:
-
-| Purpose | Field |
-| --- | --- |
-| Tax body and description | `TBTXBOD`, `TBTXNAM` |
-| Current base rate | `TBCBSRT` |
-| Current local components | `TBCLRT1` through `TBCLRT4` |
-| Current total rate | `TBCRATE` |
-| Next base and local components | `TBNBSRT`, `TBNLRT1` through `TBNLRT4` |
-| Next total and effective date | `TBNRATE`, `TBTXDAT` |
-
-The known A+ maintenance path is **Accounts Receivable → File Maintenance → Tax Body**. The exact approved procedure and any vendor-supported integration still need documentation, so the application remains read-only.
-
-## Proposed application records
-
-- `ship_to_snapshot`: a dated, read-only snapshot of the A+ ship-to fields used for comparison
-- `jurisdiction_assignment`: normalized address, county, municipality, special jurisdiction codes, and match confidence
-- `source_artifact`: source URL, retrieval time, content hash, publication date, and covered effective period
-- `tax_rate`: jurisdiction components, sales rate, use rate, and effective date range
-- `rate_finding`: A+ value, authoritative value, difference type, impacted ship-tos, and status
-- `review_decision`: reviewer, decision, note, and timestamp
+The known maintenance path is **Accounts Receivable -> File Maintenance -> Tax Body**. The approved maintenance procedure and any vendor-supported integration still need documentation, so TaxAP remains read-only.
 
 ## Safety rules
 
 - Never infer a rate solely from a five-digit ZIP when a more precise official boundary source is available.
-- Preserve original source files and hashes for audit evidence.
+- Preserve original source URLs, retrieval timestamps, effective dates, and hashes as audit evidence.
 - Never silently replace a prior effective-dated rate.
 - Never write directly to A+ from the monitoring job.
-- A source failure or ambiguous jurisdiction produces a review flag, not a guessed value.
-- Prototype figures must identify whether they are verified aggregates or sample data; customer-level records must never be committed to source control.
+- Treat source failure or ambiguous jurisdiction matching as a review condition, not permission to guess.
+- Keep customer-level records and all credentials out of source control.
+- Only flag discrepancies for approval until a supported A+ write workflow is separately designed and approved.
 
-## Discovery still required
+## Testing
 
-1. Document the exact fields and approval steps used under Accounts Receivable → File Maintenance → Tax Body.
-2. Define the A+ taxable-code values (`0`, `3`, and `J`) and the remaining order-type codes used during review.
-3. Confirm whether the `SAVTSH` field represents an active, legacy, or unused Vertex integration.
-4. Identify the approved runtime service connection for repeatable read-only A+ imports.
-5. Agree on check frequency, reviewer identity, notification method, and Entra ID access policy.
+```powershell
+npm run lint
+npm test
+```
 
-## Delivery stages
+`npm test` performs a production build and runs the adapter, connector, mapping, review-store, filtering, and rendered-interface test suites.
 
-1. Product prototype and approved requirements
-2. Repeatable read-only imports for the A+ ship-to inventory and `XATXBD` tax-body master
-3. North Carolina source ingestion and effective-date history
-4. Address-to-jurisdiction matching
-5. Comparison and review queue
-6. User acceptance testing with the tax administrator
-7. Optional supported A+ update integration as a separate phase
+## Remaining work
+
+1. Complete and validate the hosted Entra workload identity, certificate mount, SQL permissions, and network path.
+2. Add production user access control for Ana and other approved users.
+3. Finish A+ comparison mappings for connected official-source states that do not yet create findings.
+4. Validate address-boundary matching for states where ZIP or name matching is insufficient.
+5. Confirm the temporary/special tax-body rules and the business meaning of A+ taxable codes `0`, `3`, and `J`.
+6. Confirm notification cadence, reviewer workflow, backup/retention for review data, and operational ownership.
+7. Perform user acceptance testing before treating the hosted deployment as production-ready.
+
+## Project references
+
+- [`HANDOFF.md`](HANDOFF.md) - current handoff and operating notes
+- [`docs/aplus-schema.md`](docs/aplus-schema.md) - verified A+ schema notes
+- [`docs/aplus-data-findings.md`](docs/aplus-data-findings.md) - aggregate A+ findings
+- [`docs/pending-business-decisions.md`](docs/pending-business-decisions.md) - unresolved business decisions
+- [`docs/roadmap-50-states.md`](docs/roadmap-50-states.md) - nationwide source rollout
+- [`docs/state-rollout.md`](docs/state-rollout.md) - implementation process and state status
