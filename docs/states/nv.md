@@ -11,8 +11,12 @@ TaxAP reads Nevada's current effective-dated Streamlined Sales Tax rate file and
 
 The official Nevada guidance says the base rate is 6.85%, local jurisdictions may add tax, and the applicable rate varies by county. The current official totals range from 6.85% to 8.375%.
 
-## A+ matching: not built
+## A+ matching: county comparison wired September 8, 2026
+
+`server/nv-aplus.mjs` now compares explicitly county-labelled Nevada tax bodies with the existing SST adapter's complete county totals. The matcher requires all 17 unique county equivalents, rejects missing/invalid official totals, and never interprets internal A+ numbers as FIPS. `NV000`, retired descriptions, unknown places, and special-district descriptions remain unmatched; cross-jurisdiction assignments remain separate. The response also lists official counties absent from the matched active footprint. This validates the assigned county code's rate, not the ship-to's physical location.
+
+Current official NV and RI source fetches succeeded on September 8. Nevada returned 17 county equivalents and nine special rows; the latter are not used as county aliases. Independent authority: https://tax.nv.gov/wp-content/uploads/2024/03/Basic-Training-New-1.pdf. Synthetic aggregate tests cover differences, Carson City, duplicate/missing counties, invalid totals, fallback codes, cross-state assignments, and source failures. No live A+ query was run for this implementation; actual current matching coverage still needs aggregate validation.
 
 A read-only aggregate A+ inventory on 2026-09-02 found 273 active Nevada ship-tos across 14 assignment groups. Eleven configured `NVxxx` codes are county-labelled and their rates align with the reviewed official county totals. `NV000` has no configured definition and covers eight ship-tos. Three additional ship-tos use tax bodies labelled for another jurisdiction and remain visibly separate.
 
-The A+ Nevada identifiers are internal ordinal codes, not county FIPS codes, so TaxAP does not join them by number. A future matcher can use an explicit reviewed name map for the configured county codes, must expose official counties absent from the active A+ footprint, and must separately exclude `NV000` and cross-state assignments. No customer/address records may reach the browser, and TaxAP must never write to A+.
+The A+ Nevada identifiers are internal ordinal codes, not county FIPS codes, so TaxAP does not join them by number. No customer/address records may reach the browser, and TaxAP must never write to A+.

@@ -1,5 +1,20 @@
 # Arkansas — findings
 
+## Current implementation — September 8, 2026
+
+`server/ar-aplus.mjs` now reads DFA's linked current-quarter city/county PDF, checks its period and inventory, validates local component sums, and adds the SST-validated 6.5% state rate. The current table has 350 cities and all 75 counties; 18 city totals vary across counties and remain unresolved. Comparison requires the exact DFA code and matching name. County-only assignments require a county description. Unidentified, conflicting, retired and missing definitions remain unmatched. The reader is registered in the batch findings and state drawer.
+
+Current local Windows-authenticated aggregate validation: 326 assignments, 223 compared across 50 groups, nine rate differences, 102 unmatched and one cross-state assignment. No SQL changes or customer/address output. Build, lint and all 212 tests passed. This establishes assigned-rate comparison, not physical delivery-jurisdiction validation or transaction tax treatment.
+
+**Correction to the historical cap discussion below:** DFA's current FAQ says the general local single-transaction cap ended January 1, 2008, with specified vehicle, aircraft, watercraft and housing exceptions and business rebate provisions. The older statement that all merchandise has a $2,500 local cap is incorrect and must not guide implementation. TaxAP does not calculate those exceptions, rebates, or invoice liability.
+
+Sources:
+- [DFA quarterly local table directory](https://www.dfa.arkansas.gov/office/taxes/excise-tax-administration/sales-use-tax/sales-use-tax-rates/city-and-county-sales-use-tax-rates/)
+- [DFA Q3 2026 table](https://www.dfa.arkansas.gov/wp-content/uploads/cityCountyTaxTable_Jul_Sep_2026.pdf)
+- [DFA sales/use FAQ](https://www.dfa.arkansas.gov/office/taxes/excise-tax-administration/sales-use-tax/sales-and-use-tax-faqs/)
+
+## Historical investigation (superseded where noted above)
+
 Status: **Address matching not needed for the general case** — A+'s 66 real `AR%` codes each map directly to one named Arkansas city or county, combining state + county + city into a single `TBCRATE`, the same shape as NC/SC. **But rate comparability is a real, confirmed problem, not a clean pass**: 8 of the codes spot-checked against Arkansas's current Streamlined Sales Tax rate file show a live, material stale local-rate component (mostly the city half of the split, one the county half, one the state-rate slot itself), and a DO-NOT-USE-shaped placeholder (`AR000`) covers 46 of 324 active ship-tos (14.2%) — the largest single tax-body group in the state. Live A+ (`ADDR`/`CUSMS` active AR ship-to assignments via `readStateDetail`) and the current Streamlined rate file (`ARR2026Q3JUN02.csv`) both checked 2026-08-26.
 
 ## Address matching

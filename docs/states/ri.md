@@ -1,5 +1,13 @@
 # RI — findings
 
+## Current implementation — September 8, 2026
+
+Rhode Island is now wired through the flat-state comparison, the shared findings batch, and the state drawer. The current official SST fetch returned one statewide 7% row. The RI Division of Taxation independently confirms the general sales/use rate: https://tax.ri.gov/tax-sections/sales-excise-taxes/sales-use-tax.
+
+The historical investigation below remains evidence about the saved A+ setup, not a current database check. Its old "before building" restriction is superseded by the user's instruction to wire remaining comparisons: a configured rate difference may be surfaced for human review while its business explanation stays unresolved. This does not authorize a correction or establish that an individual transaction is taxable. No A+ query or write was performed in this implementation.
+
+## Historical investigation (August 26)
+
 Status: **investigated live 2026-08-26, not safe to build.** A+ has exactly one tax body for the entire state (`RI000`), which structurally matches Rhode Island's real tax law perfectly (no local-option tax exists anywhere in RI, and its Census "counties" have no taxing authority at all — confirmed by both the task context and the live official-rate fetch). But that single code's configured rate is stale — it needs updating from `0` to the current flat statewide `7%` — on effectively 100% of active RI ship-tos. This is the same shape ND's investigation found (a single flat statewide code sitting at `0` while the real state tax is not optional), not the same shape as HI's (where 0% is plausibly a legitimate optional-pass-on business choice).
 
 `readStateDetail('RI')`: `activeShipTos: 40`, `activeCustomerAssignments: 22`, `taxBodyCount: 1`.

@@ -1,5 +1,20 @@
 # Oklahoma — official-rate adapter status
 
+## Current comparison — September 8, 2026
+
+`server/ok-aplus.mjs` reads the official COPO CSV linked from the Tax Commission publications page. The quarterly COPO chart explicitly documents the first two digits as the county identifier and the additional county tax. The reader selects effective sales/use history, adds the appropriate county component once, verifies the 4.5% state rate through the existing SST source, and compares only exact four-digit code/name identities where sales/use totals agree. It is registered in batch findings and the state drawer.
+
+Current CSV: 904 locations excluding the generic `0088` record, with all 77 counties. 812 totals resolve under this scope. The Inola use history contains overlapping open periods; other rows contain malformed dates (including `10/1/205`). Those records remain unresolved; no dates or rates are repaired by inference. Six-digit A+ suffixes, conflicting or truncated names, missing definitions and differing sales/use rates also remain unmatched.
+
+Local Windows-authenticated aggregate validation: 272 assignments, 98 compared across 37 groups, 11 differences and 174 unmatched. Build, lint and all 218 tests passed. This compares the assigned COPO rate; it does not establish delivery-address boundaries or transaction treatment. No SQL changes or A+ writes.
+
+Sources:
+- [OTC publications and CSV link](https://oklahoma.gov/tax/reporting-resources/publications.html)
+- [Official COPO CSV](https://oklahoma.gov/content/dam/ok/en/tax/documents/resources/publications/businesses/csv-excel-rates/Currentcsv.csv)
+- [Q3 2026 chart and county-code explanation](https://oklahoma.gov/content/dam/ok/en/tax/documents/resources/publications/businesses/sales-and-use-tax/rate-charts-copos/2026/copo3Q26.pdf)
+
+The unwired status below records the historical investigation and is superseded by this implementation.
+
 ## What is connected
 
 TaxAP reads Oklahoma's current effective-dated Streamlined Sales Tax rate file and retains the Oklahoma Tax Commission's sales/use-tax page as the human-readable authority.

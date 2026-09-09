@@ -1,5 +1,15 @@
 # South Carolina — findings
 
+## Current implementation — September 9, 2026
+
+`server/sc-aplus.mjs` now compares exact assigned county names and unique non-multi-county municipality names against ST-575, with batch and drawer registration. The legacy numeric description prefix is removed only as a label prefix; it does not determine a rate or county. Multi-county municipalities, unknown names and missing definitions remain unmatched. Physical boundary matching and geocoder privacy questions remain open; no addresses were sent to any geocoder.
+
+The old `pdftotext` runtime prerequisite described below is superseded. `server/sc-pdf.mjs` uses the existing PDF.js dependency, validates table coordinates, assigns wrapped cell text to rate rows and feeds the defensive ST-575 parser. Current official source validation recovered all 46 counties and 294 municipality rows. No external PDF executable is required.
+
+Current local Windows-authenticated A+ validation: 1,900 assignments, 1,377 compared across 161 groups, four differences, 516 unmatched, seven cross-state. Build, lint and all 230 tests passed. This checks assigned rates, not whether delivery addresses belong to those jurisdictions. No SQL changes, A+ writes or deployment.
+
+The following investigation is historical; current implementation notes above take precedence.
+
 Status: **official rate source connected (2026-08-26); the RFA boundary source was re-verified but the address matcher was intentionally not built.** `server/sc-rates.mjs` fetches and validates ST-575 live; `readOfficialScRates()` is wired into `/api/official/states/SC`. SC DOR itself publishes no address/ZIP-level data, but SC RFA's public GIS REST services (geocoder + municipal/county boundary polygons at `gis.state.sc.us`) do — see Step 3. The 2026-08-26 validation attempt found source-quality, terms-of-use, and customer-address privacy questions that must be resolved before active A+ ship-tos are sent to the geocoder. Address-matching logic against `XATXBD`'s SC0xx codes remains unbuilt and unvalidated. Investigated live on 2026-08-25–26.
 
 ## The parser: how ST-575 actually got read

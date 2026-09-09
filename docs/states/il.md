@@ -15,10 +15,18 @@ Illinois now uses destination-based Retailers' Occupation Tax for applicable shi
 
 The current source contains 200 address-override locations. IDOR sets their jurisdiction-wide merchandise rate to zero and says the address-level file must be used. TaxAP excludes them rather than turning zero, a city total, or a county total into a guessed rate.
 
-## A+ matching: not built
+## Assigned-ID comparison wired — September 8, 2026
+
+`server/il-aplus.mjs` now compares exact eight-digit A+ location IDs with the existing official general-merchandise rates. A seven-digit ID is accepted only when exactly one full official ID has that prefix, counting address overrides as candidates too. The source snapshot now preserves all override IDs specifically to prevent a false unique match after excluding their rates.
+
+Unknown codes, incorrect check digits, duplicate prefixes, address overrides, future-effective rows, missing definitions, retired codes and explicit category-specific descriptions remain unmatched. No city/county fallback or address inference is used. This monitors the configured general-merchandise location rate, not customer taxability or physical delivery jurisdiction.
+
+Current official fetch: 1,343 jurisdiction-wide rates and 200 override IDs. All 1,343 eligible IDs passed synthetic full-ID comparisons with zero differences. Five new matcher tests cover full/truncated IDs, override collisions, unknown IDs, future rates and category/missing-definition exclusions. No current A+ aggregates were queried.
+
+## Historical A+ evidence
 
 An aggregate-only local A+ inventory on 2026-08-31 found 895 active Illinois ship-tos across 161 assigned tax-body groups. The common tax-body pattern appears to preserve IDOR location IDs after the `IL` prefix (for example, `IL02200023` corresponds to `022-0002-3`), but some codes omit the final check digit (`IL0160011` corresponds to `016-0011-7`) while others retain it (`IL01600125` corresponds to `016-0012-5`).
 
-No A+ tax-body-to-Illinois-location comparison has been added yet. A future matcher may accept only a unique exact full-ID or unique seven-digit-prefix match; it must report conflicts, address overrides, `IL000`, misspelled/legacy codes, and cross-state assignments as aggregate exclusions. It must not attempt address matching or use a plausible city/county fallback. If a later phase requires ship-to addresses, obtain an explicit privacy and implementation decision for the address-level source first.
+The current matcher uses the documented full-ID and unique-prefix conventions above; current A+ coverage still needs aggregate validation. Address-level matching remains unimplemented. If a later phase requires ship-to addresses, obtain an explicit privacy and implementation decision for the address-level source first.
 
 Never send a customer, ship-to, or address row to the browser. Never write to A+.

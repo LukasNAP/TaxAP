@@ -1,6 +1,23 @@
 # TaxAP project handoff
 
-Last updated: September 4, 2026 (all 51 jurisdictions accounted for at the official-source layer; Missouri quarterly filing-code adapter connected)
+Last updated: September 9, 2026.
+
+## Current implementation state
+
+This section and README supersede the historical notes below. Application completion remains the priority; hosted Entra setup is deferred. The user authorized committing and pushing this implementation batch on September 9. Deployment and A+ writes are not authorized.
+
+- Official-source coverage: 47 connected jurisdictions, plus DE, MT, NH and OR classified as having no general sales tax.
+- A+ comparison readers: **38 states plus D.C. (39 jurisdictions)**. This batch adds NV, RI, DC, WA, NE, WV, IL, SD, WI, UT, NM, AR, TN, OK, KS, MN, MO and SC to the findings batch and state drawer.
+- Eight connected sources still lack readers: **AK, HI, ID, IA, LA, ND, VT, WY**. Reader registration does not mean every assignment or delivery boundary is supported. Unknown, ambiguous and conflicting identities remain unresolved.
+- Fixed the state drawer list for existing TX/CA/CO readers, the New Mexico/Mexico classification error, and XLSX parsing of empty cells. Illinois prefix matching now accounts for address overrides. South Carolina uses bundled PDF.js extraction instead of an external executable.
+- Minnesota's active reader uses the current-quarter official map. Its earlier PDF reader remains unused research code. Missouri supports only unique exact filing names with equal sales/use rates. South Carolina supports unique assigned names, retaining multi-county ambiguity.
+- Local Windows-authenticated A+ aggregate checks were performed for UT, NM, AR, TN, OK, KS, MN, MO and SC using the existing connector. Other new readers have source and synthetic verification; their current A+ coverage is not established by those tests. No SQL changes or A+ writes were made.
+- Latest completed verification: production build, ESLint and 230 tests passed. See `docs/comparison-rollout.md` and individual state notes for scope and aggregate evidence.
+- Remaining decisions include Iowa/Vermont sales-versus-use scope, Hawaii optional GET pass-on, Alaska nonmember coverage, and unidentified catch-all codes. Never infer tax liability or jurisdiction from these gaps.
+- Hosted Docker data remains snapshot/fallback until workload identity, certificate, SQL permissions and network access are validated end to end. User authentication is a separate concern.
+- Nationwide completion remains open. Refresh-failure visibility and the NC-only review form are additional application work before user acceptance.
+
+## Historical notes (through September 4; verify against current code)
 
 **This is the single shared handoff doc for this project, regardless of which AI coding assistant you're using (Claude Code or ChatGPT/Codex).** Update it at the end of every session — whichever assistant you used — so the next session (with either tool) starts from the same accurate picture. Don't keep a separate per-assistant copy; this file replaces the earlier split between `CLAUDE-HANDOFF.md` (Claude-side) and `HANDOFF.md` (ChatGPT-side).
 
@@ -392,3 +409,5 @@ Record outcomes, important decisions, validation results, and useful links. Do n
 ## Suggested continuation prompt
 
 > Read `HANDOFF.md`, `README.md`, `docs/roadmap-50-states.md`, `server/ga-boundary.mjs`, `server/aplus-connector.mjs`, `app/page.tsx`, and the relevant tests. Work only from snapshots, fixtures, mocks, and automated tests. Do not contact A+, DWStage, SQL03, APLUS, production databases, or live `/api/aplus/*` routes. Do not start the connector, commit, push, deploy, or write to A+. Use the A+ ERP skill before changing SQL or ERP behavior. Continue the dashboard-first monitoring workflow by researching and fixture-testing the next official state source; do not claim a source is connected until its schema and jurisdiction mapping are validated. Keep customer-level address data off the browser, run the complete offline validation suite, report unknowns without guessing, and update `HANDOFF.md` before finishing.
+
+September 9 draft validation: production build, ESLint and all 223 tests passed. Minnesota remains unregistered pending current-source validation.

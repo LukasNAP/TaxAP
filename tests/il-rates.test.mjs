@@ -55,5 +55,6 @@ test("returns an official Illinois snapshot without turning address overrides in
   assert.equal(snapshot.stateRate, ILLINOIS_STATE_RATE);
   assert.equal(snapshot.counts.counties, ILLINOIS_COUNTY_COUNT);
   assert.equal(snapshot.counts.specialJurisdictions, 1);
+  assert.deepEqual(snapshot.addressOverrideLocationIds, ["060-5000-2"]);
   assert.doesNotMatch(JSON.stringify(snapshot.rates), /060-5000-2/);
 });

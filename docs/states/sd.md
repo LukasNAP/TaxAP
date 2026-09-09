@@ -12,8 +12,16 @@ TaxAP reads South Dakota's current effective-dated Streamlined Sales Tax rate fi
 
 The Department says municipalities may impose a general municipal rate up to 2%. Delivery within a municipality or tribal special jurisdiction therefore requires boundary/agreement reconciliation before TaxAP can claim a complete total.
 
-## A+ matching: not built
+## Assigned municipality comparison wired — September 8, 2026
+
+`server/sd-aplus.mjs` now matches exact municipality names to current SST city rows, combining the general municipal component with the state rate. Source validation confirmed 254 municipalities; synthetic name mappings matched all 254 with zero differences. This is not current A+ or physical-boundary validation.
+
+The initial live check rejected Roslyn's 3% municipal component. DOR explicitly lists Roslyn at 3% (reporting code 315-2), corroborating SST place 56380. The matcher now recognizes that exact exception; other unreviewed components above 2% still fail closed. Authority: https://dor.sd.gov/businesses/taxes/municipal-tax/.
+
+Tribal/special records are not stacked with state tax. County labels, `SD000`, unknown/category-specific labels and the no-local group remain unmatched; the saved notes do not identify the latter's exact code. DOR tribal authority: https://dor.sd.gov/businesses/taxes/sales-use-tax/sales-of-products-or-service-within-indian-country/. Four tests cover municipal differences, excluded categories, source validation and the Roslyn exception. No SQL or A+ reads were performed.
+
+## Historical A+ evidence
 
 A read-only aggregate A+ inventory on 2026-09-02 found 42 active South Dakota ship-tos across 13 configured tax-body groups. Nine ship-tos use `SD000` at 0%, one uses a separately labelled 4.2% no-local-rate code, and the remaining groups are municipality-labelled at 6.2%.
 
-The municipality-labelled rates are plausible, but `SD000` cannot be treated as an ordinary statewide result because South Dakota's base is 4.2%. A future matcher needs an explicit reviewed municipality map and a separate special-jurisdiction path; it must not infer tribal status from a city or ZIP alone. No customer/address records may reach the browser, and TaxAP must never write to A+.
+`SD000` cannot be treated as an ordinary statewide result. The general municipality matcher does not resolve tribal/special treatment, unidentified no-local codes, or physical boundaries; those remain open. No customer/address records may reach the browser, and TaxAP must never write to A+.

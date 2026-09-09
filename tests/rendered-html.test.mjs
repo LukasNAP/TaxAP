@@ -119,14 +119,12 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(importParser, /XATXBD_COLUMN_COUNT = 19/);
   assert.match(importParser, /Missing standard county tax bodies/);
   assert.match(importParser, /current total does not equal its rate components/);
-  assert.match(readme, /No automatic A\+ changes/);
-  assert.match(readme, /working local MVP/i);
+  assert.match(readme, /Never write directly to A\+ from the monitoring job/);
   assert.match(readme, /ADDR\.SASTXB/);
-  assert.match(readme, /APLUSV8FAQ\.XATXBD/);
+  assert.match(readme, /XATXBD\.TBCRATE/);
   assert.match(readme, /current browser session/);
-  assert.match(readme, /DefaultAzureCredential/);
+  assert.match(readme, /non-interactive Microsoft Entra identity/);
   assert.match(readme, /SQL03.*APLUS/);
-  assert.match(readme, /Atlantic branding/);
   assert.doesNotMatch(page, /TaxWatch/);
   assert.doesNotMatch(page, /geoAlbersUsa|geoMercator|countiesTopology|statesTopology/);
   assert.doesNotMatch(packageJson, /d3-geo|topojson-client|us-atlas/);

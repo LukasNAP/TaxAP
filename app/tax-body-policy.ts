@@ -71,5 +71,8 @@ export function describesOtherJurisdiction({ taxBody, description }: TaxBodyIden
   if (!normalized) return false;
   const matchedState = MULTI_WORD_STATE_NAMES.find((state) => normalized.includes(state.name.toUpperCase()));
   if (matchedState && matchedState.code !== normalizedStateCode) return true;
-  return KNOWN_NON_US_JURISDICTIONS.some((name) => normalized.includes(name));
+  // New Mexico contains a country name; remove that complete state phrase before
+  // checking for foreign jurisdictions, while retaining any separate Mexico reference.
+  const countryText = normalized.replace(/\bNEW\s+MEXICO\b/g, "");
+  return KNOWN_NON_US_JURISDICTIONS.some((name) => countryText.includes(name));
 }

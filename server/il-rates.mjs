@@ -142,12 +142,13 @@ export async function readOfficialIlRates({ fetchImpl = fetch, now = new Date(),
       stateRate: ILLINOIS_STATE_RATE,
       sourceHash: createHash("sha256").update(text).digest("hex"),
       rates: parsed.rates,
+      addressOverrideLocationIds: parsed.rows.filter((row) => row.addressOverride).map((row) => row.locationId),
       counts: {
         counties: parsed.counties.length,
         cities: parsed.rates.filter((row) => row.jurisdictionType === "city").length,
         specialJurisdictions: addressOverrides,
       },
-      boundaryStatus: `${parsed.rates.length} jurisdiction-wide general-merchandise rates across ${parsed.counties.length}/102 counties validated. ${addressOverrides} address-override location(s) are intentionally excluded until TaxAP has an approved, practical address-level matching design; A+ tax-body matching is not yet connected.`,
+      boundaryStatus: `${parsed.rates.length} jurisdiction-wide general-merchandise rates across ${parsed.counties.length}/102 counties validated. ${addressOverrides} address-override location(s) are intentionally excluded until TaxAP has an approved, practical address-level matching design. Assigned-code comparisons do not validate delivery addresses.`,
     };
     cachedSnapshot = snapshot;
     cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000;

@@ -26,10 +26,10 @@ function sharedStrings(xml) {
 export function workbookRows(sheetXml, strings) {
   return [...String(sheetXml).matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gi)].map((row) => {
     const values = {};
-    for (const cell of row[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/gi)) {
+    for (const cell of row[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/gi)) {
       const reference = cell[1].match(/\br=["']([A-Z]+)\d+["']/i)?.[1]?.toUpperCase();
       if (!reference) continue;
-      const raw = cell[2].match(/<v>([\s\S]*?)<\/v>/i)?.[1] ?? "";
+      const raw = (cell[2] ?? "").match(/<v>([\s\S]*?)<\/v>/i)?.[1] ?? "";
       values[reference] = /\bt=["']s["']/i.test(cell[1]) ? strings[Number(raw)] ?? "" : decodeXml(raw);
     }
     return values;

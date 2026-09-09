@@ -1,5 +1,13 @@
 # Missouri — official source connected
 
+## Limited comparison reader — September 9, 2026
+
+`server/mo-aplus.mjs` is registered in the findings batch and state drawer. It compares only unique exact full jurisdiction names whose official general sales/use totals agree. All source records participate in ambiguity detection, including special districts and differing-use records. No filing code is inferred from an internal numeric suffix, a partial city name or a matching rate. County/district qualifiers are retained; credits and catch-all codes are excluded from matching.
+
+Current local Windows-authenticated aggregate validation: 520 assignments, 27 compared across eight groups, four differences, 488 unmatched, five cross-state. This is deliberately limited reader coverage, **not completed Missouri jurisdiction coverage**. The large unmatched population still requires authoritative filing-code mapping and, where totals differ, identification of the applicable sales/use treatment. Earlier source-only status below is historical; its address/mapping requirements remain open.
+
+Build, lint and all 228 tests passed. No SQL changes, customer/address output, A+ writes or deployment.
+
 Status: **official-rate inventory connected and live-validated September 4, 2026; A+ matching remains intentionally unresolved.**
 
 ## Official source

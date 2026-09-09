@@ -1,5 +1,9 @@
 # District of Columbia — official-rate adapter status
 
+## Comparison wiring — September 8, 2026
+
+The flat-state comparison now reads `DC000` against the existing effective-dated official source, feeds current differences to the shared inbox, and opens the comparison in the state drawer. Other-jurisdiction assignments such as `HN000` stay separate. Fixture tests execute the source schedule parser and connector comparison on September 30 and October 1 to verify the 6% to 7% transition. The response retains the official snapshot and its schedule/evidence. Business treatment remains a human decision. No new SQL or live A+ validation was performed.
+
 ## What is connected
 
 TaxAP reads the District of Columbia Office of Tax and Revenue's current tax-law-change notice. The adapter validates the complete enacted general-rate schedule rather than accepting a single undated percentage:

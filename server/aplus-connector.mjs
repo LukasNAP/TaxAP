@@ -22,6 +22,22 @@ import { readFloridaAplusComparison } from "./fl-aplus.mjs";
 import { readPennsylvaniaAplusComparison } from "./pa-aplus.mjs";
 import { readOhioAplusComparison } from "./oh-aplus.mjs";
 import { readVirginiaAplusComparison } from "./va-aplus.mjs";
+import { readNevadaAplusComparison } from "./nv-aplus.mjs";
+import { readWashingtonAplusComparison } from "./wa-aplus.mjs";
+import { readNebraskaAplusComparison } from "./ne-aplus.mjs";
+import { readWestVirginiaAplusComparison } from "./wv-aplus.mjs";
+import { readIllinoisAplusComparison } from "./il-aplus.mjs";
+import { readSouthDakotaAplusComparison } from "./sd-aplus.mjs";
+import { readWisconsinAplusComparison } from "./wi-aplus.mjs";
+import { readUtahAplusComparison } from "./ut-aplus.mjs";
+import { readNewMexicoAplusComparison } from "./nm-aplus.mjs";
+import { readArkansasAplusComparison } from "./ar-aplus.mjs";
+import { readTennesseeAplusComparison } from "./tn-aplus.mjs";
+import { readOklahomaAplusComparison } from "./ok-aplus.mjs";
+import { readKansasAplusComparison } from "./ks-aplus.mjs";
+import { readMinnesotaAplusComparison } from "./mn-aplus.mjs";
+import { readMissouriAplusComparison } from "./mo-aplus.mjs";
+import { readSouthCarolinaAplusComparison } from "./sc-aplus.mjs";
 import { readOfficialVaRates } from "./va-rates.mjs";
 import { readNewYorkAplusComparison } from "./ny-aplus.mjs";
 import { readOfficialNyRates } from "./ny-rates.mjs";
@@ -470,6 +486,8 @@ export async function readNewJerseyAplusComparison() {
 // the other four have their own dedicated adapters (server/md-rates.mjs, me-rates.mjs, ct-rates.mjs,
 // ma-rates.mjs, ms-rates.mjs).
 const FLAT_STATE_APLUS_ADAPTERS = {
+  DC: { expectedTaxBody: "DC000", readOfficial: readOfficialDcRates },
+  RI: { expectedTaxBody: "RI000", readOfficial: () => readOfficialSstStateRates("RI") },
   MD: { expectedTaxBody: "MD000", readOfficial: readOfficialMdRates },
   IN: { expectedTaxBody: "IN000", readOfficial: () => readOfficialSstStateRates("IN") },
   KY: { expectedTaxBody: "KY000", readOfficial: () => readOfficialSstStateRates("KY") },
@@ -480,16 +498,17 @@ const FLAT_STATE_APLUS_ADAPTERS = {
   MS: { expectedTaxBody: "MS000", readOfficial: readOfficialMsRates },
 };
 
-export async function readFlatStateAplusComparison(stateCode) {
+export async function readFlatStateAplusComparison(stateCode, { readState = readStateDetail, readOfficial } = {}) {
   const config = FLAT_STATE_APLUS_ADAPTERS[stateCode];
   if (!config) throw new Error(`No flat-state A+ reconciliation is configured for ${stateCode}.`);
   const [stateDetail, officialSnapshot] = await Promise.all([
-    readStateDetail(stateCode),
-    config.readOfficial(),
+    readState(stateCode),
+    (readOfficial ?? config.readOfficial)(),
   ]);
   return {
     ...reconcileFlatStateAplus({ stateCode, expectedTaxBody: config.expectedTaxBody, stateDetail, officialRate: officialSnapshot.stateRate }),
     stateDetail,
+    officialSnapshot,
   };
 }
 
@@ -500,8 +519,24 @@ export async function readFlatStateAplusComparison(stateCode) {
 // compare. AR still needs a real city-to-county crosswalk before a city total can be calculated.
 // California is also deliberately constrained: its A+ description must itself identify exactly one
 // CDTFA city or county row. Same-named cities across counties remain unmatched rather than guessed.
-// Missouri still needs its own official-source adapter and mapping investigation.
+// Missouri uses a limited exact filing-name reader; ambiguous identities remain unmatched.
 const DIRECT_MAPPING_APLUS_READERS = {
+  UT: readUtahAplusComparison,
+  NM: readNewMexicoAplusComparison,
+  AR: readArkansasAplusComparison,
+  TN: readTennesseeAplusComparison,
+  OK: readOklahomaAplusComparison,
+  KS: readKansasAplusComparison,
+  MN: readMinnesotaAplusComparison,
+  MO: readMissouriAplusComparison,
+  SC: readSouthCarolinaAplusComparison,
+  WI: readWisconsinAplusComparison,
+  SD: readSouthDakotaAplusComparison,
+  IL: readIllinoisAplusComparison,
+  NE: readNebraskaAplusComparison,
+  WV: readWestVirginiaAplusComparison,
+  WA: readWashingtonAplusComparison,
+  NV: readNevadaAplusComparison,
   FL: readFloridaAplusComparison,
   PA: readPennsylvaniaAplusComparison,
   OH: readOhioAplusComparison,

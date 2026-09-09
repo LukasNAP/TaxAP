@@ -220,10 +220,10 @@ const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 // below and which states show the shared FlatStateAplusPanel in the state drawer. Deliberately does
 // NOT include RI: RI's sole tax body is confirmed live at 0% against RI's real flat 7% rate, an open
 // human decision, not wired A+ matching (see docs/pending-business-decisions.md).
-const FLAT_STATE_APLUS_STATES = new Set(["NJ", "MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS"]);
+const FLAT_STATE_APLUS_STATES = new Set(["NJ", "MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS", "RI", "DC"]);
 // States confirmed live (2026-08-27) to have many A+ codes each mapping directly to one real
 // jurisdiction (no address matching needed) - see server/direct-mapping-aplus.mjs.
-const DIRECT_MAPPING_APLUS_STATES = new Set(["FL", "PA", "OH", "VA", "NY", "AZ", "AL"]);
+const DIRECT_MAPPING_APLUS_STATES = new Set(["FL", "PA", "OH", "VA", "NY", "AZ", "AL", "TX", "CA", "CO", "NV", "WA", "NE", "WV", "IL", "SD", "WI", "UT", "NM", "AR", "TN", "OK", "KS", "MN", "MO", "SC"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
   if (stateCode === "GA") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction components", sourceName: "Georgia DOR via Streamlined Sales Tax rate file", sourceUrl: "https://dor.georgia.gov/sales-tax-rates-general" };

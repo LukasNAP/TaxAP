@@ -1,5 +1,28 @@
 # TN — findings
 
+## Implemented comparison — September 8, 2026
+
+`server/tn-aplus.mjs` now reads distinct jurisdiction attributes from the [official lookup service](https://tnmap.tn.gov/arcgis/rest/services/COMMUNITY/SST/MapServer/4), linked by the state's [public lookup application](https://tnmap.tn.gov/sst/sst.html). It requests only SITUS, jurisdiction identifiers, county, general rates and surcharge fields; no addresses or customer information. The service returns 474 distinct records; 411 have resolvable county or ordinary-city identities through the current SST inventory. The reader validates all 95 counties, transfer completeness, general interstate/intrastate agreement and matching effective SST base components, then includes the explicit transit surcharge.
+
+Exact A+ SITUS and name must agree. Duplicate code records, unresolved special jurisdictions, missing definitions, abbreviations and inconsistent names remain unmatched. The source's postal city field is deliberately not used as a municipality identity. The plain Nashville description remains unmatched against the longer Census metropolitan-government name; no alias was inferred. This does not establish delivery-address boundaries or transaction-specific tax treatment.
+
+Current local Windows-authenticated A+ aggregate: 938 assignments, 608 compared across 79 groups, three differences, 328 unmatched, two cross-state. Build, lint and all 215 tests passed. Registered in batch findings and state drawer. No SQL changes or A+ writes. The following source-audit narrative records the preceding investigation; its municipality-source blocker was resolved by the jurisdiction service above.
+
+## Current source audit — September 8, 2026
+
+**Do not implement comparisons from the historical Nashville/Davidson findings below.** Tennessee DOR's current local-rate map states that a 0.5% Davidson transit surcharge began February 1, 2025, raising the effective local rate to 2.75%. The public map's CSV independently returns Davidson (Situs 1900, FIPS 037) at 0.0275, with surcharge effective date February 1, 2025. With the published general state rate, this is 9.75%, not the 9.25% used in the older mismatch table. This invalidates that table's 66-assignment Davidson/Nashville mismatch claim as a current implementation basis; no fresh A+ comparison was performed in this audit.
+
+The existing SST adapter currently resolves `TNR2026Q4AUG21.csv`. Its date-filtered Davidson/Nashville records still expose 2.25% components, with Nashville's record ending October 31, 2026. These component records alone do not prove the full applicable local total. Do not simply add 7% to all TN city/county rows or stack every unnamed special record.
+
+The official embedded map is a Tableau view. Its unauthenticated CSV export was verified HTTP 200 with `text/csv`, 95 county records, county names, SITUS identifiers, FIPS identifiers, effective dates and local totals. It does **not** include the tooltip municipality inventory in this export. This is a useful county crosswalk, not statewide city comparison completion. The next implementation step is to retrieve/validate the municipality and multiple-county detail and complete surcharge handling before registering the TN reader. Preserve this unresolved scope rather than manufacturing a county fallback for city assignments.
+
+Sources:
+- [DOR local rate map and surcharge notice](https://www.tn.gov/revenue/taxes/sales-and-use-tax/local-sales-tax/local-sales-tax-rates-map.html)
+- [Official map county CSV](https://data.tn.gov/t/Public/views/SalesTaxRate/LocalSalesTaxRate.csv?:showVizHome=no)
+- [DOR state and local rate scope](https://www.tn.gov/content/tn/revenue/taxes/sales-and-use-tax/due-dates-and-tax-rates.html)
+
+## Historical investigation (corrections above take precedence)
+
 Status: **Layer 2 investigated for the first time 2026-08-26** (Layer 1/official source was already `connected` before this — a direct Streamlined Sales Tax drop-in per `docs/roadmap-50-states.md` — but nobody had checked A+'s actual `XATXBD` tax-body setup against it until now). A+ matching is **not built**. Findings: TN needs real address-level (incorporated-city-vs-unincorporated-county) matching, similar in shape to SC — confirmed by two clean live examples, not assumed from OH/SST-connected status. **7 confirmed live rate mismatches found** covering 85 of 929 active ship-tos (~9.1%), plus 1 ambiguous case and a large DO-NOT-USE-shaped placeholder (`TN000`, 19.7% of active ship-tos). Do not compare or build without human decisions on both.
 
 Live A+ (`XATXBD` + active `ADDR`/`CUSMS` ship-to assignments) checked 2026-08-26 via `scripts/investigate-state.mjs TN`, cross-checked against the current Streamlined rate file (`TNR2026Q3JUN11.csv`) via `scripts/fetch-official-rates.mjs TN`. Census/general-knowledge confirms **95 counties** for Tennessee — the official file's 95 county rows match this exactly.

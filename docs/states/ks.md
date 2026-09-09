@@ -1,5 +1,17 @@
 # Kansas — official-rate adapter status
 
+## Current comparison — September 8, 2026
+
+`server/ks-aplus.mjs` now selects the linked current-quarter Publication 1700 workbook, validates its effective-period cover and general-rate columns, and reconciles published totals against state/county/city/special components. It retains 1,071 named jurisdictions (748 ordinary and 323 special), without retaining address continuation rows. Food columns are not used for general-rate comparisons.
+
+Legacy numeric A+ codes use unique exact published jurisdiction names, preserving county qualifiers. Alphabetic codes also require the official code to agree. Special districts require an explicit matching code and full name; a city description never implies special-district membership. Truncated names, catch-all codes, duplicates and missing definitions remain unmatched. This is assigned-jurisdiction rate monitoring, not confirmation of physical delivery boundaries.
+
+Current local Windows-authenticated aggregate: 270 assignments, 209 compared across 48 groups, five differences, 60 unmatched and one cross-state. Registered in batch findings and the state drawer. Build, lint and all 220 tests passed. No SQL changes or A+ writes.
+
+Sources: [KDOR quarterly publication directory](https://www.ksrevenue.gov/salesratechanges.html) and [Q3 2026 Publication 1700](https://www.ksrevenue.gov/pdf/pub17000726.xlsx).
+
+The unwired status below is historical and superseded by this implementation.
+
 ## What is connected
 
 TaxAP reads the current Kansas Streamlined Sales Tax rate file selected from the publisher's directory, with Kansas Department of Revenue's quarterly local-sales-tax update page retained as the primary human-readable source.

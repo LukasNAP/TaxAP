@@ -6,6 +6,10 @@ Goal: extend TaxAP's dashboard from 2 states (NC, GA) to all 50. See `docs/roadm
 
 This file exists so that adding a state is a repeatable *procedure* (the same questions get asked every time), not that states are a repeatable *category* (the same answers apply across states).
 
+## Current comparison status — September 8, 2026
+
+Use `docs/comparison-rollout.md` and current source code for the active implementation inventory: 38 states plus D.C. have comparison readers, including new NV/RI/DC/WA wiring. The state investigations below are historical evidence and may predate implemented comparisons. Official-source coverage remains 47 connected plus four no-general-sales-tax classifications.
+
 ## Step 0 — check current status before assuming anything
 
 Before starting a state, check `docs/roadmap-50-states.md` for where it currently sits — that file has the authoritative, most-recently-verified status for every one of the 51 jurisdictions (official source found/verified, machine-readable or not, A+ matching built or not). Don't re-derive this from scratch, and don't trust a summary of it from memory — read the current file.

@@ -2,7 +2,13 @@
 
 Last updated: September 4, 2026 — all 51 jurisdictions are now accounted for at the official-source layer: 47 have connected, validated official-rate/policy adapters, and DE, MT, NH, and OR are explicitly classified as having no general sales tax. Missouri is the newest connection. The dated August 26 research sections below remain useful source history, but their old counts are not the current registry total.
 
-## Where we actually stand
+## Current implementation — September 8, 2026
+
+Official-source coverage is complete at the registry layer: 47 connected adapters and four no-general-sales-tax classifications. A+ comparisons are now wired for 38 states plus D.C. See `docs/comparison-rollout.md` for the exact list and remaining 8 jurisdictions. The shared multistate inbox is already implemented; the NC-only dashboard statements in the dated research below are historical, not current work instructions.
+
+## Historical research and planning (August 26 through September 4)
+
+### Where we stood before the multistate comparison wiring
 
 Getting all 51 jurisdictions into the "Needs attention" dashboard is not one task — it's three separable layers, and today's coverage is uneven across all three:
 

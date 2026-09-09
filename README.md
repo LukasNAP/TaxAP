@@ -8,7 +8,7 @@ Status as of September 8, 2026:
 
 - The application UI and Docker deployment are working.
 - The official-source registry covers all 50 states plus the District of Columbia: 47 entries have connected source adapters, while Delaware, Montana, New Hampshire, and Oregon are intentionally excluded because they have no general sales tax.
-- Automatic A+ comparison logic is currently wired for 21 states: Alabama, Arizona, California, Colorado, Connecticut, Florida, Georgia, Indiana, Kentucky, Maine, Maryland, Massachusetts, Michigan, Mississippi, New Jersey, New York, North Carolina, Ohio, Pennsylvania, Texas, and Virginia.
+- Automatic A+ comparison logic is currently wired for 38 states plus D.C.: Alabama, Arizona, Arkansas, California, Colorado, Connecticut, Florida, Georgia, Illinois, Indiana, Kansas, Kentucky, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, Missouri, Nebraska, Nevada, New Jersey, New Mexico, New York, North Carolina, Ohio, Oklahoma, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, Texas, Utah, Virginia, Washington, West Virginia, Wisconsin, and the District of Columbia. These compare supported assigned tax bodies; they do not certify every ship-to's physical jurisdiction or business tax treatment.
 - Other connected official sources can be viewed and refreshed, but they do not yet produce automatic A+ discrepancy findings.
 - The local Windows application can read A+ through the existing `SQL03` to `APLUS` linked-server path using the signed-in Windows account.
 - The deployment on `apdock01` serves the application over HTTPS, but its A+ connector remains on the validated fallback snapshot until a non-interactive Microsoft Entra identity receives read-only SQL access.

@@ -1,6 +1,14 @@
 # New Mexico — official GRT district inventory
 
-Last verified: September 3, 2026
+Last verified: September 8, 2026
+
+## Current comparison implementation
+
+`server/nm-aplus.mjs` is registered in the aggregate findings batch and state drawer. It compares the official GRT total only when the full five-digit A+ suffix and municipality name agree with the official location. County qualifiers are preserved. County remainders, special classes, truncated names, short codes and catch-all codes remain unmatched; this reader does not establish delivery-address boundaries or exemption treatment.
+
+Current local Windows-authenticated aggregate validation: 89 assignments, 23 compared across 12 groups, one rate difference, 65 unmatched and one cross-state assignment. The historical former-state-base finding below is not current: the fresh check found one difference among the matched groups. No SQL was changed. An initial aggregate attempt failed; a subsequent fresh read succeeded. Hosted connectivity remains unvalidated.
+
+Fixed the shared jurisdiction classifier that confused New Mexico with the country Mexico. Regression tests retain actual Mexico and other-state exclusions. Production build, lint and all 209 tests passed. The older withholding conditions below now apply to unresolved assignments and address validation, not the implemented exact-identity reader.
 
 ## What is connected
 

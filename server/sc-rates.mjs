@@ -1,8 +1,5 @@
+import { extractSouthCarolinaPdf } from "./sc-pdf.mjs";
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
 export const SC_ST575_URL = "https://dor.sc.gov/sites/dor/files/forms/ST575.pdf";
 export const SC_STATE_RATE = 6;
@@ -107,30 +104,6 @@ export function parseSt575Table(text) {
   return { asOfDate, countyRows, municipalityRows };
 }
 
-async function extractTextWithPdftotext(pdfBuffer) {
-  const dir = await mkdtemp(path.join(tmpdir(), "taxap-sc-"));
-  const inputPath = path.join(dir, "st575.pdf");
-  try {
-    await writeFile(inputPath, pdfBuffer);
-    const text = await new Promise((resolve, reject) => {
-      execFile("pdftotext", ["-table", "-enc", "UTF-8", inputPath, "-"], { maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
-        if (error) {
-          if (error.code === "ENOENT") {
-            reject(new Error("pdftotext (poppler-utils) is not installed on this host; the ST-575 adapter cannot run without it."));
-          } else {
-            reject(new Error(`pdftotext failed while reading ST-575: ${error.message}`));
-          }
-          return;
-        }
-        resolve(stdout);
-      });
-    });
-    return text;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
 async function downloadSt575(fetchImpl) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -193,16 +166,8 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-/**
- * Reads and validates South Carolina's official ST-575 rate table. Unlike every other connected
- * state adapter, the source is a PDF, not HTML/XLSX — this shells out to the system `pdftotext`
- * (poppler-utils) rather than hand-parsing PDF object/content streams, which the project judged
- * too high-risk to reimplement correctly (see references/states/sc.md in the taxap-dev skill).
- *
- * This produces only the official-source half of SC support. A+ tax-body matching (mapping these
- * county/municipality rows to real SC0xx codes in XATXBD) is a separate, unbuilt step.
- */
-export async function readOfficialScRates({ fetchImpl = fetch, now = new Date(), bypassCache = false, extractText = extractTextWithPdftotext } = {}) {
+/** Reads ST-575 using the bundled PDF.js table extractor and validates every county row. */
+export async function readOfficialScRates({ fetchImpl = fetch, now = new Date(), bypassCache = false, extractText = extractSouthCarolinaPdf } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {
@@ -225,7 +190,7 @@ export async function readOfficialScRates({ fetchImpl = fetch, now = new Date(),
         cities: parsed.municipalityRows.length,
         specialJurisdictions: 0,
       },
-      boundaryStatus: `${parsed.countyRows.length}/46 county totals and ${parsed.municipalityRows.length} municipality totals parsed and validated from ST-575. A+ tax-body matching (XATXBD SC0xx codes) is not yet connected — see the taxap-dev skill's SC notes.`,
+      boundaryStatus: `${parsed.countyRows.length}/46 county totals and ${parsed.municipalityRows.length} municipality totals parsed and validated from ST-575. Assigned-name comparisons are connected; multi-county and address-level matching remain unresolved.`,
     };
     cachedSnapshot = snapshot;
     cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000;
