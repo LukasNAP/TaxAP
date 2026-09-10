@@ -21,7 +21,7 @@ const decision = {
 test("persists review status and an append-only event history", () => {
   const store = createReviewStore({ filename: ":memory:" });
   try {
-    assert.equal(store.listCases().length, 1);
+    assert.equal(store.listCases().length, 0);
     const started = store.saveDecision(decision);
     assert.equal(started.status, "in_review");
     assert.equal(started.assignedTo, "Liv");
@@ -54,10 +54,14 @@ test("serves review history without querying A+", async () => {
     assert.equal(savedResponse.status, 200);
     assert.equal((await savedResponse.json()).case.status, "in_review");
 
+    const staleResponse = await fetch(`${base}/api/reviews`, { method: "POST", headers, body: JSON.stringify({ ...decision, expectedEventId: null }) });
+    assert.equal(staleResponse.status, 409);
+    assert.match((await staleResponse.json()).error, /Another review decision/);
+
     const listResponse = await fetch(`${base}/api/reviews`, { headers });
     assert.equal(listResponse.status, 200);
     const payload = await listResponse.json();
-    assert.equal(payload.cases.length, 2);
+    assert.equal(payload.cases.length, 1);
     assert.equal(payload.cases.find((item) => item.findingKey === decision.findingKey).events.length, 1);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

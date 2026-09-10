@@ -1,3 +1,4 @@
+import { comparisonHealth } from "./comparison-health.mjs";
 import { DefaultAzureCredential } from "@azure/identity";
 import sql from "mssql";
 import sqlWindows from "mssql/msnodesqlv8.js";
@@ -22,6 +23,11 @@ import { readFloridaAplusComparison } from "./fl-aplus.mjs";
 import { readPennsylvaniaAplusComparison } from "./pa-aplus.mjs";
 import { readOhioAplusComparison } from "./oh-aplus.mjs";
 import { readVirginiaAplusComparison } from "./va-aplus.mjs";
+import { reconcileConfirmedNoTax } from "./no-tax-policy-aplus.mjs";
+import { readLouisianaAplusComparison } from "./la-aplus.mjs";
+import { readIdahoAplusComparison } from "./id-aplus.mjs";
+import { readIowaAplusComparison } from "./ia-aplus.mjs";
+import { readVermontAplusComparison } from "./vt-aplus.mjs";
 import { readNevadaAplusComparison } from "./nv-aplus.mjs";
 import { readWashingtonAplusComparison } from "./wa-aplus.mjs";
 import { readNebraskaAplusComparison } from "./ne-aplus.mjs";
@@ -477,7 +483,7 @@ export async function readNewJerseyAplusComparison() {
     readStateDetail("NJ"),
     readOfficialNjRates(),
   ]);
-  return { ...reconcileNewJerseyAplus({ stateDetail, officialSnapshot }), stateDetail };
+  return { ...reconcileNewJerseyAplus({ stateDetail, officialSnapshot }), stateDetail, officialSnapshot };
 }
 
 // States confirmed live (2026-08-26) to be a single flat statewide A+ tax body with no local-option
@@ -521,6 +527,14 @@ export async function readFlatStateAplusComparison(stateCode, { readState = read
 // CDTFA city or county row. Same-named cities across counties remain unmatched rather than guessed.
 // Missouri uses a limited exact filing-name reader; ambiguous identities remain unmatched.
 const DIRECT_MAPPING_APLUS_READERS = {
+  AK: (detail) => reconcileConfirmedNoTax("AK", detail),
+  HI: (detail) => reconcileConfirmedNoTax("HI", detail),
+  ND: (detail) => reconcileConfirmedNoTax("ND", detail),
+  WY: (detail) => reconcileConfirmedNoTax("WY", detail),
+  LA: readLouisianaAplusComparison,
+  ID: readIdahoAplusComparison,
+  IA: readIowaAplusComparison,
+  VT: readVermontAplusComparison,
   UT: readUtahAplusComparison,
   NM: readNewMexicoAplusComparison,
   AR: readArkansasAplusComparison,
@@ -549,10 +563,10 @@ const DIRECT_MAPPING_APLUS_READERS = {
   CO: readColoradoAplusComparison,
 };
 
-export async function readDirectMappingAplusComparison(stateCode) {
+export async function readDirectMappingAplusComparison(stateCode, { readState = readStateDetail } = {}) {
   const reader = DIRECT_MAPPING_APLUS_READERS[stateCode];
   if (!reader) throw new Error(`No direct-mapping A+ reconciliation is configured for ${stateCode}.`);
-  const stateDetail = await readStateDetail(stateCode);
+  const stateDetail = await readState(stateCode);
   return { ...(await reader(stateDetail)), stateDetail };
 }
 
@@ -577,21 +591,22 @@ export async function readAllWiredStateFindings() {
 
   const findings = [];
   const failedStates = [];
+  const stateChecks = [];
 
-  if (njResult.status === "fulfilled") findings.push(...flatStateFindingsFromReconciliation(njResult.value));
+  if (njResult.status === "fulfilled") { findings.push(...flatStateFindingsFromReconciliation(njResult.value)); stateChecks.push(comparisonHealth(njResult.value)); }
   else failedStates.push("NJ");
 
   flatResults.forEach((result, index) => {
-    if (result.status === "fulfilled") findings.push(...flatStateFindingsFromReconciliation(result.value));
+    if (result.status === "fulfilled") { findings.push(...flatStateFindingsFromReconciliation(result.value)); stateChecks.push(comparisonHealth(result.value)); }
     else failedStates.push(flatStateCodes[index]);
   });
 
   directResults.forEach((result, index) => {
-    if (result.status === "fulfilled") findings.push(...directMappingFindingsFromReconciliation(result.value));
+    if (result.status === "fulfilled") { findings.push(...directMappingFindingsFromReconciliation(result.value)); stateChecks.push(comparisonHealth(result.value)); }
     else failedStates.push(directMappingCodes[index]);
   });
 
-  return { findings, failedStates, retrievedAt: new Date().toISOString() };
+  return { findings, failedStates, stateChecks, retrievedAt: new Date().toISOString() };
 }
 
 export function buildGeorgiaAddressQuery() {
@@ -720,7 +735,7 @@ export function createConnectorServer({ reviews } = {}) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Invalid review request";
         console.error(JSON.stringify({ event: "review_decision", ok: false, message }));
-        return sendJson(response, 400, { error: message }, responseOrigin);
+        return sendJson(response, error?.statusCode === 409 ? 409 : 400, { error: message }, responseOrigin);
       }
     }
 

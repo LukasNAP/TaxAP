@@ -1,5 +1,7 @@
 "use client";
 
+import { findingDecisionKey, findingReviewEvidence } from "./finding-review";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   countyCoverage,
@@ -164,9 +166,11 @@ type DirectMappingFinding = {
   matched: boolean;
 };
 type DirectMappingAplusReconciliation = {
+  noTaxPolicy?: { confirmedOn: string; description: string; approvedTaxBodies: string[] };
+  comparisonScope?: "sales";
   stateCode: string;
   retrievedAt: string;
-  totals: { activeShipTos: number; comparedShipTos: number; crossStateShipTos: number; misinputShipTos: number; unmatchedShipTos: number };
+  totals: { activeShipTos: number; comparedShipTos: number; crossStateShipTos: number; misinputShipTos: number; unmatchedShipTos: number; intentionalNoTaxShipTos?: number };
   findings: DirectMappingFinding[];
   crossStateAssignments: StateTaxBody[];
   misinputAssignments: StateTaxBody[];
@@ -223,7 +227,7 @@ const NO_GENERAL_SALES_TAX_STATES = new Set(["DE", "MT", "NH", "OR"]);
 const FLAT_STATE_APLUS_STATES = new Set(["NJ", "MD", "IN", "KY", "MI", "ME", "CT", "MA", "MS", "RI", "DC"]);
 // States confirmed live (2026-08-27) to have many A+ codes each mapping directly to one real
 // jurisdiction (no address matching needed) - see server/direct-mapping-aplus.mjs.
-const DIRECT_MAPPING_APLUS_STATES = new Set(["FL", "PA", "OH", "VA", "NY", "AZ", "AL", "TX", "CA", "CO", "NV", "WA", "NE", "WV", "IL", "SD", "WI", "UT", "NM", "AR", "TN", "OK", "KS", "MN", "MO", "SC"]);
+const DIRECT_MAPPING_APLUS_STATES = new Set(["AK", "HI", "ND", "WY", "LA", "ID", "IA", "VT", "FL", "PA", "OH", "VA", "NY", "AZ", "AL", "TX", "CA", "CO", "NV", "WA", "NE", "WV", "IL", "SD", "WI", "UT", "NM", "AR", "TN", "OK", "KS", "MN", "MO", "SC"]);
 const FALLBACK_OFFICIAL_SOURCES: OfficialSourceState[] = Array.from(STATE_NAME_BY_CODE.entries()).map(([stateCode, stateName]) => {
   if (stateCode === "NC") return { stateCode, stateName, status: "connected", adapter: "state-dor-html", coverage: "county", sourceName: "North Carolina Department of Revenue", sourceUrl: sources[0].url };
   if (stateCode === "GA") return { stateCode, stateName, status: "connected", adapter: "sst-rate-file", coverage: "state, county, city, and special-jurisdiction components", sourceName: "Georgia DOR via Streamlined Sales Tax rate file", sourceUrl: "https://dor.georgia.gov/sales-tax-rates-general" };
@@ -302,7 +306,7 @@ function reviewDateKey(county: ComparedCounty) {
 }
 
 function reviewFindingKey(county: ComparedCounty) {
-  return `${county.taxBody}-${reviewDateKey(county)}`;
+  return `${county.taxBody}-${reviewDateKey(county)}:a${county.currentRate ?? "unknown"}:o${county.officialRate ?? "unknown"}`;
 }
 
 function initializeComparisons(coverage: CountyCoverage[]): ComparedCounty[] {
@@ -438,6 +442,10 @@ export default function Home() {
   // populating it never triggers a re-render on its own — openState reads/writes it directly.
   const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
   const [stateDrawerCheckedAt, setStateDrawerCheckedAt] = useState<number | null>(null);
+  const [selectedFinding, setSelectedFinding] = useState<JurisdictionFinding | null>(null);
+  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[] }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [] });
+  const [gaCheckStatus, setGaCheckStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [gaCheckedAt, setGaCheckedAt] = useState<string | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<ComparedCounty | null>(null);
   const [selectedCase, setSelectedCase] = useState<ResolvedCase | null>(null);
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
@@ -456,6 +464,7 @@ export default function Home() {
     const closeDrawer = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedCounty(null);
+        setSelectedFinding(null);
         setSelectedCase(null);
         setSelectedReviewCase(null);
         setSelectedState(null);
@@ -477,11 +486,12 @@ export default function Home() {
       if (!response.ok) throw new Error("Review history unavailable");
       const payload = await response.json() as { cases: ReviewCase[] };
       setReviewCases(payload.cases);
+      setSelectedReviewCase((current) => current ? payload.cases.find((record) => record.findingKey === current.findingKey) ?? current : null);
       setReviewStoreStatus("ready");
     } catch {
       setReviewStoreStatus("error");
     }
-  }, []);
+  }, [setSelectedReviewCase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refreshReviewCases(), 0);
@@ -566,16 +576,21 @@ export default function Home() {
   // Kept independent from refreshLiveSnapshot above (its own callback, its own try/catch) so a
   // Georgia failure can never affect NC's refresh, and so NC's memoized callback body is untouched.
   const refreshGaBoundary = useCallback(async () => {
+    setGaCheckStatus("loading");
     const apiBase = apiBaseUrl();
     if (!apiBase) {
+      setGaCheckStatus("error");
       setGaBoundaryLoaded(true); // offline mode: no live source to wait on, so there's nothing to load
       return;
     }
     try {
-      const response = await fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      const response = await fetch(`${apiBase}/api/official/states/GA/boundary`, { signal: AbortSignal.timeout(120_000), method: "POST", headers: { "Content-Type": "application/json" } });
       if (!response.ok) throw new Error("Georgia boundary reconciliation unavailable");
       setDashboardGaBoundary(await response.json() as GaBoundaryReconciliation);
+      setGaCheckStatus("ready");
+      setGaCheckedAt(new Date().toISOString());
     } catch {
+      setGaCheckStatus("error");
       // The dashboard's Georgia findings simply hold their last known value on failure — same
       // fail-quiet-but-don't-guess behavior as the NC official-rate fetch a few lines up.
     } finally {
@@ -604,17 +619,22 @@ export default function Home() {
   // Kept independent from NC's and GA's refresh above for the same reason refreshGaBoundary is its
   // own callback: one wired state (or the whole batch) failing must never affect the others.
   const refreshOtherFindings = useCallback(async () => {
+    setBatchHealth((current) => ({ ...current, status: "loading" }));
     const apiBase = apiBaseUrl();
     if (!apiBase) {
+      setBatchHealth((current) => ({ ...current, status: "error" }));
       setOtherFindingsLoaded(true); // offline mode: no live source to wait on, so there's nothing to load
       return;
     }
     try {
-      const response = await fetch(`${apiBase}/api/official/findings`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      const response = await fetch(`${apiBase}/api/official/findings`, { signal: AbortSignal.timeout(120_000), method: "POST", headers: { "Content-Type": "application/json" } });
       if (!response.ok) throw new Error("Wired-state findings batch unavailable");
-      const result = await response.json() as { findings: JurisdictionFinding[] };
+      const result = await response.json() as { findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[] };
+      if (!Array.isArray(result.failedStates) || !Array.isArray(result.stateChecks)) throw new Error("Comparison coverage unavailable");
       setDashboardOtherFindings(result.findings);
+      setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks });
     } catch {
+      setBatchHealth((current) => ({ ...current, status: "error" }));
       // Holds its last known value on failure - same fail-quiet-but-don't-guess behavior as NC/GA.
     } finally {
       setOtherFindingsLoaded(true);
@@ -671,7 +691,6 @@ export default function Home() {
     () => activeCountyCoverage.filter((county) => county.comparisonStatus === "upcoming"),
     [activeCountyCoverage],
   );
-  const resolvedReviewCases = useMemo(() => reviewCases.filter((reviewCase) => reviewCase.status === "resolved" || reviewCase.status === "not_applicable"), [reviewCases]);
 
   // NC's own comparisonStatus/ComparedCounty pipeline above is untouched. This just adapts its
   // output — and Georgia's separately-fetched boundary reconciliation — into the shared shape the
@@ -737,38 +756,26 @@ export default function Home() {
       if (county) setSelectedCounty(county);
       return;
     }
-    void openState(finding.stateCode);
+    setSelectedFinding(finding);
   };
 
-  const saveCountyReview = async (county: ComparedCounty, status: ReviewStatus, actor: "Ana" | "Liv", note: string) => {
+  const saveReview = async (evidence: ReturnType<typeof findingReviewEvidence>, status: ReviewStatus, actor: "Ana" | "Liv", note: string) => {
     const apiBase = apiBaseUrl();
     if (!apiBase) throw new Error("TaxAP review storage is not configured.");
-    const findingType = county.comparisonStatus === "upcoming" ? "upcoming" : county.comparisonStatus === "recent-match" ? "recent-match" : "mismatch";
     const response = await fetch(`${apiBase}/api/reviews`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        findingKey: reviewFindingKey(county),
-        stateCode: "NC",
-        jurisdiction: `${county.county} County`,
-        taxBody: county.taxBody,
-        findingType,
-        aplusRate: county.currentRate,
-        officialRate: county.officialRate,
-        effectiveDate: reviewDateKey(county),
-        sourceUrl: county.officialSourceUrl,
-        status,
-        actor,
-        note,
-      }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...evidence, status, actor, note, expectedEventId: reviewCasesByKey.get(evidence.findingKey)?.events[0]?.id ?? null }),
     });
     const payload = await response.json() as { case?: ReviewCase; error?: string };
+    if (response.status === 409) await refreshReviewCases();
     if (!response.ok || !payload.case) throw new Error(payload.error || "The review decision could not be saved.");
     setReviewCases((current) => [payload.case!, ...current.filter((item) => item.findingKey !== payload.case!.findingKey)]);
     setSelectedReviewCase((current) => current?.findingKey === payload.case!.findingKey ? payload.case! : current);
     setReviewStoreStatus("ready");
     return payload.case;
   };
+  const saveCountyReview = (county: ComparedCounty, status: ReviewStatus, actor: "Ana" | "Liv", note: string) =>
+    saveReview({ ...findingReviewEvidence(toNcFinding(county)), findingKey: reviewFindingKey(county) }, status, actor, note);
 
   const stateSummariesByCode = useMemo(
     () => new Map((stateCoverage?.states ?? []).map((state) => [state.stateCode, state])),
@@ -827,7 +834,7 @@ export default function Home() {
     }
     const officialRequest = fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
     const boundaryRequest = cacheKey === "GA"
-      ? fetch(`${apiBase}/api/official/states/GA/boundary`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
+      ? fetch(`${apiBase}/api/official/states/GA/boundary`, { signal: AbortSignal.timeout(120_000), method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
       : null;
     const aplusEndpointRequest = hasAplusEndpoint
       ? fetch(`${apiBase}/api/official/states/${encodeURIComponent(stateCode)}/aplus`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null)
@@ -982,6 +989,23 @@ export default function Home() {
         </div>
       </header>
 
+      <section className="page-content" aria-label="Comparison coverage">
+        <div className="connector-banner" role="status"><div>
+          <span className="section-label">Comparison coverage · latest checks</span>
+          <strong>{batchHealth.status === "ready" && gaCheckStatus === "ready" && officialSnapshot && connectorStatus === "live" ? "Available checks completed; assignment gaps remain separate" : "Checks incomplete — visible findings are a partial view"}</strong>
+          <p>NC: {officialSnapshot && connectorStatus === "live" ? "completed" : "unavailable, refreshing, or snapshot"}. GA: {gaCheckStatus}{gaCheckedAt ? ` (last success ${new Date(gaCheckedAt).toLocaleString()})` : ""}. Other states: {batchHealth.status}{batchHealth.retrievedAt ? ` (last returned batch ${new Date(batchHealth.retrievedAt).toLocaleString()})` : ""}.</p>
+          {batchHealth.failedStates.length > 0 && <p>Failed state checks: {batchHealth.failedStates.join(", ")}. These states are missing from the refreshed inbox.</p>}
+          {batchHealth.status === "error" && <p>The latest batch failed. Any retained findings are from an earlier read.</p>}
+          {gaCheckStatus === "error" && <p>Georgia could not refresh. Any retained Georgia findings are from an earlier read.</p>}
+          <p>Official-source coverage is not assignment coverage. No findings does not mean every ship-to has been verified. Reviewers are manually selected; hosted A+ connectivity remains unvalidated until its end-to-end checks pass.</p>
+          <details><summary>Assignments without a rate comparison · other-state batch</summary>
+            {batchHealth.stateChecks.length === 0 ? <p>Coverage counts unavailable.</p> : batchHealth.stateChecks.map((check) => <p key={check.stateCode}>{check.stateCode}: {check.uncheckedShipTos === null ? "unknown" : check.uncheckedShipTos.toLocaleString()} unchecked or excluded; {check.intentionalNoTaxShipTos.toLocaleString()} deliberate no-tax assignments.</p>)}
+            <p>NC and GA use separate checks. Open their state details for coverage and exclusions. DE, MT, NH and OR are classified as having no general sales tax.</p>
+          </details>
+          {reviewStoreStatus === "error" && <p>Review history could not be loaded. Saved decisions may be missing from this view.</p>}
+        </div></div>
+      </section>
+
       {activeView === "dashboard" && (
         <section className="page-content" aria-labelledby="overview-title">
           <div className="intro">
@@ -1005,7 +1029,7 @@ export default function Home() {
               <strong>{connectorStatus === "live" || connectorStatus === "refreshing" ? "Read-only A+ connector active" : OFFLINE_MODE ? "Production connection intentionally disabled" : connectorStatus === "connecting" ? "Connecting to A+" : "Using the validated fallback snapshot"}</strong>
               <p>{connectorMessage}{liveSnapshot ? ` Last successful read: ${new Date(liveSnapshot.retrievedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.` : ""}</p>
             </div>
-            <button className="secondary-button" type="button" onClick={() => { void refreshLiveSnapshot(); void refreshGaBoundary(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
+            <button className="secondary-button" type="button" onClick={() => { void refreshLiveSnapshot(); void refreshGaBoundary(); void refreshOtherFindings(); void refreshReviewCases(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
           </div>
 
           <TaxTreatmentPanel snapshot={taxTreatmentSnapshot} status={taxTreatmentStatus} connectorStatus={connectorStatus} />
@@ -1043,7 +1067,7 @@ export default function Home() {
                     )) : !dashboardCountsReady ? (
                       <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+ — this can take a few seconds.</p></div></div></td></tr>
                     ) : (
-                      <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">✓</span><div><strong>No confirmed differences or upcoming changes</strong><p>{officialSnapshot ? "Every validated current NC rate matches A+, and Georgia's boundary reconciliation has no unresolved rate difference." : "The last validated snapshot has no open findings. Connect official sources during supervised validation to check for newer publications."}</p></div></div></td></tr>
+                      <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">✓</span><div><strong>No findings in the available comparisons</strong><p>{officialSnapshot ? "An empty inbox does not establish complete coverage. Check failed reads and unverified assignments above." : "The last validated snapshot has no open findings. Connect official sources during supervised validation to check for newer publications."}</p></div></div></td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1053,7 +1077,7 @@ export default function Home() {
               )}
               <div className="recent-publication">
                 <span className="status-mark">✓</span>
-                <div><span className="section-label">Recently handled publication</span><strong>Mecklenburg County · 8.25% effective July 1, 2026</strong><p>A+ now matches and the prior-rate invoices were handled by the tax team.</p></div>
+                <div><span className="section-label">Imported historical evidence</span><strong>Mecklenburg County · 8.25% effective July 1, 2026</strong><p>A+ now matches and the prior-rate invoices were handled by the tax team.</p></div>
                 <button className="secondary-button" type="button" onClick={() => setSelectedCase(resolvedCases[0])}>View evidence</button>
               </div>
             </article>
@@ -1069,7 +1093,7 @@ export default function Home() {
               {!dashboardCountsReady ? (
                 <div className="empty-queue compact"><span aria-hidden="true">…</span><div><strong>Loading review activity…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+.</p></div></div>
               ) : rateRiskFindings.length === 0 ? (
-                <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>The approval queue is clear</strong><p>{officialSnapshot ? "Every current NC county rate in A+ matches the validated NCDOR table, and Georgia's boundary reconciliation has no unresolved difference." : "The official NCDOR comparison is not currently available."}</p></div></div>
+                <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>No findings in the available comparisons</strong><p>{officialSnapshot ? "Check comparison coverage before treating this as an all-clear." : "The official NCDOR comparison is not currently available."}</p></div></div>
               ) : rateRiskFindings.slice(0, 4).map((finding) => (
                 <button className="alert-row" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                   <span className={`alert-icon comparison-${finding.comparisonStatus}`} aria-hidden="true">{finding.comparisonStatus === "mismatch" ? "!" : "↗"}</span>
@@ -1077,7 +1101,7 @@ export default function Home() {
                   <span className="shipto-count"><strong>{finding.activeShipTos.toLocaleString()}</strong><small>ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
                 </button>
               ))}
-               <div className="recent-heading"><span>Most recent resolution</span><button type="button" onClick={() => navigate("history")}>View history</button></div>
+               <div className="recent-heading"><span>Imported historical evidence</span><button type="button" onClick={() => navigate("history")}>View history</button></div>
               {resolvedCases.map((resolvedCase) => (
                 <button className="alert-row" type="button" key={resolvedCase.id} onClick={() => setSelectedCase(resolvedCase)}>
                   <span className="alert-icon resolved" aria-hidden="true">✓</span>
@@ -1197,9 +1221,9 @@ export default function Home() {
             {!dashboardCountsReady ? (
               <div className="empty-queue large"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>TaxAP is waiting for the Georgia boundary match and the other wired state comparisons before showing the review queue.</p></div></div>
             ) : rateRiskFindings.length === 0 ? (
-              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No rate-risk findings</strong><p>No confirmed rate difference currently affects an always-taxable ship-to in the completed all-state comparison.</p></div></div>
+              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No rate-risk findings</strong><p>No findings are visible in the available checks. Failed reads and unverified assignments are excluded; check the coverage summary.</p></div></div>
             ) : rateRiskFindings.map((finding) => {
-                 const reviewCase = reviewCasesByKey.get(finding.reviewFindingKey);
+                 const reviewCase = reviewCasesByKey.get(finding.stateCode === "NC" ? finding.reviewFindingKey : findingDecisionKey(finding));
                  return (
                    <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                     <span className={`status-mark comparison-${finding.comparisonStatus}`}>{finding.comparisonStatus === "upcoming" ? "↗" : "!"}</span>
@@ -1249,20 +1273,20 @@ export default function Home() {
             description="See who reviewed a publication, the evidence used, the decision, and when it was recorded."
           />
           <section className="queue-panel history-panel" aria-labelledby="history-title">
-            <div className="panel-heading"><div><span className="section-label">Completed work</span><h2>Resolved findings</h2></div><span className="count-pill">{reviewStoreStatus === "ready" ? resolvedReviewCases.length : resolvedCases.length}</span></div>
-            {reviewStoreStatus === "ready" && resolvedReviewCases.length > 0 ? resolvedReviewCases.map((reviewCase) => (
+            <div className="panel-heading"><div><span className="section-label">Saved decisions</span><h2>Review records</h2></div><span className="count-pill">{reviewStoreStatus === "ready" ? reviewCases.length : "Unavailable"}</span></div>
+            {reviewStoreStatus === "ready" && reviewCases.length > 0 ? reviewCases.map((reviewCase) => (
               <button className="history-card" type="button" key={reviewCase.findingKey} onClick={() => setSelectedReviewCase(reviewCase)}>
                 <span className="status-mark">✓</span>
-                <span><strong>{reviewCase.jurisdiction}</strong><small>{reviewCase.taxBody} · {reviewCase.assignedTo ? `resolved by ${reviewCase.assignedTo}` : "resolved"}</small></span>
+                <span><strong>{reviewCase.jurisdiction}</strong><small>{reviewCase.taxBody} · {reviewStatusLabels[reviewCase.status]}{reviewCase.assignedTo ? ` · ${reviewCase.assignedTo}` : ""}{reviewCase.importedHistory ? " · imported history" : ""}</small></span>
                 <span className="history-rate">A+ {reviewCase.aplusRate === null ? "—" : formatRate(reviewCase.aplusRate)} → <strong>{reviewCase.officialRate === null ? "—" : formatRate(reviewCase.officialRate)}</strong></span>
                 <span className="row-arrow" aria-hidden="true">›</span>
               </button>
-            )) : resolvedCases.map((resolvedCase) => (
+            )) : reviewStoreStatus === "ready" ? <p>No reviews have been recorded in this database.</p> : resolvedCases.map((resolvedCase) => (
               <button className="history-card" type="button" key={resolvedCase.id} onClick={() => setSelectedCase(resolvedCase)}>
-                <span className="status-mark">✓</span><span><strong>{resolvedCase.place}</strong><small>{resolvedCase.taxBody} · verified fallback record</small></span><span className="history-rate">{resolvedCase.previousRate} → <strong>{resolvedCase.currentRate}</strong></span><span className="row-arrow" aria-hidden="true">›</span>
+                <span className="status-mark">✓</span><span><strong>{resolvedCase.place}</strong><small>{resolvedCase.taxBody} · imported historical evidence</small></span><span className="history-rate">{resolvedCase.previousRate} → <strong>{resolvedCase.currentRate}</strong></span><span className="row-arrow" aria-hidden="true">›</span>
               </button>
             ))}
-            {reviewStoreStatus === "error" && <p className="queue-storage-warning" role="status">Local review storage is unavailable because the connector is intentionally stopped; verified fallback history remains visible.</p>}
+            {reviewStoreStatus === "error" && <p className="queue-storage-warning" role="status">Review storage is unavailable. Imported historical evidence does not confirm that current reviews were saved.</p>}
           </section>
           <AppFooter />
         </section>
@@ -1442,6 +1466,7 @@ export default function Home() {
           )}
           {(selectedCounty.comparisonStatus === "mismatch" || selectedCounty.comparisonStatus === "upcoming") && (
             <ReviewDecisionPanel
+              approvalAllowed={Boolean(officialSnapshot) && connectorStatus === "live"}
               reviewCase={reviewCasesByKey.get(reviewFindingKey(selectedCounty)) ?? null}
               onSave={(status, actor, note) => saveCountyReview(selectedCounty, status, actor, note)}
             />
@@ -1451,6 +1476,23 @@ export default function Home() {
             {reviewCasesByKey.has(reviewFindingKey(selectedCounty)) && <button className="secondary-button" type="button" onClick={() => { setSelectedReviewCase(reviewCasesByKey.get(reviewFindingKey(selectedCounty)) ?? null); setSelectedCounty(null); }}>View audit history</button>}
             {selectedCounty.taxBody === "NC060" && !reviewCasesByKey.has(reviewFindingKey(selectedCounty)) && <button className="primary-button" type="button" onClick={() => { setSelectedCounty(null); setSelectedCase(resolvedCases[0]); }}>Open resolved case</button>}
             <button className="secondary-button" type="button" onClick={() => setSelectedCounty(null)}>Close</button>
+          </div>
+        </Drawer>
+      )}
+
+      {selectedFinding && (
+        <Drawer titleId="finding-review-title" onClose={() => setSelectedFinding(null)}>
+          <div className="drawer-kicker"><span className="section-label">{selectedFinding.stateCode} · Read-only rate comparison</span></div>
+          <h2 id="finding-review-title">{selectedFinding.jurisdictionLabel}</h2>
+          <p className="drawer-lede">Review the official evidence and record the outcome. TaxAP never updates A+.</p>
+          <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
+          <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
+          {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{selectedFinding.confidenceNote} Resolve the jurisdiction before approving maintenance.</p>}
+          <ReviewDecisionPanel key={findingDecisionKey(selectedFinding)} reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding)) ?? null} approvalAllowed={selectedFinding.confidence === "confirmed" && inboxFindings.some((finding) => findingDecisionKey(finding) === findingDecisionKey(selectedFinding)) && (selectedFinding.stateCode === "GA" ? gaCheckStatus === "ready" : batchHealth.status === "ready")} onSave={(status, actor, note) => saveReview(findingReviewEvidence(selectedFinding), status, actor, note)} />
+          {reviewCasesByKey.has(findingDecisionKey(selectedFinding)) && <ReviewAuditTrail reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding))!} />}
+          <div className="drawer-actions">
+            {selectedFinding.sourceUrl && <a className="secondary-button drawer-link" href={selectedFinding.sourceUrl} target="_blank" rel="noreferrer">Open official evidence ↗</a>}
+            <button className="secondary-button" type="button" onClick={() => { void openState(selectedFinding.stateCode); setSelectedFinding(null); }}>View state coverage and sources</button>
           </div>
         </Drawer>
       )}
@@ -1469,6 +1511,8 @@ export default function Home() {
             <div><dt>Last updated</dt><dd>{new Date(selectedReviewCase.updatedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</dd></div>
             <div><dt>Latest note</dt><dd>{selectedReviewCase.latestNote ?? "No note recorded"}</dd></div>
           </dl>
+          {selectedReviewCase.importedHistory && <p className="queue-storage-warning">Imported historical record. The original event was created by an earlier application seed, not a signed-in reviewer.</p>}
+          <ReviewDecisionPanel key={selectedReviewCase.findingKey} reviewCase={selectedReviewCase} approvalAllowed={batchHealth.status === "ready" && gaCheckStatus === "ready" && connectorStatus === "live" && inboxFindings.some((finding) => (finding.stateCode === "NC" ? finding.reviewFindingKey : findingDecisionKey(finding)) === selectedReviewCase.findingKey && finding.confidence === "confirmed")} onSave={(status, actor, note) => saveReview(selectedReviewCase, status, actor, note)} />
           <ReviewAuditTrail reviewCase={selectedReviewCase} />
           <div className="no-write-note"><strong>No A+ records were changed by TaxAP.</strong>Any approved rate maintenance still happens through the supported A+ GUI.</div>
           <div className="drawer-actions"><button className="primary-button" type="button" onClick={() => setSelectedReviewCase(null)}>Close audit record</button></div>
@@ -1669,13 +1713,14 @@ function DirectMappingAplusPanel({ status, reconciliation }: { status: StateDeta
   const unmatched = reconciliation.findings.filter((finding) => !finding.matched);
   return (
     <section className="official-state-panel" aria-labelledby="direct-mapping-aplus-title">
-      <div className="state-table-heading"><div><span className="section-label">{stateName} A+ reconciliation</span><strong id="direct-mapping-aplus-title">Per tax-body rate comparison</strong></div></div>
+      <div className="state-table-heading"><div><span className="section-label">{stateName} A+ reconciliation</span><strong id="direct-mapping-aplus-title">{reconciliation.noTaxPolicy ? "Deliberate no-tax assignments" : reconciliation.comparisonScope === "sales" ? "Sales-tax-only comparison" : "Per tax-body rate comparison"}</strong></div></div>
       <div className="official-source-summary">
         <div><span>Compared ship-tos</span><strong>{totals.comparedShipTos.toLocaleString()}</strong></div>
         <div><span>Rate differences</span><strong>{mismatches.length}</strong></div>
         <div><span>Misinputs excluded</span><strong>{totals.misinputShipTos.toLocaleString()}</strong></div>
         <div><span>Cross-state excluded</span><strong>{totals.crossStateShipTos.toLocaleString()}</strong></div>
       </div>
+      {reconciliation.noTaxPolicy && <p className="official-boundary-note">{totals.intentionalNoTaxShipTos?.toLocaleString() ?? "0"} ship-tos follow the deliberate no-tax policy confirmed {reconciliation.noTaxPolicy.confirmedOn}. {reconciliation.noTaxPolicy.description}</p>}
       {mismatches.length > 0 ? (
         <div className="official-source-table-wrap"><table><thead><tr><th>Tax body</th><th>Jurisdiction</th><th>Official</th><th>A+</th><th>Ship-tos</th></tr></thead><tbody>
           {mismatches.map((finding) => (

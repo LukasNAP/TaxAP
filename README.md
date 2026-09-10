@@ -4,12 +4,13 @@ TaxAP is Atlantic Packaging's internal, read-only sales and use tax monitoring a
 
 ## Current status
 
-Status as of September 8, 2026:
+Status as of September 10, 2026:
 
 - The application UI and Docker deployment are working.
 - The official-source registry covers all 50 states plus the District of Columbia: 47 entries have connected source adapters, while Delaware, Montana, New Hampshire, and Oregon are intentionally excluded because they have no general sales tax.
-- Automatic A+ comparison logic is currently wired for 38 states plus D.C.: Alabama, Arizona, Arkansas, California, Colorado, Connecticut, Florida, Georgia, Illinois, Indiana, Kansas, Kentucky, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, Missouri, Nebraska, Nevada, New Jersey, New Mexico, New York, North Carolina, Ohio, Oklahoma, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, Texas, Utah, Virginia, Washington, West Virginia, Wisconsin, and the District of Columbia. These compare supported assigned tax bodies; they do not certify every ship-to's physical jurisdiction or business tax treatment.
-- Other connected official sources can be viewed and refreshed, but they do not yet produce automatic A+ discrepancy findings.
+- Automatic A+ comparison logic is currently wired for 42 states plus D.C.: Alabama, Arizona, Arkansas, California, Colorado, Connecticut, Florida, Georgia, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, Missouri, Nebraska, Nevada, New Jersey, New Mexico, New York, North Carolina, Ohio, Oklahoma, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, and the District of Columbia. These compare supported assigned tax bodies; they do not certify every ship-to's physical jurisdiction or business tax treatment.
+- Alaska, Hawaii, North Dakota and Wyoming are wired to explicit deliberate no-tax policies confirmed by the user on September 10. Only the confirmed existing zero-rate codes are excluded; new codes, nonzero rates and missing definitions remain unresolved. These policies are not official 0% rate matches.
+- Every state now has a comparison path or explicit no-tax classification: 43 comparison jurisdictions, four deliberate no-tax policies and four no-general-sales-tax states. Significant unmatched assignment and delivery-boundary gaps remain within comparison states.
 - The local Windows application can read A+ through the existing `SQL03` to `APLUS` linked-server path using the signed-in Windows account.
 - The deployment on `apdock01` serves the application over HTTPS, but its A+ connector remains on the validated fallback snapshot until a non-interactive Microsoft Entra identity receives read-only SQL access.
 - The legacy owner-only Sites preview is also snapshot-only and cannot contact A+ or provide shared review storage.
@@ -129,7 +130,7 @@ See [`deployment/apdock01/README.md`](deployment/apdock01/README.md) for the hos
 
 ## Review storage
 
-Local review decisions, notes, ownership, and audit events are stored in SQLite under `.data/`. The Docker deployment uses the `taxap-review-data` named volume so those records survive container replacement. This is independent of A+ and does not write review decisions into the ERP.
+Multistate review decisions, notes, manually selected reviewers, and audit events are stored in SQLite under `.data/`. New databases start empty; imported historical evidence is labeled separately. Changed rate pairs receive fresh review records. Batch failures and assignment gaps are visible independently of finding counts. The Docker deployment uses the `taxap-review-data` named volume so those records survive container replacement. This is independent of A+ and does not write review decisions into the ERP.
 
 ## Administrator CSV fallback
 
@@ -177,10 +178,10 @@ npm test
 
 1. Complete and validate the hosted Entra workload identity, certificate mount, SQL permissions, and network path.
 2. Add production user access control for Ana and other approved users.
-3. Finish A+ comparison mappings for connected official-source states that do not yet create findings.
+3. Improve assignment matching within the completed state wiring, especially ambiguous/local-boundary jurisdictions.
 4. Validate address-boundary matching for states where ZIP or name matching is insufficient.
 5. Confirm the temporary/special tax-body rules and the business meaning of A+ taxable codes `0`, `3`, and `J`.
-6. Confirm notification cadence, reviewer workflow, backup/retention for review data, and operational ownership.
+6. Confirm notification cadence, backup/retention and operational ownership. Follow [`docs/stakeholder-pilot.md`](docs/stakeholder-pilot.md) for the delivered review workflow, backup utility and acceptance checklist.
 7. Perform user acceptance testing before treating the hosted deployment as production-ready.
 
 ## Project references

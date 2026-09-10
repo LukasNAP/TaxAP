@@ -4,7 +4,7 @@ Last updated: September 4, 2026 — all 51 jurisdictions are now accounted for a
 
 ## Current implementation — September 8, 2026
 
-Official-source coverage is complete at the registry layer: 47 connected adapters and four no-general-sales-tax classifications. A+ comparisons are now wired for 38 states plus D.C. See `docs/comparison-rollout.md` for the exact list and remaining 8 jurisdictions. The shared multistate inbox is already implemented; the NC-only dashboard statements in the dated research below are historical, not current work instructions.
+Official-source coverage is complete at the registry layer: 47 connected adapters and four no-general-sales-tax classifications. A+ comparisons are wired for 42 states plus D.C.; AK/HI/ND/WY have confirmed deliberate no-tax policies, completing state wiring within that scope. See `docs/comparison-rollout.md` for the exact list and four deliberate no-tax policies. The shared multistate inbox is already implemented; the NC-only dashboard statements in the dated research below are historical, not current work instructions.
 
 ## Historical research and planning (August 26 through September 4)
 

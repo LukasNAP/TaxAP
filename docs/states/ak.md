@@ -1,5 +1,10 @@
 # Alaska — official-rate adapter status
 
+## Current policy — September 10, 2026
+
+The user confirmed the existing assignments are deliberate no-tax treatment. The connector now applies the explicit policy in `server/no-tax-policy-aplus.mjs`, requiring the approved state's existing codes, configured definitions and zero rates. They are excluded from discrepancy comparisons and labelled deliberate no-tax; they are not matched to an invented official zero rate. New/nonzero/missing/retired assignments remain unresolved. Earlier policy questions and unwired statements below are historical and superseded by this confirmation. Official sources remain separately connected.
+
+
 Status: **current ARSSTC member-jurisdiction source connected 2026-09-03; statewide nonmember and A+ matching remain unresolved.**
 
 ## Official source and scope
@@ -14,7 +19,11 @@ ARSSTC is an intergovernmental commission for participating remote-seller jurisd
 
 Alaska DCRA separately confirms that the state does not levy sales tax, that municipalities may levy it, and that both city and borough tax can apply. Its latest Alaska Taxable/ArcGIS inventory is useful completeness evidence, but it is annual and includes free-text seasonal rules. A future reconciliation should compare that statewide inventory with ARSSTC membership and use an approved address-boundary source for active ship-tos.
 
-## A+ status
+## September 9 aggregate refresh
+
+The existing Windows-authenticated aggregate reader succeeded: eight active ship-to assignments, all on `AK000` (Alaska no tax), configured at 0%. There is no assigned municipality identity to compare with ARSSTC rows. This replaces the earlier authentication failure as current evidence; it does not prove tax liability or statewide zero tax. No SQL changes or A+ writes.
+
+## Historical A+ status
 
 The aggregate-only A+ refresh attempted on 2026-09-03 failed because the local connector's Entra token was rejected by Azure SQL. No A+ count, tax-body mapping, or comparison is claimed from that failed attempt. The official-source adapter remains fully functional and read-only; no A+ write occurred.
 

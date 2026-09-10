@@ -86,6 +86,7 @@ export function gaFindingsFromReconciliation(
 
 export type FlatStateAplusReconciliationInput = {
   stateCode: string;
+  officialSnapshot?: { sourceUrl?: string };
   expectedTaxBody: string;
   officialRate: number;
   aplusRate: number | null;
@@ -117,7 +118,7 @@ export function flatStateFindingsFromReconciliation(
     confidence: "confirmed",
     confidenceNote: null,
     effectiveDate: null,
-    sourceUrl: null,
+    sourceUrl: reconciliation.officialSnapshot?.sourceUrl ?? null,
   }];
 }
 
@@ -134,6 +135,8 @@ export type DirectMappingFindingInput = {
 };
 
 export type DirectMappingAplusReconciliationInput = {
+  officialSnapshot?: { sourceUrl?: string };
+  comparisonScope?: "sales";
   stateCode: string;
   findings: DirectMappingFindingInput[];
 };
@@ -155,7 +158,7 @@ export function directMappingFindingsFromReconciliation(
       id: `${reconciliation.stateCode}-${finding.taxBody}`,
       reviewFindingKey: `${reconciliation.stateCode}-${finding.taxBody}-current`,
       stateCode: reconciliation.stateCode,
-      jurisdictionLabel: finding.jurisdictionLabel,
+      jurisdictionLabel: reconciliation.comparisonScope === "sales" ? `${finding.jurisdictionLabel} (sales tax)` : finding.jurisdictionLabel,
       taxBody: finding.taxBody,
       officialRate: finding.officialRate,
       aplusRate: finding.aplusRate,
@@ -165,7 +168,7 @@ export function directMappingFindingsFromReconciliation(
       confidence: "confirmed",
       confidenceNote: null,
       effectiveDate: null,
-      sourceUrl: null,
+      sourceUrl: reconciliation.officialSnapshot?.sourceUrl ?? null,
     }));
 }
 

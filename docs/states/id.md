@@ -6,7 +6,17 @@ TaxAP reads two current Idaho State Tax Commission pages. It validates that both
 
 The Tax Commission does not publish those city rates or product scopes centrally; it directs taxpayers to contact each city. TaxAP therefore exposes the authoritative 6% state rate and the 23-city source limitation, but never invents local totals. This is a connected statewide source with an explicit local-data gap, not a claim of complete address-level Idaho coverage.
 
-## A+ validation
+## Sales-tax comparison wired September 10
+
+The assigned-jurisdiction reader uses the current Tax Commission rates/list plus its [2025–2026 city and county GIS service](https://services.arcgis.com/91hXl6NfvLGEi8x5/arcgis/rest/services/Idaho_City_Taxing_Districts/FeatureServer). The service item owner is `Idaho_State_Tax_Comm`. City layer 6 has 200 records but 198 unique names (Garden City has three records); county layer 7 has 44 records. All 23 listed resort cities are present. The city COUNTY field is zero and is not used as a mapping.
+
+Public polygon intersections identify all county overlaps for every resort-city geometry part. Fourteen counties stay unresolved: Adams, Bannock, Blaine, Boise, Bonner, Bonneville, Boundary, Custer, Idaho, Kootenai, Lemhi, Shoshone, Teton and Valley. Intersection includes boundary touches, so this is a conservative exclusion list, not a claim that every excluded county has taxable resort sales throughout it. No customer geometry, addresses or records are sent to the service.
+
+Exact non-resort city names and explicitly named counties with no resort intersections compare against the validated state sales rate. Resort city rates, product scopes, exemptions and delivery boundaries remain unresolved; absence of a match is never treated as zero tax. The live resort list must agree exactly with the reviewed source list so newly listed cities cause validation failure. Partial geography, absent intersections and changed state rates also fail validation.
+
+Current aggregate: 98 assignments, 58 compared across 13 groups, zero differences, 39 unmatched, one cross-state. Existing Windows-authenticated aggregate SQL only; no SQL changes or A+ writes. Build, lint and 243 tests passed. Tests cover all parts of duplicate-name resort geometry, both intersected counties, source changes, unmatched identities and sales-only inbox scope.
+
+## Historical A+ validation
 
 The supervised read-only aggregate A+ refresh on 2026-09-03 found 98 active Idaho ship-tos and 77 active customer assignments across 20 tax-body groups:
 

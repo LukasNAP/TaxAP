@@ -1,5 +1,10 @@
 # Hawaii — findings
 
+## Current policy — September 10, 2026
+
+The user confirmed the existing assignments are deliberate no-tax treatment. The connector now applies the explicit policy in `server/no-tax-policy-aplus.mjs`, requiring the approved state's existing codes, configured definitions and zero rates. They are excluded from discrepancy comparisons and labelled deliberate no-tax; they are not matched to an invented official zero rate. New/nonzero/missing/retired assignments remain unresolved. Earlier policy questions and unwired statements below are historical and superseded by this confirmation. Official sources remain separately connected.
+
+
 Status: **official policy/rate source connected 2026-09-03; automatic A+ mismatch comparison intentionally disabled pending the existing business-policy decision.** TaxAP now validates the 4% retail GET base, the four 0.5% county surcharges, Kalawao's surcharge exemption, and the optional 4.712% maximum visible pass-on. It does not equate a voluntary ceiling with a mandatory customer rate.
 
 The 2026-09-03 supervised aggregate refresh found 26 active Hawaii ship-tos and 11 customer assignments, all on `HI000` at 0%. This newer count supersedes the 29/9 snapshot below but does not change the policy question: 0% may be intentional because visible pass-on is optional. No A+ record was changed.

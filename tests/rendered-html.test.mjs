@@ -41,6 +41,8 @@ test("server-renders the TaxAP dashboard-first MVP", async () => {
   assert.match(html, /All jurisdictions/);
   assert.match(html, /Review history/);
   assert.match(html, /Mecklenburg County/);
+  assert.match(html, /Checks incomplete/);
+  assert.match(html, /Imported historical evidence/);
   assert.match(html, /Admin import/);
   assert.match(html, /Supervised refresh only|Refresh now/);
   assert.doesNotMatch(html, /Coverage map|North Carolina county coverage map|United States map/);
@@ -73,7 +75,7 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /visibleSpecialTaxBodies = specialTaxBodies\.filter/);
   assert.match(page, /ReviewDecisionPanel/);
   assert.match(page, /View audit history/);
-  assert.match(page, /Local review storage is unavailable/);
+  assert.match(page, /Review storage is unavailable/);
   assert.match(page, /Official rate-source rollout/);
   assert.match(page, /Machine source identified/);
   assert.match(page, /OfficialStateSourcePanel/);

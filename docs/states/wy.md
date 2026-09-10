@@ -1,5 +1,10 @@
 # WY — findings
 
+## Current policy — September 10, 2026
+
+The user confirmed the existing assignments are deliberate no-tax treatment. The connector now applies the explicit policy in `server/no-tax-policy-aplus.mjs`, requiring the approved state's existing codes, configured definitions and zero rates. They are excluded from discrepancy comparisons and labelled deliberate no-tax; they are not matched to an invented official zero rate. New/nonzero/missing/retired assignments remain unresolved. Earlier policy questions and unwired statements below are historical and superseded by this confirmation. Official sources remain separately connected.
+
+
 Status: **Not safe to build — 100% of active WY ship-tos sit on non-jurisdiction placeholder-shaped tax bodies.** Live A+ (`SASTXB` ship-to assignments via `readStateDetail`) checked 2026-08-26: only 22 active WY ship-tos and 2 distinct tax bodies exist across A+'s entire live WY book of business — `WY000` ("WYOMING NO TAX", 21/22 ship-tos, 0% rate) and `ZTEMP` ("TAX BODY TEMP USE", 1/22 ship-tos, 0% rate). Neither maps to any of Wyoming's 23 real counties. Cross-checked against the current Streamlined rate file (`WYR2026Q3JUN2.CSV`), which confirms 23 real county rows (state 4% + county add-ons of 0–3%, total range 4%–7%) and 2 unnamed special-jurisdiction rows. This is a coverage gap shaped like ND's (100% on a single non-jurisdiction code), not a code-to-jurisdiction mismatch to diff.
 
 ## Address matching

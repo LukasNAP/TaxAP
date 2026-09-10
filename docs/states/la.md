@@ -1,6 +1,14 @@
 # Louisiana — findings
 
-Status: **official source connected 2026-09-03; A+ comparison remains intentionally withheld.** The previously identified XLSX is stale, so `server/la-rates.mjs` instead reads the official filing lookup's selected current period and validates every parish table. No A+ matching is built.
+Status: **official source connected; limited assigned-name sales-tax comparison wired September 10, 2026.** The previously identified XLSX is stale, so `server/la-rates.mjs` instead reads the official filing lookup's selected current period and validates every parish table. Current matching scope is described below; earlier investigations remain historical.
+
+## Current assigned-jurisdiction comparison
+
+`server/la-aplus.mjs` retains the full 64-parish selector context. A parish label compares only when every official domicile row under that parish has one total rate. A base parish row alone is insufficient. Unique exact city/district names can compare; names repeated across parish contexts remain unmatched. St./Saint spelling is normalized; truncated names, LA000 and unrelated codes are never guessed.
+
+Fresh Windows-authenticated aggregate: 220 assignments; LA000 covers 212 at 11%, LA001 covers five at 9.75%, and newly observed LA035 covers one at 10%. Two assignments are cross-state. Only St. Bernard currently compares: its [LATA parish-wide table](https://lataonline.org/for-taxpayers/city-to-parish-index/st-bernard/) independently confirms the official lookup total. Result: one compared assignment, no difference, 217 unmatched, two cross-state. The old 353-row inventory below had different filters/date and is not the current active population.
+
+Build, lint and 247 tests passed. Tests retain duplicated domicile codes by parish context, reject partial/ambiguous sources, distinguish mixed/uniform parishes, and preserve sales-only inbox scope. No SQL changes or A+ writes. Most Louisiana assignments still lack a usable domicile; reader registration does not establish statewide assignment coverage.
 
 ## Connected official inventory
 

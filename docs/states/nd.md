@@ -1,5 +1,10 @@
 # North Dakota — official-rate adapter status
 
+## Current policy — September 10, 2026
+
+The user confirmed the existing assignments are deliberate no-tax treatment. The connector now applies the explicit policy in `server/no-tax-policy-aplus.mjs`, requiring the approved state's existing codes, configured definitions and zero rates. They are excluded from discrepancy comparisons and labelled deliberate no-tax; they are not matched to an invented official zero rate. New/nonzero/missing/retired assignments remain unresolved. Earlier policy questions and unwired statements below are historical and superseded by this confirmation. Official sources remain separately connected.
+
+
 ## What is connected
 
 TaxAP reads North Dakota's current effective-dated Streamlined Sales Tax rate file and retains the Office of State Tax Commissioner's local-tax page as the human-readable authority.

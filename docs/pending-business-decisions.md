@@ -4,6 +4,14 @@ This memo collects the questions that TaxAP cannot answer from A+ or Department 
 
 The order is based on the apparent number of current ship-tos at risk or blocked. Counts are investigation snapshots, not permanent totals. An unknown count is shown as unknown rather than estimated.
 
+## Confirmed no-tax policies — September 10, 2026
+
+The user confirmed that the existing AK, HI, ND and WY assignments are deliberate no-tax treatment. This supersedes earlier questions below about whether those current zero-rate assignments are unbuilt. TaxAP excludes only the confirmed configured zero-rate codes (AK000, HI000, ND000, WY000 and Wyoming ZTEMP), labels them as business policy, and never manufactures official 0% jurisdiction matches. New/nonzero/missing/retired assignments remain unresolved. It does not settle future collection obligations, legal exemptions or a future change to Hawaii GET pass-on policy.
+
+## Selected comparison scope — September 9, 2026
+
+The user directed: "Just do sales tax for now" in response to the Iowa/Vermont sales-versus-use question. Implement sales-tax comparisons with explicit scope labels; do not apply local sales-only rates as use-tax conclusions. Vermont and Iowa are now wired for supported assigned jurisdictions; Iowa mixed-county and unidentified assignments remain unresolved. This decision does not authorize A+ changes or settle exemptions and unidentified assignments.
+
 ## District of Columbia — explain the zero-rate assignments and schedule the enacted change
 
 1. **What was found:** The 2026-09-03 read-only aggregate refresh found 20 active D.C. ship-tos on `DC000` at 0% and one on Honduras no-tax code `HN000`. D.C. OTR confirms the general rate is 6% through September 30, 2026 and 7% beginning October 1, 2026. A+ has neither the current rate nor a scheduled next rate on these groups.

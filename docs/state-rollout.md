@@ -8,7 +8,7 @@ This file exists so that adding a state is a repeatable *procedure* (the same qu
 
 ## Current comparison status — September 8, 2026
 
-Use `docs/comparison-rollout.md` and current source code for the active implementation inventory: 38 states plus D.C. have comparison readers, including new NV/RI/DC/WA wiring. The state investigations below are historical evidence and may predate implemented comparisons. Official-source coverage remains 47 connected plus four no-general-sales-tax classifications.
+Use `docs/comparison-rollout.md` and current source code for the active implementation inventory: 42 states plus D.C. have comparison readers, plus explicit deliberate no-tax policies for AK/HI/ND/WY. The state investigations below are historical evidence and may predate implemented comparisons. Official-source coverage remains 47 connected plus four no-general-sales-tax classifications.
 
 ## Step 0 — check current status before assuming anything
 

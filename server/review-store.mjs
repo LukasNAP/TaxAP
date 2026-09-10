@@ -62,6 +62,7 @@ function normalizeDecision(input) {
 function camelCaseRow(row) {
   if (!row) return null;
   return {
+    importedHistory: row.finding_key === "NC060-2026-07-01" && row.created_at === "2026-08-17T17:00:00.000Z",
     findingKey: row.finding_key,
     stateCode: row.state_code,
     jurisdiction: row.jurisdiction,
@@ -129,25 +130,6 @@ export function createReviewStore({ filename = resolve(".data", "taxap-reviews.s
   database.exec("CREATE INDEX IF NOT EXISTS idx_review_events_finding_created ON review_events(finding_key, created_at DESC)");
   database.exec("PRAGMA optimize");
 
-  const seedTimestamp = "2026-08-17T17:00:00.000Z";
-  const seedCase = database.prepare(`INSERT OR IGNORE INTO review_cases (
-    finding_key, state_code, jurisdiction, tax_body, finding_type, aplus_rate, official_rate,
-    effective_date, source_url, status, assigned_to, latest_note, created_at, updated_at, resolved_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const seeded = seedCase.run(
-    "NC060-2026-07-01", "NC", "Mecklenburg County", "NC060", "recent-match", 8.25, 8.25,
-    "2026-07-01", "https://www.ncdor.gov/taxes-forms/sales-and-use-tax/sales-and-use-tax-rates",
-    "resolved", "Ana", "A+ rate updated and prior-rate invoices handled.", seedTimestamp, seedTimestamp, seedTimestamp,
-  );
-  if (seeded.changes > 0) {
-    database.prepare(`INSERT INTO review_events (
-      finding_key, action, from_status, to_status, actor, note, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-      "NC060-2026-07-01", "resolved", null, "resolved", "Ana",
-      "A+ rate updated and prior-rate invoices handled.", seedTimestamp,
-    );
-  }
-
   const selectCase = database.prepare("SELECT * FROM review_cases WHERE finding_key = ?");
   const selectEvents = database.prepare("SELECT * FROM review_events WHERE finding_key = ? ORDER BY created_at DESC, id DESC");
 
@@ -164,10 +146,15 @@ export function createReviewStore({ filename = resolve(".data", "taxap-reviews.s
 
   function saveDecision(input) {
     const decision = normalizeDecision(input);
-    const existing = getCase(decision.findingKey);
     const now = new Date().toISOString();
     database.exec("BEGIN IMMEDIATE");
     try {
+      const existing = getCase(decision.findingKey);
+      if (Object.hasOwn(input, "expectedEventId") && input.expectedEventId !== (existing?.events[0]?.id ?? null)) {
+        const conflict = new Error("Another review decision was saved. Refresh review history before saving again.");
+        conflict.statusCode = 409;
+        throw conflict;
+      }
       database.prepare(`INSERT INTO review_cases (
         finding_key, state_code, jurisdiction, tax_body, finding_type, aplus_rate, official_rate,
         effective_date, source_url, status, assigned_to, latest_note, created_at, updated_at, resolved_at

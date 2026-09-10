@@ -1,21 +1,41 @@
 # TaxAP project handoff
 
-Last updated: September 9, 2026.
+Last updated September 10, 2026. This current summary and README supersede historical sections below.
 
-## Current implementation state
+## State wiring completed within the confirmed business scope
 
-This section and README supersede the historical notes below. Application completion remains the priority; hosted Entra setup is deferred. The user authorized committing and pushing this implementation batch on September 9. Deployment and A+ writes are not authorized.
+- Official-source registry: all 50 states plus D.C., with 47 connected adapters and four no-general-sales-tax classifications (DE, MT, NH, OR).
+- A+ handling: 43 jurisdictions have rate-comparison readers (42 states plus D.C.); AK, HI, ND and WY have explicit deliberate no-tax policies. Together with DE/MT/NH/OR, all 51 registry entries are accounted for. This is not a claim that every assignment or physical jurisdiction is matched.
+- User confirmed on September 10 that the existing AK/HI/ND/WY assignments are deliberate no-tax treatment. Only AK000, HI000, ND000, WY000 and Wyoming ZTEMP qualify, with configured definitions and zero rates. New/nonzero/missing/retired codes remain unresolved. Policies are not official 0% matches.
+- User chose sales tax only for the Iowa/Vermont scope decision. VT/IA/ID/LA readers and shared inbox/drawer preserve explicit sales-tax labels.
+- Commit 62bf5a4 contains the earlier 18-jurisdiction expansion and was pushed to main at the user's request. The user authorized commit and push on September 10. The VT/IA/ID/LA readers, four no-tax policies, stakeholder-readiness work and associated tests/docs are included in this delivery commit. Deployment remains deferred; verify Git history and remote tracking for delivery status.
 
-- Official-source coverage: 47 connected jurisdictions, plus DE, MT, NH and OR classified as having no general sales tax.
-- A+ comparison readers: **38 states plus D.C. (39 jurisdictions)**. This batch adds NV, RI, DC, WA, NE, WV, IL, SD, WI, UT, NM, AR, TN, OK, KS, MN, MO and SC to the findings batch and state drawer.
-- Eight connected sources still lack readers: **AK, HI, ID, IA, LA, ND, VT, WY**. Reader registration does not mean every assignment or delivery boundary is supported. Unknown, ambiguous and conflicting identities remain unresolved.
-- Fixed the state drawer list for existing TX/CA/CO readers, the New Mexico/Mexico classification error, and XLSX parsing of empty cells. Illinois prefix matching now accounts for address overrides. South Carolina uses bundled PDF.js extraction instead of an external executable.
-- Minnesota's active reader uses the current-quarter official map. Its earlier PDF reader remains unused research code. Missouri supports only unique exact filing names with equal sales/use rates. South Carolina supports unique assigned names, retaining multi-county ambiguity.
-- Local Windows-authenticated A+ aggregate checks were performed for UT, NM, AR, TN, OK, KS, MN, MO and SC using the existing connector. Other new readers have source and synthetic verification; their current A+ coverage is not established by those tests. No SQL changes or A+ writes were made.
-- Latest completed verification: production build, ESLint and 230 tests passed. See `docs/comparison-rollout.md` and individual state notes for scope and aggregate evidence.
-- Remaining decisions include Iowa/Vermont sales-versus-use scope, Hawaii optional GET pass-on, Alaska nonmember coverage, and unidentified catch-all codes. Never infer tax liability or jurisdiction from these gaps.
-- Hosted Docker data remains snapshot/fallback until workload identity, certificate, SQL permissions and network access are validated end to end. User authentication is a separate concern.
-- Nationwide completion remains open. Refresh-failure visibility and the NC-only review form are additional application work before user acceptance.
+## Latest implementation and verification
+
+- Vermont: official municipality map plus effective-dated sales-tax list/SST validation. 256 areas, 36 active local-sales areas. Aggregate: 48 assignments, 28 compared, 11 groups, two differences, 20 unmatched. Future Peru and rescinded Montgomery rates are handled explicitly.
+- Iowa: current DOR LOST workbook, state-rate guide and Census county inventory. 1,136 records across 99 counties. Compare county labels only when every city/unincorporated area has one rate; exact cities preserve multi-county conflicts. Aggregate: 270 assignments, 102 compared, 29 groups, no differences, 167 unmatched, one cross-state.
+- Idaho: Tax Commission GIS has 200 city records (198 names) and 44 counties. All geometry parts for 23 resort cities are intersected with public counties; 14 counties remain unresolved. Aggregate: 98 assignments, 58 compared, 13 groups, no differences, 39 unmatched, one cross-state. No customer geometry is sent.
+- Louisiana: retains all 64 parish contexts. Parish labels require uniform rates across all domicile rows; unique exact city/district names are supported. Aggregate: 220 assignments, one St. Bernard assignment compared with no difference, 217 unmatched, two cross-state. Most Louisiana assignments still lack a usable domicile.
+- No-tax policy connector checks: AK 8, HI 26, ND 33, WY 22; all 89 classified as deliberate no-tax, zero compared and zero unresolved in this snapshot.
+- Independent inventory audit: 51 registry entries = 43 comparison jurisdictions + four deliberate no-tax policies + four no-general-sales-tax states; no missing backend/UI wiring or duplicate classification.
+- Production build, ESLint and 250 tests passed. Tests include official-source validity, ambiguity, effective dates, all parts of resort-city geometry, connector policy registration and changed-policy inputs. Existing read-only aggregate SQL was used without changes. No A+ writes occurred.
+
+## Stakeholder-readiness application work (September 10)
+
+- Added multistate review forms, source links, saved statuses and event history. Review history includes open and closed records. Rate-pair changes create separate review keys, including NC; old records remain preserved. Remaining differences stay visible after a human decision.
+- Added optimistic concurrency protection for UI saves. A conflicting save refreshes review history and returns HTTP 409. Manual reviewer selection remains explicitly unauthenticated.
+- Dashboard and review views expose failed/incomplete checks, batch/GA timestamps and unchecked/excluded counts per other-batch state. Counts derive from actual numeric matches rather than legacy comparable-row totals. Deliberate no-tax counts remain separate. Refresh now includes every findings path and review history. GA/batch requests have bounded client waits.
+- Removed automatic database seeding; preserved and labeled existing imported Mecklenburg history and the documented aggregate historical evidence. Earlier wording calling it fictional was incorrect.
+- Added a consistent SQLite backup utility with integrity checks, refusal to overwrite, and a tested restore/reopen path. See docs/stakeholder-pilot.md for acceptance scenarios, backup/restore guidance and rollout gates.
+- Fixed two existing standalone type-check issues (TypeScript extension imports and the preview worker asset-binding type); runtime hosting behavior is unchanged.
+- Final independent verification: production build and all 256 tests passed; ESLint, `npx tsc --noEmit`, and `git diff --check` passed. Added tests cover changed-rate review identity, multistate reopen/backup recovery, concurrent saves including HTTP 409, honest coverage counts and preservation of legacy imported history. No browser or stakeholder acceptance session was performed.
+- No A+ SQL, field interpretation, rate-matching behavior or hosted Entra configuration changed in this readiness work. The user subsequently authorized committing and pushing this work together with the preserved state wiring. No deployment was performed.
+
+## Application work still open
+
+State wiring is complete under the user's confirmed policy; application acceptance and complete assignment matching are not. Improve unmatched coverage and complete stakeholder acceptance. Multistate review controls and explicit source-failure/coverage reporting are now implemented. Do not infer exemptions, tax liability or delivery boundaries. Preserve official evidence and keep discrepancies for human review only.
+
+Hosted Docker A+ data remains snapshot/fallback until workload identity, certificate, SQL permissions and network access are validated end to end. Hosted Entra setup remains deferred. User authentication is separate. See docs/comparison-rollout.md and state notes for detailed scopes and sources.
 
 ## Historical notes (through September 4; verify against current code)
 

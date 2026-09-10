@@ -180,7 +180,8 @@ export async function readOfficialLaRates({ fetchImpl = fetch, now = new Date(),
         sourceHash: createHash("sha256").update(landingHtml).update(stateHtml).update(pages.join("\n")).digest("hex"),
         rates: rates.sort((left, right) => left.jurisdictionCode.localeCompare(right.jurisdictionCode)), counts,
         effectivePeriod: `Current filing period beginning ${landing.asOfDate}`,
-        boundaryStatus: "Current remote-seller domicile rates are connected for all 64 parish selectors. Domicile codes can carry different rates in different parish contexts, so TaxAP keys them by parish plus domicile and never collapses them by code alone. The official address explorer is interactive; address-to-domicile and A+ comparison remain unresolved, especially because A+ assigns nearly all Louisiana ship-tos to one flat LA000 rate.",
+        parishes: landing.parishes,
+        boundaryStatus: "Current remote-seller domicile rates are connected for all 64 parish selectors. Domicile codes can carry different rates in different parish contexts, so TaxAP keys them by parish plus domicile and never collapses them by code alone. Assigned-name sales comparisons are connected for uniform parishes and unique domicile names. Mixed parishes, address-to-domicile coverage and the statewide LA000 assignment remain unresolved.",
       };
       cachedSnapshot = snapshot; cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000; return snapshot;
     } finally { clearTimeout(timeout); }

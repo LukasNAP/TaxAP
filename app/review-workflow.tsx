@@ -16,6 +16,7 @@ export type ReviewEvent = {
 };
 
 export type ReviewCase = {
+  importedHistory?: boolean;
   findingKey: string;
   stateCode: string;
   jurisdiction: string;
@@ -45,7 +46,9 @@ export const reviewStatusLabels: Record<ReviewStatus, string> = {
 export function ReviewDecisionPanel({
   reviewCase,
   onSave,
+  approvalAllowed = true,
 }: {
+  approvalAllowed?: boolean;
   reviewCase: ReviewCase | null;
   onSave: (status: ReviewStatus, actor: "Ana" | "Liv", note: string) => Promise<ReviewCase>;
 }) {
@@ -84,13 +87,14 @@ export function ReviewDecisionPanel({
         <label className="review-note-field">Review note<textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} rows={4} placeholder="Evidence checked, decision made, or work completed…" /></label>
       </div>
       {message && <p className="review-form-message" role="status">{message}</p>}
+      {!approvalAllowed && <p className="review-form-message">Maintenance approval requires an available current comparison with a confirmed jurisdiction. You can still record investigation notes and outcomes.</p>}
       <div className="review-action-grid">
         <button className="secondary-button" type="button" disabled={Boolean(saving)} onClick={() => void save("in_review")}>{saving === "in_review" ? "Saving…" : "Start review"}</button>
-        <button className="primary-button" type="button" disabled={Boolean(saving)} onClick={() => void save("approved")}>{saving === "approved" ? "Saving…" : "Mark ready for A+ maintenance"}</button>
+        <button className="primary-button" type="button" disabled={Boolean(saving) || !approvalAllowed} onClick={() => void save("approved")}>{saving === "approved" ? "Saving…" : "Mark ready for A+ maintenance"}</button>
         <button className="secondary-button" type="button" disabled={Boolean(saving)} onClick={() => void save("resolved")}>{saving === "resolved" ? "Saving…" : "Record resolved"}</button>
         <button className="secondary-button" type="button" disabled={Boolean(saving)} onClick={() => void save("not_applicable")}>{saving === "not_applicable" ? "Saving…" : "Not applicable"}</button>
       </div>
-      <small className="identity-note">Reviewer selection is temporary until Entra ID sign-in is added.</small>
+      <small className="identity-note">Reviewer names are manually selected and are not verified by sign-in.</small>
     </section>
   );
 }
