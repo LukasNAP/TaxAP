@@ -174,6 +174,10 @@ npm test
 
 `npm test` performs a production build and runs the adapter, connector, mapping, review-store, filtering, and rendered-interface test suites.
 
+### Local New York PDF extraction
+
+New York requires Publication 718 PDF extraction. Docker includes `poppler-utils`. On Windows, install a compatible `pdftotext` on PATH or set `TAXAP_PYTHON_PATH` in the ignored `.env.local` to an absolute Python executable with `pdfplumber` installed. Restart the connector after changing this setting. Keep machine-specific runtime paths out of committed configuration; revalidate the path if the runtime is moved or replaced.
+
 ## Remaining work
 
 1. Complete and validate the hosted Entra workload identity, certificate mount, SQL permissions, and network path.

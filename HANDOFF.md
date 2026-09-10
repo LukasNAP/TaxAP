@@ -31,6 +31,10 @@ Last updated September 10, 2026. This current summary and README supersede histo
 - Final independent verification: production build and all 256 tests passed; ESLint, `npx tsc --noEmit`, and `git diff --check` passed. Added tests cover changed-rate review identity, multistate reopen/backup recovery, concurrent saves including HTTP 409, honest coverage counts and preservation of legacy imported history. No browser or stakeholder acceptance session was performed.
 - No A+ SQL, field interpretation, rate-matching behavior or hosted Entra configuration changed in this readiness work. The user subsequently authorized committing and pushing this work together with the preserved state wiring. No deployment was performed.
 
+## Local New York runtime fix (September 10)
+
+The local preview lacked `pdftotext` and a configured Python PDF fallback, causing NY to fail the findings batch. Set `TAXAP_PYTHON_PATH` in ignored `.env.local` to the available bundled Python with pdfplumber, preserving other settings. Direct read-only verification succeeded: 671 active NY assignments, 667 in candidate groups, two differences. After restart, the full findings endpoint returned no failed states. Its stricter coverage summary confirms 591 actual numeric comparisons and 80 unchecked/excluded NY assignments; 667 is not a completed-comparison count. No parser, rate, SQL or ERP behavior changed. Docker already includes poppler-utils; this local fix does not validate hosted connectivity. README and .env.example document setup without committing a machine-specific path.
+
 ## Application work still open
 
 State wiring is complete under the user's confirmed policy; application acceptance and complete assignment matching are not. Improve unmatched coverage and complete stakeholder acceptance. Multistate review controls and explicit source-failure/coverage reporting are now implemented. Do not infer exemptions, tax liability or delivery boundaries. Preserve official evidence and keep discrepancies for human review only.
