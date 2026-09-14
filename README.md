@@ -174,6 +174,10 @@ npm test
 
 `npm test` performs a production build and runs the adapter, connector, mapping, review-store, filtering, and rendered-interface test suites.
 
+### Shared comparison refresh
+
+The dashboard refreshes all 47 wired state/DC readers through one comparison batch, including NC and GA. Their county/future-change and boundary payloads retain their existing comparison rules. A failed state is reported and omitted from the refreshed inbox while other states remain available. Four no-general-sales-tax states remain separate registry classifications. Assignment inventory and treatment summaries refresh alongside the batch; state-detail requests are still available when opening a state.
+
 ### Local New York PDF extraction
 
 New York requires Publication 718 PDF extraction. Docker includes `poppler-utils`. On Windows, install a compatible `pdftotext` on PATH or set `TAXAP_PYTHON_PATH` in the ignored `.env.local` to an absolute Python executable with `pdfplumber` installed. Restart the connector after changing this setting. Keep machine-specific runtime paths out of committed configuration; revalidate the path if the runtime is moved or replaced.

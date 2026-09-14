@@ -92,7 +92,8 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /Live A\+ connected/);
   assert.match(page, /Production connection intentionally disabled/);
   assert.match(page, /Validated A\+ state snapshot/);
-  assert.match(page, /api\/official\/nc-rates/);
+  assert.match(page, /api\/official\/findings/);
+  assert.doesNotMatch(page, /refreshGaBoundary|refreshLiveSnapshot|refreshOtherFindings/);
   assert.match(page, /Matches NCDOR/);
   assert.match(page, /Recent change matched/);
   assert.match(page, /Review difference/);

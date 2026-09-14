@@ -430,22 +430,13 @@ export default function Home() {
   // dashboardGaBoundary above, so a real finding stays visible in "Needs attention" without the
   // user having to open that specific state's drawer first.
   const [dashboardOtherFindings, setDashboardOtherFindings] = useState<JurisdictionFinding[]>([]);
-  // Both start false and flip true (success or failure - either way, the fetch was attempted) the
-  // first time their own refresh finishes. Needed because gaBoundaryDetail/dashboardOtherFindings
-  // both start empty and take several seconds to populate live - without this, "Needs attention"
-  // reads as 0 (or NC-only) for those first few seconds on every page load, then visibly jumps once
-  // the real data lands. Gating the displayed count on both being loaded at least once means the
-  // number is either "still loading" or the real settled value - never a misleadingly low one.
-  const [gaBoundaryLoaded, setGaBoundaryLoaded] = useState(false);
-  const [otherFindingsLoaded, setOtherFindingsLoaded] = useState(false);
+  const [batchLoaded, setBatchLoaded] = useState(false);
   // Session-lifetime cache of state-drawer reads, keyed by state code. A ref (not state) so
   // populating it never triggers a re-render on its own — openState reads/writes it directly.
   const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
   const [stateDrawerCheckedAt, setStateDrawerCheckedAt] = useState<number | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<JurisdictionFinding | null>(null);
   const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[] }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [] });
-  const [gaCheckStatus, setGaCheckStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [gaCheckedAt, setGaCheckedAt] = useState<string | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<ComparedCounty | null>(null);
   const [selectedCase, setSelectedCase] = useState<ResolvedCase | null>(null);
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
@@ -512,143 +503,70 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  // The state-drawer cache added to openState() below (unrelated to this callback) throws off
-  // the React Compiler's cross-function static analysis here; this function's own body and []
-  // deps are unchanged and correct — verified by bisecting the diff against the last commit,
-  // where this callback alone lints clean. useCallback([]) still guarantees a stable reference
-  // at runtime either way.
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
-  const refreshLiveSnapshot = useCallback(async () => {
+  const refreshComparisons = useCallback(async () => {
+    setBatchHealth((current) => ({ ...current, status: "loading" }));
     setConnectorStatus((current) => current === "live" ? "refreshing" : "connecting");
-    setConnectorMessage("Reading and validating A+ tax bodies…");
+    setConnectorMessage("Refreshing the all-state comparison batch…");
+    setTaxTreatmentStatus("loading");
     const apiBase = apiBaseUrl();
     if (!apiBase) {
+      setBatchHealth((current) => ({ ...current, status: "error" }));
       setConnectorStatus("fallback");
       setConnectorMessage("A backend connector has not been configured for this environment.");
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 65_000);
-    setTaxTreatmentStatus("loading");
-    try {
-      const requestOptions = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
-      const [ratesResponse, statesResponse, officialResponse, treatmentResponse] = await Promise.all([
-        fetch(`${apiBase}/api/aplus/tax-bodies`, requestOptions),
-        fetch(`${apiBase}/api/aplus/states`, requestOptions),
-        fetch(`${apiBase}/api/official/nc-rates`, requestOptions).catch(() => null),
-        fetch(`${apiBase}/api/aplus/tax-treatment`, requestOptions).catch(() => null),
-      ]);
-      if (!ratesResponse.ok || !statesResponse.ok) throw new Error("A+ connector returned an unavailable response.");
-      const [nextSnapshot, nextStateCoverage] = await Promise.all([
-        ratesResponse.json() as Promise<LiveAPlusSnapshot>,
-        statesResponse.json() as Promise<StateCoverageSnapshot>,
-      ]);
-      if (nextSnapshot.standardRows.length !== 100) throw new Error("A+ connector returned an incomplete county snapshot.");
-      const liveCoverage = mergeRateRows(initializeComparisons(countyCoverage), nextSnapshot.standardRows);
-      let officialComparison: OfficialNcSnapshot | null = null;
-      if (officialResponse?.ok) officialComparison = await officialResponse.json() as OfficialNcSnapshot;
-      if (treatmentResponse?.ok) {
-        setTaxTreatmentSnapshot(await treatmentResponse.json() as TaxTreatmentSnapshot);
-        setTaxTreatmentStatus("ready");
-      } else {
-        setTaxTreatmentStatus("error");
-      }
-      setActiveCountyCoverage(officialComparison ? mergeOfficialRates(liveCoverage, officialComparison) : liveCoverage);
-      setLiveSnapshot(nextSnapshot);
-      setOfficialSnapshot(officialComparison);
-      setStateCoverage(nextStateCoverage);
-      setAppliedImport(null);
-      setSelectedCounty(null);
-      setConnectorStatus("live");
-      setConnectorMessage(officialComparison
-        ? `Compared ${nextSnapshot.standardRows.length} A+ county rates with ${officialComparison.source}; ${nextStateCoverage.states.length} states have active A+ ship-tos.`
-        : `Validated ${nextSnapshot.standardRows.length} NC county rates; the official NCDOR comparison is temporarily unavailable.`);
-    } catch {
-      setConnectorStatus("fallback");
-      setConnectorMessage("Live A+ data is unavailable; the last validated built-in snapshot remains visible.");
       setTaxTreatmentStatus("error");
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  }, []);
-
-  // Kept independent from refreshLiveSnapshot above (its own callback, its own try/catch) so a
-  // Georgia failure can never affect NC's refresh, and so NC's memoized callback body is untouched.
-  const refreshGaBoundary = useCallback(async () => {
-    setGaCheckStatus("loading");
-    const apiBase = apiBaseUrl();
-    if (!apiBase) {
-      setGaCheckStatus("error");
-      setGaBoundaryLoaded(true); // offline mode: no live source to wait on, so there's nothing to load
+      setBatchLoaded(true);
       return;
     }
-    try {
-      const response = await fetch(`${apiBase}/api/official/states/GA/boundary`, { signal: AbortSignal.timeout(120_000), method: "POST", headers: { "Content-Type": "application/json" } });
-      if (!response.ok) throw new Error("Georgia boundary reconciliation unavailable");
-      setDashboardGaBoundary(await response.json() as GaBoundaryReconciliation);
-      setGaCheckStatus("ready");
-      setGaCheckedAt(new Date().toISOString());
-    } catch {
-      setGaCheckStatus("error");
-      // The dashboard's Georgia findings simply hold their last known value on failure — same
-      // fail-quiet-but-don't-guess behavior as the NC official-rate fetch a few lines up.
-    } finally {
-      setGaBoundaryLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void refreshLiveSnapshot(), 0);
-    const interval = window.setInterval(() => void refreshLiveSnapshot(), LIVE_REFRESH_INTERVAL_MS);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 120_000);
+    const get = async <T,>(path: string): Promise<T | null> => {
+      try {
+        const response = await fetch(`${apiBase}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal });
+        return response.ok ? await response.json() as T : null;
+      } catch { return null; }
     };
-  }, [refreshLiveSnapshot]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void refreshGaBoundary(), 0);
-    const interval = window.setInterval(() => void refreshGaBoundary(), LIVE_REFRESH_INTERVAL_MS);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-    };
-  }, [refreshGaBoundary]);
-
-  // Kept independent from NC's and GA's refresh above for the same reason refreshGaBoundary is its
-  // own callback: one wired state (or the whole batch) failing must never affect the others.
-  const refreshOtherFindings = useCallback(async () => {
-    setBatchHealth((current) => ({ ...current, status: "loading" }));
-    const apiBase = apiBaseUrl();
-    if (!apiBase) {
-      setBatchHealth((current) => ({ ...current, status: "error" }));
-      setOtherFindingsLoaded(true); // offline mode: no live source to wait on, so there's nothing to load
-      return;
-    }
     try {
-      const response = await fetch(`${apiBase}/api/official/findings`, { signal: AbortSignal.timeout(120_000), method: "POST", headers: { "Content-Type": "application/json" } });
-      if (!response.ok) throw new Error("Wired-state findings batch unavailable");
-      const result = await response.json() as { findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[] };
-      if (!Array.isArray(result.failedStates) || !Array.isArray(result.stateChecks)) throw new Error("Comparison coverage unavailable");
+      const [result, coverage, treatment] = await Promise.all([
+        get<{ findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
+          stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[];
+          nc: { aplusSnapshot: LiveAPlusSnapshot; officialSnapshot: OfficialNcSnapshot } | null;
+          ga: GaBoundaryReconciliation | null;
+        }>("/api/official/findings"),
+        get<StateCoverageSnapshot>("/api/aplus/states"),
+        get<TaxTreatmentSnapshot>("/api/aplus/tax-treatment"),
+      ]);
+      if (treatment) { setTaxTreatmentSnapshot(treatment); setTaxTreatmentStatus("ready"); }
+      else setTaxTreatmentStatus("error");
+      if (coverage) setStateCoverage(coverage);
+      if (!result || !Array.isArray(result.failedStates) || !Array.isArray(result.stateChecks) || !("nc" in result) || !("ga" in result)) throw new Error("Comparison batch unavailable");
+      if (result.nc) {
+        if (result.nc.aplusSnapshot.standardRows.length !== 100) throw new Error("Incomplete NC snapshot");
+        setActiveCountyCoverage(mergeOfficialRates(mergeRateRows(initializeComparisons(countyCoverage), result.nc.aplusSnapshot.standardRows), result.nc.officialSnapshot));
+        setLiveSnapshot(result.nc.aplusSnapshot);
+        setOfficialSnapshot(result.nc.officialSnapshot);
+        setAppliedImport(null);
+        setSelectedCounty(null);
+      } else setOfficialSnapshot(null);
+      setDashboardGaBoundary(result.ga);
       setDashboardOtherFindings(result.findings);
       setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks });
+      setConnectorStatus(coverage ? "live" : "fallback");
+      setConnectorMessage(`${result.stateChecks.length} state checks succeeded; ${result.failedStates.length} failed.${coverage ? "" : " A+ assignment inventory could not refresh; retained inventory may be stale."}`);
     } catch {
       setBatchHealth((current) => ({ ...current, status: "error" }));
-      // Holds its last known value on failure - same fail-quiet-but-don't-guess behavior as NC/GA.
+      setConnectorStatus("fallback");
+      setConnectorMessage("The comparison batch could not refresh; retained findings are from an earlier read.");
     } finally {
-      setOtherFindingsLoaded(true);
+      window.clearTimeout(timeout);
+      setBatchLoaded(true);
     }
-  }, []);
+  }, [setSelectedCounty]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshOtherFindings(), 0);
-    const interval = window.setInterval(() => void refreshOtherFindings(), LIVE_REFRESH_INTERVAL_MS);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-    };
-  }, [refreshOtherFindings]);
+    const timer = window.setTimeout(() => void refreshComparisons(), 0);
+    const interval = window.setInterval(() => void refreshComparisons(), LIVE_REFRESH_INTERVAL_MS);
+    return () => { window.clearTimeout(timer); window.clearInterval(interval); };
+  }, [refreshComparisons]);
 
   const reviewCasesByKey = useMemo(() => new Map(reviewCases.map((reviewCase) => [reviewCase.findingKey, reviewCase])), [reviewCases]);
 
@@ -693,7 +611,7 @@ export default function Home() {
   );
 
   // NC's own comparisonStatus/ComparedCounty pipeline above is untouched. This just adapts its
-  // output — and Georgia's separately-fetched boundary reconciliation — into the shared shape the
+  // output — and Georgia's boundary payload from the same batch — into the shared shape the
   // generalized rate-change inbox renders, so a state doesn't need a bespoke inbox to appear in it.
   const toNcFinding = useCallback((county: ComparedCounty): JurisdictionFinding => ({
     id: `NC-${county.taxBody}`,
@@ -716,8 +634,8 @@ export default function Home() {
     [dashboardGaBoundary],
   );
   const inboxFindings = useMemo(
-    () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings),
-    [dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
+    () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings).filter((finding) => !batchHealth.failedStates.includes(finding.stateCode)),
+    [batchHealth.failedStates, dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
   const treatmentByTaxBody = useMemo(() => new Map((taxTreatmentSnapshot?.taxBodies ?? [])
     .filter((row): row is TaxBodyTreatment & { taxBody: string } => Boolean(row.taxBody))
@@ -745,11 +663,7 @@ export default function Home() {
   const lineLevelOnlyFindings = useMemo(() => treatmentAwareInboxFindings.filter((finding) => finding.rateRiskShipTos === 0 && (finding.lineLevelReviewShipTos ?? 0) > 0), [treatmentAwareInboxFindings]);
   const neverTaxedOnlyFindings = useMemo(() => treatmentAwareInboxFindings.filter((finding) => finding.rateRiskShipTos === 0 && (finding.lineLevelReviewShipTos ?? 0) === 0 && (finding.neverTaxedShipTos ?? 0) > 0), [treatmentAwareInboxFindings]);
   const needsAttentionCount = rateRiskFindings.length;
-  // GA and the other-states batch both take several seconds to load and start empty - without this,
-  // needsAttentionCount reads as NC-only (or 0) for the first few seconds of every page load, then
-  // visibly jumps once they land. Gating the displayed count on this means it's either a clear
-  // "loading" state or the real settled number - never a misleadingly low one.
-  const dashboardCountsReady = gaBoundaryLoaded && otherFindingsLoaded && taxTreatmentStatus !== "idle" && taxTreatmentStatus !== "loading";
+  const dashboardCountsReady = batchLoaded && taxTreatmentStatus !== "idle" && taxTreatmentStatus !== "loading";
   const openFinding = (finding: JurisdictionFinding) => {
     if (finding.stateCode === "NC") {
       const county = activeCountyCoverage.find((candidate) => candidate.taxBody === finding.taxBody);
@@ -992,15 +906,14 @@ export default function Home() {
       <section className="page-content" aria-label="Comparison coverage">
         <div className="connector-banner" role="status"><div>
           <span className="section-label">Comparison coverage · latest checks</span>
-          <strong>{batchHealth.status === "ready" && gaCheckStatus === "ready" && officialSnapshot && connectorStatus === "live" ? "Available checks completed; assignment gaps remain separate" : "Checks incomplete — visible findings are a partial view"}</strong>
-          <p>NC: {officialSnapshot && connectorStatus === "live" ? "completed" : "unavailable, refreshing, or snapshot"}. GA: {gaCheckStatus}{gaCheckedAt ? ` (last success ${new Date(gaCheckedAt).toLocaleString()})` : ""}. Other states: {batchHealth.status}{batchHealth.retrievedAt ? ` (last returned batch ${new Date(batchHealth.retrievedAt).toLocaleString()})` : ""}.</p>
+          <strong>{batchHealth.status === "ready" ? "Available checks completed; assignment gaps remain separate" : "Checks incomplete — visible findings are a partial view"}</strong>
+          <p>{batchHealth.status === "loading" ? "Refreshing all wired states…" : `${batchHealth.stateChecks.length} state checks succeeded; ${batchHealth.failedStates.length} failed.`}{batchHealth.retrievedAt ? ` Last returned batch: ${new Date(batchHealth.retrievedAt).toLocaleString()}.` : ""}</p>
           {batchHealth.failedStates.length > 0 && <p>Failed state checks: {batchHealth.failedStates.join(", ")}. These states are missing from the refreshed inbox.</p>}
           {batchHealth.status === "error" && <p>The latest batch failed. Any retained findings are from an earlier read.</p>}
-          {gaCheckStatus === "error" && <p>Georgia could not refresh. Any retained Georgia findings are from an earlier read.</p>}
           <p>Official-source coverage is not assignment coverage. No findings does not mean every ship-to has been verified. Reviewers are manually selected; hosted A+ connectivity remains unvalidated until its end-to-end checks pass.</p>
-          <details><summary>Assignments without a rate comparison · other-state batch</summary>
+          <details><summary>Assignments without a rate comparison · all-state batch</summary>
             {batchHealth.stateChecks.length === 0 ? <p>Coverage counts unavailable.</p> : batchHealth.stateChecks.map((check) => <p key={check.stateCode}>{check.stateCode}: {check.uncheckedShipTos === null ? "unknown" : check.uncheckedShipTos.toLocaleString()} unchecked or excluded; {check.intentionalNoTaxShipTos.toLocaleString()} deliberate no-tax assignments.</p>)}
-            <p>NC and GA use separate checks. Open their state details for coverage and exclusions. DE, MT, NH and OR are classified as having no general sales tax.</p>
+            <p>All wired states use this batch. Open a state for its coverage and exclusions. DE, MT, NH and OR are classified as having no general sales tax.</p>
           </details>
           {reviewStoreStatus === "error" && <p>Review history could not be loaded. Saved decisions may be missing from this view.</p>}
         </div></div>
@@ -1029,7 +942,7 @@ export default function Home() {
               <strong>{connectorStatus === "live" || connectorStatus === "refreshing" ? "Read-only A+ connector active" : OFFLINE_MODE ? "Production connection intentionally disabled" : connectorStatus === "connecting" ? "Connecting to A+" : "Using the validated fallback snapshot"}</strong>
               <p>{connectorMessage}{liveSnapshot ? ` Last successful read: ${new Date(liveSnapshot.retrievedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.` : ""}</p>
             </div>
-            <button className="secondary-button" type="button" onClick={() => { void refreshLiveSnapshot(); void refreshGaBoundary(); void refreshOtherFindings(); void refreshReviewCases(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
+            <button className="secondary-button" type="button" onClick={() => { void refreshComparisons(); void refreshReviewCases(); }} disabled={OFFLINE_MODE || connectorStatus === "connecting" || connectorStatus === "refreshing"}>{OFFLINE_MODE ? "Supervised refresh only" : connectorStatus === "refreshing" ? "Refreshing…" : "Refresh now"}</button>
           </div>
 
           <TaxTreatmentPanel snapshot={taxTreatmentSnapshot} status={taxTreatmentStatus} connectorStatus={connectorStatus} />
@@ -1065,7 +978,7 @@ export default function Home() {
                         <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${finding.jurisdictionLabel}`}>›</button></td>
                       </tr>
                     )) : !dashboardCountsReady ? (
-                      <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+ — this can take a few seconds.</p></div></div></td></tr>
+                      <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>The all-state batch is still comparing official rates with A+ — this can take a few seconds.</p></div></div></td></tr>
                     ) : (
                       <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">✓</span><div><strong>No findings in the available comparisons</strong><p>{officialSnapshot ? "An empty inbox does not establish complete coverage. Check failed reads and unverified assignments above." : "The last validated snapshot has no open findings. Connect official sources during supervised validation to check for newer publications."}</p></div></div></td></tr>
                     )}
@@ -1091,7 +1004,7 @@ export default function Home() {
                 <span className={`count-pill ${needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? needsAttentionCount : "…"}</span>
               </div>
               {!dashboardCountsReady ? (
-                <div className="empty-queue compact"><span aria-hidden="true">…</span><div><strong>Loading review activity…</strong><p>Georgia&apos;s boundary match and the other wired states are still being compared against A+.</p></div></div>
+                <div className="empty-queue compact"><span aria-hidden="true">…</span><div><strong>Loading review activity…</strong><p>The all-state batch is still comparing official rates with A+.</p></div></div>
               ) : rateRiskFindings.length === 0 ? (
                 <div className="empty-queue compact"><span aria-hidden="true">✓</span><div><strong>No findings in the available comparisons</strong><p>{officialSnapshot ? "Check comparison coverage before treating this as an all-clear." : "The official NCDOR comparison is not currently available."}</p></div></div>
               ) : rateRiskFindings.slice(0, 4).map((finding) => (
@@ -1219,7 +1132,7 @@ export default function Home() {
           <section className="queue-panel attention-panel" aria-labelledby="attention-title">
             <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Rate-risk findings</h2></div><span className={`count-pill ${dashboardCountsReady && needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? needsAttentionCount : "…"}</span></div>
             {!dashboardCountsReady ? (
-              <div className="empty-queue large"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>TaxAP is waiting for the Georgia boundary match and the other wired state comparisons before showing the review queue.</p></div></div>
+              <div className="empty-queue large"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>TaxAP is waiting for the all-state comparison batch before showing the review queue.</p></div></div>
             ) : rateRiskFindings.length === 0 ? (
               <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No rate-risk findings</strong><p>No findings are visible in the available checks. Failed reads and unverified assignments are excluded; check the coverage summary.</p></div></div>
             ) : rateRiskFindings.map((finding) => {
@@ -1466,7 +1379,7 @@ export default function Home() {
           )}
           {(selectedCounty.comparisonStatus === "mismatch" || selectedCounty.comparisonStatus === "upcoming") && (
             <ReviewDecisionPanel
-              approvalAllowed={Boolean(officialSnapshot) && connectorStatus === "live"}
+              approvalAllowed={Boolean(officialSnapshot) && batchHealth.status === "ready" && connectorStatus === "live"}
               reviewCase={reviewCasesByKey.get(reviewFindingKey(selectedCounty)) ?? null}
               onSave={(status, actor, note) => saveCountyReview(selectedCounty, status, actor, note)}
             />
@@ -1488,7 +1401,7 @@ export default function Home() {
           <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
           <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
           {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{selectedFinding.confidenceNote} Resolve the jurisdiction before approving maintenance.</p>}
-          <ReviewDecisionPanel key={findingDecisionKey(selectedFinding)} reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding)) ?? null} approvalAllowed={selectedFinding.confidence === "confirmed" && inboxFindings.some((finding) => findingDecisionKey(finding) === findingDecisionKey(selectedFinding)) && (selectedFinding.stateCode === "GA" ? gaCheckStatus === "ready" : batchHealth.status === "ready")} onSave={(status, actor, note) => saveReview(findingReviewEvidence(selectedFinding), status, actor, note)} />
+          <ReviewDecisionPanel key={findingDecisionKey(selectedFinding)} reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding)) ?? null} approvalAllowed={selectedFinding.confidence === "confirmed" && inboxFindings.some((finding) => findingDecisionKey(finding) === findingDecisionKey(selectedFinding)) && batchHealth.status === "ready"} onSave={(status, actor, note) => saveReview(findingReviewEvidence(selectedFinding), status, actor, note)} />
           {reviewCasesByKey.has(findingDecisionKey(selectedFinding)) && <ReviewAuditTrail reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding))!} />}
           <div className="drawer-actions">
             {selectedFinding.sourceUrl && <a className="secondary-button drawer-link" href={selectedFinding.sourceUrl} target="_blank" rel="noreferrer">Open official evidence ↗</a>}
@@ -1512,7 +1425,7 @@ export default function Home() {
             <div><dt>Latest note</dt><dd>{selectedReviewCase.latestNote ?? "No note recorded"}</dd></div>
           </dl>
           {selectedReviewCase.importedHistory && <p className="queue-storage-warning">Imported historical record. The original event was created by an earlier application seed, not a signed-in reviewer.</p>}
-          <ReviewDecisionPanel key={selectedReviewCase.findingKey} reviewCase={selectedReviewCase} approvalAllowed={batchHealth.status === "ready" && gaCheckStatus === "ready" && connectorStatus === "live" && inboxFindings.some((finding) => (finding.stateCode === "NC" ? finding.reviewFindingKey : findingDecisionKey(finding)) === selectedReviewCase.findingKey && finding.confidence === "confirmed")} onSave={(status, actor, note) => saveReview(selectedReviewCase, status, actor, note)} />
+          <ReviewDecisionPanel key={selectedReviewCase.findingKey} reviewCase={selectedReviewCase} approvalAllowed={batchHealth.status === "ready" && connectorStatus === "live" && inboxFindings.some((finding) => (finding.stateCode === "NC" ? finding.reviewFindingKey : findingDecisionKey(finding)) === selectedReviewCase.findingKey && finding.confidence === "confirmed")} onSave={(status, actor, note) => saveReview(selectedReviewCase, status, actor, note)} />
           <ReviewAuditTrail reviewCase={selectedReviewCase} />
           <div className="no-write-note"><strong>No A+ records were changed by TaxAP.</strong>Any approved rate maintenance still happens through the supported A+ GUI.</div>
           <div className="drawer-actions"><button className="primary-button" type="button" onClick={() => setSelectedReviewCase(null)}>Close audit record</button></div>

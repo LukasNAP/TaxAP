@@ -1,6 +1,15 @@
 # TaxAP project handoff
 
-Last updated September 10, 2026. This current summary and README supersede historical sections below.
+Last updated September 14, 2026. This current summary and README supersede historical sections below.
+
+## Unified comparison batch (September 14)
+
+- NC and GA now participate in `/api/official/findings` with the other wired readers. The response includes their existing `nc` county/future-change and `ga` boundary payloads alongside the generic findings and shared `stateChecks`/`failedStates` lists. The UI adapts each payload once; no duplicate findings are introduced.
+- Replaced three dashboard comparison refresh callbacks/timers with one. Assignment inventory and tax-treatment context refresh alongside the batch. On-demand state detail endpoints remain available; SQL, ERP field interpretation and rate/boundary matching rules are unchanged.
+- Removed separate NC/GA ready/completed labels. Coverage uses one batch timestamp, consistent state-success counts and a single failed-state list. NC/GA failures omit their refreshed inbox findings without discarding other states; a whole-batch failure retains earlier results with an explicit warning.
+- NC coverage counts use current aggregate assignments and validated county rates. GA verified comparison counts exclude unresolved addresses, missing rates and inconsistent jurisdiction groups. Neither reader success nor a zero discrepancy count implies full assignment coverage.
+- Local endpoint verification after restarting the preview: HTTP 200, all 47 wired states succeeded, zero failed states, and NC/GA each appeared exactly once with their required payloads.
+- Production build, all 260 tests, ESLint and TypeScript checks passed. New tests cover all 47 wired entries exactly once and NC/GA/other-state failure isolation. The user authorized commit and push on September 14; this delivery commit includes the unified batch changes. No deployment or A+ writes performed.
 
 ## State wiring completed within the confirmed business scope
 

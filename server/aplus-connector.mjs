@@ -570,23 +570,26 @@ export async function readDirectMappingAplusComparison(stateCode, { readState = 
   return { ...(await reader(stateDetail)), stateDetail };
 }
 
-/**
- * Reads every wired state's A+ comparison (NJ, the flat-rate states, and the direct-mapping
- * states) in parallel and converts each into the dashboard's shared JurisdictionFinding shape, so
- * the "Needs attention" inbox can show every confirmed mismatch on initial dashboard load instead
- * of only after a user manually opens that specific state's drawer. NC and GA are NOT included
- * here - they already have their own dedicated, independently-refreshed dashboard fetch paths
- * (readOfficialNcRates / readGeorgiaBoundaryReconciliation) that page.tsx calls directly. A single
- * state's failure (e.g. Massachusetts' bot-block, Mississippi's TLS quirk) never fails the batch -
- * it's just omitted, the same fail-quiet-but-don't-guess behavior every other dashboard fetch uses.
- */
-export async function readAllWiredStateFindings() {
+/** One refresh batch for every wired state. State failures are isolated and reported. */
+export async function readNorthCarolinaBatchComparison() {
+  const [aplusSnapshot, officialSnapshot, stateDetail] = await Promise.all([
+    readLiveTaxBodies(), readOfficialNcRates(), readStateDetail("NC"),
+  ]);
+  return { aplusSnapshot, officialSnapshot, stateDetail };
+}
+
+export async function readAllWiredStateFindings({
+  readNc = readNorthCarolinaBatchComparison, readGa = readGeorgiaBoundaryReconciliation,
+  readNj = readNewJerseyAplusComparison, readFlat = readFlatStateAplusComparison,
+  readDirect = readDirectMappingAplusComparison,
+} = {}) {
   const flatStateCodes = Object.keys(FLAT_STATE_APLUS_ADAPTERS);
   const directMappingCodes = Object.keys(DIRECT_MAPPING_APLUS_READERS);
-  const [njResult, flatResults, directResults] = await Promise.all([
-    readNewJerseyAplusComparison().then((value) => ({ status: "fulfilled", value })).catch((error) => ({ status: "rejected", reason: error })),
-    Promise.allSettled(flatStateCodes.map((code) => readFlatStateAplusComparison(code))),
-    Promise.allSettled(directMappingCodes.map((code) => readDirectMappingAplusComparison(code))),
+  const [njResult, flatResults, directResults, dedicatedResults] = await Promise.all([
+    readNj().then((value) => ({ status: "fulfilled", value })).catch((error) => ({ status: "rejected", reason: error })),
+    Promise.allSettled(flatStateCodes.map((code) => readFlat(code))),
+    Promise.allSettled(directMappingCodes.map((code) => readDirect(code))),
+    Promise.allSettled([readNc(), readGa()]),
   ]);
 
   const findings = [];
@@ -606,7 +609,24 @@ export async function readAllWiredStateFindings() {
     else failedStates.push(directMappingCodes[index]);
   });
 
-  return { findings, failedStates, stateChecks, retrievedAt: new Date().toISOString() };
+  const [ncResult, gaResult] = dedicatedResults;
+  const nc = ncResult.status === "fulfilled" ? ncResult.value : null;
+  const ga = gaResult.status === "fulfilled" ? gaResult.value : null;
+  if (nc) {
+    const officialByCode = new Map(nc.officialSnapshot.rates.map((row) => [row.taxBody, row.officialRate]));
+    const configuredByCode = new Map(nc.aplusSnapshot.standardRows.map((row) => [row.taxBody, row.currentRate]));
+    stateChecks.push(comparisonHealth({ stateCode: "NC", totals: { activeShipTos: nc.stateDetail.activeShipTos },
+      findings: nc.stateDetail.taxBodies.map((row) => ({ activeShipTos: row.activeShipTos,
+        matched: officialByCode.has(row.taxBody), officialRate: officialByCode.get(row.taxBody), aplusRate: configuredByCode.get(row.taxBody) })) }));
+  } else failedStates.push("NC");
+  if (ga) {
+    stateChecks.push(comparisonHealth({ stateCode: "GA", totals: ga.totals,
+      findings: ga.taxBodyFindings.map((row) => ({ ...row, activeShipTos: row.matchedShipTos, matched: row.jurisdictionAssignmentConsistent })) }));
+  } else failedStates.push("GA");
+  stateChecks.sort((a, b) => a.stateCode.localeCompare(b.stateCode));
+  failedStates.sort();
+  // NC and GA retain their existing comparison payloads for county/future-change and boundary views.
+  return { findings, nc, ga, failedStates, stateChecks, retrievedAt: new Date().toISOString() };
 }
 
 export function buildGeorgiaAddressQuery() {
