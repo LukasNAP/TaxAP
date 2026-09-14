@@ -105,7 +105,7 @@ cd /var/atlanticapps/taxap
 git -c core.sshCommand='ssh -i /home/lukasn/.ssh/id_ed25519_taxap -o IdentitiesOnly=yes' pull --ff-only
 docker compose -f deployment/apdock01/docker-compose.yml up -d --build
 docker compose -f deployment/apdock01/docker-compose.yml ps
-curl -kI https://localhost:5017
+curl -I --resolve apdock01.atlanticpkg.com:5017:127.0.0.1 https://apdock01.atlanticpkg.com:5017
 ```
 
 The Docker image includes the ODBC runtime required by `msnodesqlv8` and the PDF tooling used by official-source adapters. TLS certificate and key paths are supplied through the deployment `.env` and mounted read-only.
@@ -124,7 +124,7 @@ Until those checks pass, the hosted application is suitable for interface review
 
 ### User access control is separate
 
-The Entra identity above authenticates the backend workload to SQL. It does not sign Ana into TaxAP. Before broad internal distribution, put the approved OAuth2 proxy or equivalent single-tenant access control in front of TaxAP and restrict it to the intended users. This can be completed after the workload connection, but it remains a production-readiness item.
+The Entra identity above authenticates the backend workload to SQL. It does not sign Ana into TaxAP. The deployment configuration now includes a single-tenant OAuth2 Proxy with an explicit access-group requirement, protecting both the web application and API. Its `/oauth2/callback` route is prepared but must be configured with the registration details, securely provisioned credentials, and deployed/tested before broad internal distribution. See [`deployment/apdock01/README.md`](deployment/apdock01/README.md). Review identities remain manually selected until a separate application integration is completed. This can be completed after the workload connection, but it remains a production-readiness item.
 
 See [`deployment/apdock01/README.md`](deployment/apdock01/README.md) for the host-specific checklist.
 

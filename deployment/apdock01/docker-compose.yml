@@ -18,16 +18,54 @@ services:
         max-size: "100m"
         max-file: "5"
 
-  taxap-proxy:
+  # Internal routing is reachable only after OAuth2 Proxy authenticates the request.
+  taxap-router:
     image: nginx:alpine
-    container_name: taxap-proxy
     restart: unless-stopped
     depends_on:
       - taxap-app
+    volumes:
+      - ./nginx/taxap-router.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - taxap-internal
+
+  taxap-signin:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.4
+    restart: unless-stopped
+    depends_on:
+      - taxap-router
+    command: ["--config=/etc/oauth2-proxy/taxap.cfg"]
+    environment:
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://login.microsoftonline.com/${TAXAP_SIGNIN_TENANT_ID:?Set the sign-in tenant ID}/v2.0
+      OAUTH2_PROXY_CLIENT_ID: ${TAXAP_SIGNIN_CLIENT_ID:?Set the sign-in application client ID}
+      OAUTH2_PROXY_ALLOWED_GROUPS: ${TAXAP_SIGNIN_GROUP_ID:?Set the approved access group object ID}
+      OAUTH2_PROXY_REDIRECT_URL: ${TAXAP_ALLOWED_ORIGIN:?Set the canonical HTTPS origin}/oauth2/callback
+    volumes:
+      - ./oauth2-proxy.cfg:/etc/oauth2-proxy/taxap.cfg:ro
+    secrets:
+      - taxap-signin-client-secret
+      - taxap-signin-cookie-secret
+    networks:
+      - taxap-internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  taxap-proxy:
+    image: nginx:alpine
+    container_name: taxap-proxy
+    environment:
+      TAXAP_ALLOWED_ORIGIN: ${TAXAP_ALLOWED_ORIGIN:?Set the canonical HTTPS origin}
+      NGINX_ENVSUBST_FILTER: "^TAXAP_ALLOWED_ORIGIN$$"
+    restart: unless-stopped
+    depends_on:
+      - taxap-signin
     ports:
       - "${TAXAP_HTTPS_PORT:-5017}:443"
     volumes:
-      - ./nginx/taxap-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/taxap-proxy.conf:/etc/nginx/templates/default.conf.template:ro
       # IT must provide these two read-only mounts from the approved wildcard certificate location.
       - ${TAXAP_TLS_CERT_PATH}:/etc/nginx/certs/taxap.crt:ro
       - ${TAXAP_TLS_KEY_PATH}:/etc/nginx/certs/taxap.key:ro
@@ -45,3 +83,10 @@ networks:
 
 volumes:
   taxap-review-data:
+
+# These files are provisioned on the host by IT; their contents never belong in Git or .env.
+secrets:
+  taxap-signin-client-secret:
+    file: ${TAXAP_SIGNIN_CLIENT_SECRET_FILE:?Set the protected sign-in client-secret file path}
+  taxap-signin-cookie-secret:
+    file: ${TAXAP_SIGNIN_COOKIE_SECRET_FILE:?Set the protected cookie-secret file path}

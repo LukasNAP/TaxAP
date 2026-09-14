@@ -18,6 +18,64 @@ docker compose -f deployment/apdock01/docker-compose.yml up -d --build
 
 Verify the public web container and private connector health through the approved internal URL. Do not publish port 3001 or bypass the proxy.
 
-## Authentication
+## Entra user sign-in
 
-This Compose configuration deliberately does not add Entra user sign-in yet. Before Ana or Liv receive broad access, place the existing approved OAuth2-proxy pattern in front of `taxap-proxy`, configure a single-tenant Entra app registration, and restrict access to Ana, Liv, and approved IT administrators.
+The deployment now routes traffic through HTTPS Nginx → OAuth2 Proxy → internal Nginx router → TaxAP web/API. Only the HTTPS ingress is published. Both page requests and `/api/` require a valid session; the OAuth2 callback is handled by the proxy. This configuration is prepared in the repository, not yet deployed or tested with Atlantic's registration.
+
+Register this exact **Web** redirect URI with Jeff:
+
+```text
+https://apdock01.atlanticpkg.com:5017/oauth2/callback
+```
+
+It is generated from `TAXAP_ALLOWED_ORIGIN` plus `/oauth2/callback`. Keep the origin HTTPS, without a trailing slash. If DNS or port changes, update both the Entra redirect URI and the deployment origin. Public Nginx rejects Host headers that do not match that origin.
+
+### Settings to obtain from Jeff
+
+| Setting | What to provide |
+|---|---|
+| `TAXAP_SIGNIN_TENANT_ID` | Atlantic tenant ID; use a single-tenant app registration. |
+| `TAXAP_SIGNIN_CLIENT_ID` | Application/client ID of the **user sign-in** registration. |
+| `TAXAP_SIGNIN_GROUP_ID` | Object ID of a dedicated security group containing Ana, Liv, Lukas and approved administrators. Enable its groups claim in ID tokens. |
+| Sign-in client credential | Provision the client-secret **value**, with no trailing newline, in the protected host file named by `TAXAP_SIGNIN_CLIENT_SECRET_FILE`. Do not send it in ordinary messages or commit it. |
+
+Require assignment to the Enterprise Application and assign the approved group. The proxy also checks the group claim. Its scopes are `openid profile email`; issuer validation remains enabled and there are no authentication-bypass routes. Users without the group claim are denied. If group overage applies, IT must explicitly validate the required Entra/Graph configuration before granting access; do not remove the group restriction as a workaround.
+
+The sign-in client credential is separate from the certificate-based `AZURE_*` SQL workload identity. This work does not change the hosted SQL connection, its certificate requirement, or its permissions.
+
+### Host provisioning
+
+- Store the sign-in credential outside the checkout at the example path `/var/atlanticapps/taxap/secrets/signin-client-secret`.
+- Provision a separate cookie encryption key at `.../secrets/signin-cookie-secret`: **32 raw random bytes**, not base64 text. Generate into the file without displaying the key, for example `openssl rand -out <protected-cookie-file> 32` under a restrictive umask. Do not overwrite an existing key during a routine restart.
+- The container account must be able to read both files. Grant only the necessary read access; do not make credentials world-readable. Confirm the image's configured user when assigning file ownership. Compose mounts the files read-only as secrets. Secret contents do not belong in `.env`, Git, Docker build context, shell arguments, or logs.
+- Populate the sign-in IDs, group and file paths in `deployment/apdock01/.env`. Blank required values prevent Compose configuration from resolving. The proxy must reach Microsoft discovery/token/JWKS endpoints over HTTPS.
+- Keep the existing IT-approved HTTPS certificate mounts and database volume. Use an approved secret-rotation procedure; cookie-key rotation invalidates existing TaxAP sessions.
+
+### Validation and release
+
+With the real settings provisioned, run `docker compose -f deployment/apdock01/docker-compose.yml config --quiet`. Do not print expanded production configuration into shared logs. Deployment still requires explicit owner approval.
+
+After deployment, verify:
+
+1. Opening the HTTPS application redirects an unauthenticated user to the Atlantic tenant. The login request's redirect URI exactly matches the registered callback.
+2. An assigned member of the approved group returns through `/oauth2/callback` and can open the application and API. An unassigned user, missing group claim and different tenant are denied.
+3. An unauthenticated or expired-session `/api/reviews` request returns **401**, not review data or a login-page HTML response. Reload the application to sign in again after session expiry.
+4. Invalid callback state, forged user headers and direct requests to private app/router/proxy ports do not grant access. Confirm only port 5017 (or the approved replacement) is exposed on the host.
+5. Cookies are Secure, HTTP-only and SameSite=Lax. Callback request URLs and authorization codes are absent from access logs. No sign-in or access token is forwarded into TaxAP.
+6. Review persistence and all-state refresh still work through the protected routes. A state comparison can take longer than 30 seconds; both proxy layers allow 180 seconds upstream.
+
+`/oauth2/sign_out` clears the TaxAP session; it does not sign the user out of Microsoft 365. Reviewer selection inside TaxAP remains manual and explicitly labeled as such. Connecting review ownership to verified sign-in identity is a separate application change; this access gate does not establish authenticated audit attribution.
+
+### Local verification without Entra
+
+The opt-in integration harness uses the actual OAuth2 Proxy v7.15.4 executable and a synthetic issuer/token service. It preserves token issuer/signature verification but supplies local authorization, token and JWKS endpoints, so no Microsoft or A+ connection is used.
+
+Set `TAXAP_TEST_OAUTH2_PROXY` to a verified binary and optionally `TAXAP_TEST_COMPOSE=1`, then run:
+
+```text
+node --test tests/signin-proxy.integration.mjs
+```
+
+The normal test suite also checks that the public ingress has no direct route to the application and no API authentication bypass. Local Windows Nginx syntax validation passed with synthetic TLS material and local service-name substitutions. Docker Desktop failed during startup on this workstation, so the actual Linux container stack and real Entra browser sign-in remain deployment acceptance checks.
+
+References: [OAuth2 Proxy Entra provider](https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/ms_entra_id/) and [configuration options](https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/).

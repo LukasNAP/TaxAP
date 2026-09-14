@@ -2,6 +2,15 @@
 
 Last updated September 14, 2026. This current summary and README supersede historical sections below.
 
+## Entra sign-in proxy prepared (September 14)
+
+- User authorized adding the sign-in proxy and callback route. Docker Compose now defines OAuth2 Proxy v7.15.4 and an internal router; only HTTPS Nginx is published. All application/API traffic passes through authentication. `/oauth2/callback` is handled by the proxy; the configured callback is `https://apdock01.atlanticpkg.com:5017/oauth2/callback`.
+- Single-tenant issuer validation, mandatory access-group setting, PKCE, secure HTTP-only cookies and 401 responses for anonymous API calls are configured. Host-header checks and stripped forwarding/identity headers prevent public routing around the gate. Callback access logging and token forwarding are disabled; upstream timeouts accommodate the all-state batch.
+- User sign-in IDs/credential and cookie encryption key remain to be supplied securely. No real credentials were created or exposed. Missing required Compose settings stop configuration resolution. Hosted SQL's certificate-based workload identity is unchanged and still separate.
+- This configuration is not deployed. Actual Atlantic Entra login, Linux-container startup, network reachability and group claims remain acceptance gates. Authenticated audit attribution is not implemented; existing reviewer selection remains manual.
+- Verification: production build and all 262 application tests passed; two opt-in integration tests passed against OAuth2 Proxy v7.15.4 and Compose configuration. Covered anonymous API rejection, forged identity headers, invalid callback state, wrong tenant/group rejection, approved session access and sign-out cookie clearing. Lint, TypeScript, Nginx syntax validation and diff checks passed. User authorized committing and pushing all changes; no deployment authorized or performed.
+- Local Docker Desktop startup failed in its inference manager, producing the user's screenshot. No reset or Docker repair was performed. Validation continued using the official checksum-verified OAuth2 Proxy Windows binary, synthetic OIDC credentials and Windows Nginx syntax checks. See deployment/apdock01/README.md for Jeff's settings and release checks.
+
 ## Unified comparison batch (September 14)
 
 - NC and GA now participate in `/api/official/findings` with the other wired readers. The response includes their existing `nc` county/future-change and `ga` boundary payloads alongside the generic findings and shared `stateChecks`/`failedStates` lists. The UI adapts each payload once; no duplicate findings are introduced.
