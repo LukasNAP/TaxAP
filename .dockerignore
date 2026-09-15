@@ -1,5 +1,7 @@
 .git
 .data
+secrets
+**/secrets
 .env
 .env.*
 !.env.example

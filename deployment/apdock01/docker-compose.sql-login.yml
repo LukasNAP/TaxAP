@@ -1,0 +1,13 @@
+# Add this override only after IT provisions the dedicated SQL login.
+services:
+  taxap-app:
+    environment:
+      TAXAP_SQL_AUTHENTICATION: sql
+      TAXAP_SQL_USER: ${TAXAP_SQL_USER:?Set the dedicated SQL login name}
+      TAXAP_SQL_PASSWORD_FILE: /run/secrets/taxap-sql-password
+    secrets:
+      - taxap-sql-password
+
+secrets:
+  taxap-sql-password:
+    file: ${TAXAP_SQL_PASSWORD_FILE:?Set the protected host SQL password file path}

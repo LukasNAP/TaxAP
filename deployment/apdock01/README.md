@@ -4,6 +4,23 @@ This deployment keeps TaxAP's read-only connector private inside a Docker networ
 
 ## Required before deployment
 
+The certificate-based SQL path below is the original option. IT also supports dedicated SQL accounts; TaxAP now supports that alternative as described next. Neither option inherits the browser user's database access.
+
+### Dedicated read-only SQL login
+
+IT must supply a dedicated SQL login, approved server/database and TCP port, and SELECT access to the existing queries and linked-server path. SQL permissions enforce read-only access. For the verified SQL03/DWStage connection, set `TAXAP_SQL_QUERY_ROUTE=direct`: tax-body queries use SQL03's APLUS linked server directly. `linked` preserves the outer SQL03 hop for the original Azure entry point. Windows mode defaults to direct; other modes default to linked. Invalid route values fail rather than silently choosing a path.
+
+Provision the password without a trailing newline in `/var/atlanticapps/taxap/secrets/sql-password`, readable only by the app container user (verify its numeric UID; it differs from the sign-in proxy user). Set `TAXAP_SQL_USER` and `TAXAP_SQL_PASSWORD_FILE` in the protected deployment `.env`; optionally set `TAXAP_SQL_PORT` (default 1433). Never put the password itself in environment variables or Git. SQL traffic always requires encryption. Certificate validation is enabled by default. Jeff approved trusting SQL03's self-signed certificate on September 15: set `TAXAP_SQL_TRUST_SERVER_CERTIFICATE=true` for that approved exception. This skips server certificate verification while preserving encryption; invalid boolean values fail configuration.
+
+After explicit deployment authorization and credential provisioning:
+
+```bash
+docker compose -f deployment/apdock01/docker-compose.yml -f deployment/apdock01/docker-compose.sql-login.yml config --quiet
+docker compose -f deployment/apdock01/docker-compose.yml -f deployment/apdock01/docker-compose.sql-login.yml up -d --build
+```
+
+Keep using both Compose files for future SQL-login deployments. This override selects `sql` authentication and mounts the password read-only for the application only. Existing certificate settings are unused in this mode; browser sign-in remains unchanged. Validate actual read-only queries, linked-server permissions and fresh comparison results before calling hosted data connected. Health metadata alone does not test SQL connectivity. This option is prepared locally and has not been deployed or tested against Atlantic SQL.
+
 1. Atlantic IT approves an internal DNS name and provides read-only TLS certificate/key mount paths.
 2. Create or obtain a non-interactive Microsoft Entra service principal with a certificate credential and the least Azure SQL/DWStage permissions required for TaxAP's existing SELECT-only queries. Store the combined PEM (public certificate and private key) only at `/var/atlanticapps/taxap/secrets/azure-sql-client-cert.pem`; Compose mounts it read-only at `/run/secrets/azure-sql-client-cert.pem`. Do not use a personal Azure CLI login, SQL password, or client secret.
 3. The identity and Azure SQL firewall/private-link policy are validated in a supervised, read-only session.

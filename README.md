@@ -1,5 +1,9 @@
 # TaxAP
 
+September 15 hosted update: SQL-login connectivity on apdock01 has been verified against SQL03/DWStage and the APLUS tax-body link. Fresh connector reads succeeded; the comparison batch completed 45 checks with ID/LA failures still unresolved. This supersedes older snapshot-only hosted-connection notes below. See HANDOFF.md for deployment state and limitations.
+
+Hosted database authentication also supports a dedicated SQL login with a protected password file (`TAXAP_SQL_AUTHENTICATION=sql`). See [SQL login deployment](deployment/apdock01/README.md#dedicated-read-only-sql-login). This is separate from user sign-in and still requires IT-provisioned read-only permissions and end-to-end validation; the existing Windows and Entra modes remain available.
+
 TaxAP is Atlantic Packaging's internal, read-only sales and use tax monitoring application. It compares authoritative state tax-rate publications with the tax bodies assigned to active A+ ship-to records, surfaces discrepancies for human review, and preserves aggregate evidence. It does **not** calculate customer tax or update A+.
 
 ## Current status

@@ -1,7 +1,7 @@
 import { comparisonHealth } from "./comparison-health.mjs";
+import { openSqlLoginPool } from "./sql-login.mjs";
 import { DefaultAzureCredential } from "@azure/identity";
 import sql from "mssql";
-import sqlWindows from "mssql/msnodesqlv8.js";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { validateXatxbdCsv } from "../app/aplus-import.ts";
@@ -121,12 +121,14 @@ export function validateStateCode(value) {
   return stateCode;
 }
 
-function linkedSettings() {
-  const directWindowsConnection = String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase() === "windows";
+export function linkedSettings(env = process.env) {
+  const directWindowsConnection = String(env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase() === "windows";
+  const route = String(env.TAXAP_SQL_QUERY_ROUTE || (directWindowsConnection ? "direct" : "linked")).trim().toLowerCase();
+  if (!["direct", "linked"].includes(route)) throw new Error("TAXAP_SQL_QUERY_ROUTE must be direct or linked.");
   return {
-    linkedServer: directWindowsConnection ? null : process.env.TAXAP_SQL_LINKED_SERVER || "SQL03",
-    aplusLinkedServer: process.env.TAXAP_APLUS_LINKED_SERVER || "APLUS",
-    library: process.env.TAXAP_APLUS_LIBRARY || "APLUSV8FAQ",
+    linkedServer: route === "direct" ? null : env.TAXAP_SQL_LINKED_SERVER || "SQL03",
+    aplusLinkedServer: env.TAXAP_APLUS_LINKED_SERVER || "APLUS",
+    library: env.TAXAP_APLUS_LIBRARY || "APLUSV8FAQ",
   };
 }
 
@@ -270,6 +272,9 @@ export async function openPool() {
   const database = requiredSetting("TAXAP_SQL_DATABASE");
   const authentication = String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase();
   if (authentication === "windows") {
+    // node-mssql drivers share global request constructors. Do not load the
+    // Windows driver in a SQL-login/Entra process: it replaces Tedious requests.
+    const { default: sqlWindows } = await import("mssql/msnodesqlv8.js");
     const pool = new sqlWindows.ConnectionPool({
       server,
       database,
@@ -282,7 +287,8 @@ export async function openPool() {
     await pool.connect();
     return pool;
   }
-  if (authentication !== "entra") throw new Error("TAXAP_SQL_AUTHENTICATION must be entra or windows.");
+  if (authentication === "sql") return openSqlLoginPool(sql.ConnectionPool);
+  if (authentication !== "entra") throw new Error("TAXAP_SQL_AUTHENTICATION must be entra, windows or sql.");
   const credential = new DefaultAzureCredential();
   const accessToken = await credential.getToken("https://database.windows.net/.default");
   if (!accessToken?.token) throw new Error("Microsoft Entra ID did not return an Azure SQL access token.");
@@ -729,7 +735,7 @@ export function createConnectorServer({ reviews } = {}) {
       return sendJson(response, 200, {
         status: "ready",
         configured: Boolean(process.env.TAXAP_SQL_SERVER && process.env.TAXAP_SQL_DATABASE),
-        authentication: String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase() === "windows" ? "Windows Authentication" : "Microsoft Entra ID",
+        authentication: ({ windows: "Windows Authentication", entra: "Microsoft Entra ID", sql: "SQL login" })[String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase()] || "Unsupported authentication",
       }, responseOrigin);
     }
 
