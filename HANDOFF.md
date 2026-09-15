@@ -2,6 +2,18 @@
 
 Last updated September 15, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Louisiana official-source TLS fix committed and pushed (September 15)
+
+Diagnosed the `UNABLE_TO_VERIFY_LEAF_SIGNATURE` failure fetching `https://remotesellersfiling.la.gov/lookup/lookup.aspx` down to its actual cause: direct `openssl s_client` inspection confirmed the server sends only its leaf certificate and omits its GoDaddy intermediate ("Go Daddy Secure Certificate Authority - G2") from the TLS handshake. That intermediate chains to "Go Daddy Root Certificate Authority - G2," already trusted by both Node's default and the OS's system CA stores, so this was a server-side chain gap rather than a missing root or a container/CA-store problem.
+
+Fix (`server/la-rates.mjs` only): embedded that one publicly published intermediate certificate as a constant and added it to the existing `enableSystemCertificateAuthorities()` CA list alongside the default/system sets. This restores full chain validation rather than disabling it — a certificate that does not chain to this intermediate (or another trusted path) still fails. No SQL, A+, or other-state TLS handling was touched.
+
+Verified against live sources (not fixtures): the Louisiana adapter now succeeds end-to-end — 64 parishes, 438 domicile rate rows (56 counties/155 cities/227 special), current as-of date 2026-09-01. Idaho's live official-source fetch was independently re-verified successful, confirming no regression there. Full validation passed: production build, all 265 tests, ESLint, `npx tsc --noEmit`, and `git diff --check`.
+
+User authorized commit and push; delivered as commit `a4d0056` on `main` (`9aac563..a4d0056`, fast-forward). This does not update the apdock01 host checkout/deployment, which remains on its own manually-deployed state per the sections below.
+
+The full comparison batch has not been rerun since this fix; the last known batch result (45/47 successful, ID/LA failed) is superseded for the LA/ID individual-source checks above but not yet re-confirmed at the batch level.
+
 ## Source-control delivery (September 15)
 
 User authorized committing and pushing all outstanding changes, including SQL-login support, direct routing, driver isolation, tests, secrets build exclusions and Claude startup documentation. These are included in this delivery commit. Final production build and all 265 tests passed; lint and TypeScript checks passed. Earlier uncommitted-local-work descriptions are historical after this delivery. Host checkout still contains manually deployed runtime modifications beyond its 526fc4c Git baseline; this source-control operation does not pull, reset or redeploy the server.
