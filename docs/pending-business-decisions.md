@@ -4,6 +4,8 @@ This memo collects the questions that TaxAP cannot answer from A+ or Department 
 
 The order is based on the apparent number of current ship-tos at risk or blocked. Counts are investigation snapshots, not permanent totals. An unknown count is shown as unknown rather than estimated.
 
+**September 15, 2026:** a read-only, aggregate-only audit (`server/catchall-exemption-audit.mjs`) cross-referenced A+'s tax-exempt certificate fields (`ADDR.SAEXNO`, `CUSMS.CMEXNO`) against every "catch-all" code below (AL000, DC000, IA000, ID000, MN000, ND000, NE000, NV000, OK000, SD000, UT000, VT000, WA000, WA3500, WI000, WV000). Results are noted inline under each state. This narrows several of these questions with real evidence, but a populated certificate number is not proof of a currently valid exemption — it still needs a human decision, not an automatic resolution.
+
 ## Confirmed no-tax policies — September 10, 2026
 
 The user confirmed that the existing AK, HI, ND and WY assignments are deliberate no-tax treatment. This supersedes earlier questions below about whether those current zero-rate assignments are unbuilt. TaxAP excludes only the confirmed configured zero-rate codes (AK000, HI000, ND000, WY000 and Wyoming ZTEMP), labels them as business policy, and never manufactures official 0% jurisdiction matches. New/nonzero/missing/retired assignments remain unresolved. It does not settle future collection obligations, legal exemptions or a future change to Hawaii GET pass-on policy.
@@ -19,6 +21,8 @@ The user directed: "Just do sales tax for now" in response to the Iowa/Vermont s
 3. **Why it matters:** Every active D.C. ship-to in the snapshot is currently assigned to a 0% group, so TaxAP cannot treat any of them as a normal official-rate match.
 4. **What the answer unlocks:** Verified exemptions can remain documented exceptions. Any ordinary taxable assignments can be corrected in A+, after which TaxAP can compare the single citywide rate without address matching.
 
+**September 15, 2026 audit evidence:** a read-only, aggregate-only cross-check of A+'s tax-exempt certificate fields (`ADDR.SAEXNO` / `CUSMS.CMEXNO`) found 11 of the 21 active `DC000` ship-tos have a certificate on file; **10 do not**. A populated certificate narrows the question toward "documented exemption" but is not proof of a currently valid one; the 10 without a certificate lean toward "incomplete/incorrect assignment" and are the ones most worth checking first. See `server/catchall-exemption-audit.mjs`.
+
 ## Mississippi — verify cross-jurisdiction assignments and city-local coverage
 
 1. **What was found:** Of 271 active Mississippi ship-tos, 268 use `MS000` at the correct 7% statewide base. Three use unrelated Dominican Republic, Honduras, or Missouri tax bodies. Mississippi DOR also imposes general-retail local levies in Jackson (1%) and Tupelo (0.25%), but no active Mississippi-specific city code appeared.
@@ -32,6 +36,8 @@ The user directed: "Just do sales tax for now" in response to the Iowa/Vermont s
 2. **Question to answer:** What does `ID000` mean, and is `MN430` intentional? Should TaxAP obtain and maintain city-specific evidence for all 23 resort cities, or only those containing active Atlantic ship-tos?
 3. **Why it matters:** The 6% state-rate match is not a complete total inside a resort city when its local tax applies to general merchandise. The state does not offer one authoritative rate table TaxAP can automate.
 4. **What the answer unlocks:** Confirmed assignment handling and a defined city scope allow targeted boundary/evidence work without claiming statewide local completeness or maintaining irrelevant cities.
+
+**September 15, 2026 audit evidence:** 11 of the 12 active `ID000` ship-tos have a tax-exempt certificate on file (`ADDR.SAEXNO` / `CUSMS.CMEXNO`); **1 does not**. This leans toward `ID000` being a mostly-intentional exemption bucket, with one ship-to worth checking individually. See `server/catchall-exemption-audit.mjs`.
 
 ## South Carolina — approve or reject external address matching
 
@@ -64,6 +70,8 @@ The user directed: "Just do sales tax for now" in response to the Iowa/Vermont s
 2. **Question to answer:** Is `MN000` an intentional fallback for a known tax treatment, or is it an unfinished/missing jurisdiction assignment that should be corrected?
 3. **Why it matters:** It is the largest known Minnesota bucket and affects 106 active ship-tos. Treating it as correct without an answer could hide missing setup; treating it as wrong without an answer could create 106 false alerts.
 4. **What the answer unlocks:** TaxAP can either model `MN000` as a documented exception or flag its ship-tos for jurisdiction assignment and include them in normal official-rate comparisons.
+
+**September 15, 2026 audit evidence:** 66 of the 106 active `MN000` ship-tos have a tax-exempt certificate on file; **40 do not**. This is a genuine split, not a clean answer either way — it still needs a human decision, but the 40 without a certificate are the more likely missing-setup candidates. See `server/catchall-exemption-audit.mjs`.
 
 ### Decision 2: Is Atlantic missing the Twin Cities metro surcharge?
 
@@ -99,6 +107,8 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** Fifty-five active ship-tos cannot be safely judged until the code's purpose is known. Excluding them would silently hide the largest Iowa bucket; treating them as normal could hide missing assignments.
 4. **What the answer unlocks:** TaxAP can either document and separately report the fallback or route those ship-tos into county-level review and comparison.
 
+**September 15, 2026 audit evidence:** 44 of the 55 active `IA000` ship-tos have a tax-exempt certificate on file; **11 do not**. Leans toward `IA000` being mostly an intentional exemption bucket, with 11 ship-tos worth checking individually. See `server/catchall-exemption-audit.mjs`.
+
 ### Decision 2: Should TaxAP cover counties where A+ has no tax setup today?
 
 1. **What was found:** A+ has no tax-body row for 42 of Iowa's 99 real counties.
@@ -115,6 +125,8 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** More than 100 current ship-tos sit in the largest Alabama bucket with no real rate information. Silently excluding it would hide the largest problem; comparing it as 0% would falsely imply Alabama tax is zero.
 4. **What the answer unlocks:** TaxAP can either model the bucket as an explicitly approved exception or flag its ship-tos for proper jurisdiction assignment before Alabama rate comparison is enabled.
 
+**September 15, 2026 audit evidence:** all 8 currently-active `AL000` ship-tos have a tax-exempt certificate on file — **0 without**. This is the strongest evidence in this audit that a catch-all code is a deliberate exemption bucket, not a setup gap. Note the active count here (8) is much lower than the ~101 quoted above from an earlier snapshot; that population difference should be reconciled before treating this as the full answer. See `server/catchall-exemption-audit.mjs`.
+
 ### Decision 2: Which Alabama sale categories should TaxAP monitor?
 
 1. **What was found:** Alabama publishes materially different rates for general sales, motor vehicles, farm items, manufacturing, equipment, full city limits, unincorporated counties, and reduced-rate police jurisdictions. A+ also contains equipment-specific variants whose naming is not consistent.
@@ -129,12 +141,16 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** The 2026-09-02 aggregate refresh found 32 active North Dakota ship-tos across nine customer assignments, and the setup affects all of them.
 4. **What the answer unlocks:** A documented alternate mechanism would let TaxAP model the state honestly. Otherwise, engineering can surface a statewide setup alert and the tax owner can establish real jurisdiction/rate assignments through the A+ GUI.
 
+**September 15, 2026 audit evidence:** only 6 of 33 active `ND000` ship-tos have a tax-exempt certificate on file — **27 do not**, the weakest exemption evidence of any state in this audit. Combined with North Dakota's mandatory (non-optional) sales tax, this leans toward "unbuilt state setup" rather than deliberate policy, and is worth prioritizing. See `server/catchall-exemption-audit.mjs`.
+
 ## Nebraska — explain `NE000`
 
 1. **What was found:** The 2026-09-02 aggregate refresh found 21 of 115 active Nebraska ship-tos assigned to `NE000`, which has no configured tax-body definition.
 2. **Question to answer:** Is `NE000` an intentional fallback for exempt or specially handled sales, or does it represent ship-tos missing a Nebraska jurisdiction assignment?
 3. **Why it matters:** Nebraska's official rates vary by city, one county, and special layers. Treating `NE000` as a normal statewide code would hide the location needed to determine the correct total.
 4. **What the answer unlocks:** TaxAP can document an approved exception or route the 21 ship-tos for manual jurisdiction setup while comparing only validated configured codes.
+
+**September 15, 2026 audit evidence:** 16 of the 21 active `NE000` ship-tos have a tax-exempt certificate on file; **5 do not**. See `server/catchall-exemption-audit.mjs`.
 
 ## Nevada — explain `NV000`
 
@@ -143,12 +159,16 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** Nevada's combined rate varies by county from 6.85% to 8.375%. A locationless fallback cannot be compared safely with the correct official total.
 4. **What the answer unlocks:** TaxAP can preserve an approved exception or route the eight ship-tos for manual setup while an explicit reviewed county-name map compares the configured codes.
 
+**September 15, 2026 audit evidence:** 5 of the 8 active `NV000` ship-tos have a tax-exempt certificate on file; **3 do not**. See `server/catchall-exemption-audit.mjs`.
+
 ## Oklahoma — explain `OK000`
 
 1. **What was found:** The 2026-09-02 aggregate refresh found two of 272 active Oklahoma ship-tos assigned to `OK000`, which has no configured tax-body definition. The remaining groups are labelled as Oklahoma city, county, or city/county combinations.
 2. **Question to answer:** Is `OK000` an intentional fallback for exempt or specially handled sales, or does it represent ship-tos missing their Oklahoma delivery jurisdiction?
 3. **Why it matters:** Oklahoma applies state, county, municipality, and sometimes special local layers at the delivery location. A locationless fallback cannot be compared safely with an official total.
 4. **What the answer unlocks:** TaxAP can preserve an approved exception or route the two ship-tos for manual setup while a reviewed COPO/location crosswalk handles configured codes.
+
+**September 15, 2026 audit evidence:** 1 of the 2 active `OK000` ship-tos has a tax-exempt certificate on file; 1 does not. Too small a population to draw a strong conclusion either way. See `server/catchall-exemption-audit.mjs`.
 
 ## South Dakota — explain the 0% statewide code
 
@@ -157,12 +177,16 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** South Dakota's 4.2% state sales/use tax ordinarily applies even where no municipal tax exists. Treating 0% as the no-local rate would hide the entire state component.
 4. **What the answer unlocks:** TaxAP can preserve a verified exemption or route the nine ship-tos for manual setup while safely comparing explicit municipality and no-local-rate codes.
 
+**September 15, 2026 audit evidence:** 7 of the 9 active `SD000` ship-tos have a tax-exempt certificate on file; **2 do not**. See `server/catchall-exemption-audit.mjs`.
+
 ## Utah — explain `UT000`
 
 1. **What was found:** The 2026-09-02 aggregate refresh found 37 of 221 active Utah ship-tos assigned to `UT000`, which has no configured tax-body definition. The remaining groups are municipality-labelled totals.
 2. **Question to answer:** Is `UT000` an intentional fallback for exempt or specially handled sales, or does it represent ship-tos missing the Utah delivery-location code?
 3. **Why it matters:** Utah's official combined rate depends on county, municipality, transportation, and other local layers at the buyer's receipt location. A locationless fallback cannot be compared safely.
 4. **What the answer unlocks:** TaxAP can preserve an approved exception or route the 37 ship-tos for manual setup while a reviewed location-code/boundary matcher handles configured groups.
+
+**September 15, 2026 audit evidence:** 29 of the 37 active `UT000` ship-tos have a tax-exempt certificate on file; **8 do not**. See `server/catchall-exemption-audit.mjs`.
 
 ## Vermont — explain `VT000` and the county-labelled 7% code
 
@@ -171,12 +195,16 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** Vermont's ordinary rate is 6%, with an extra 1% only at qualifying destinations. A locationless fallback or county-wide 7% assumption could misclassify both local-option and non-local-option sales.
 4. **What the answer unlocks:** TaxAP can preserve verified exceptions and build an explicit municipality mapping without treating a county label as authoritative.
 
+**September 15, 2026 audit evidence:** 8 of the 9 active `VT000` ship-tos have a tax-exempt certificate on file; 1 does not. (This audit only covers `VT000`, not the separate "Orleans Co." 7% question above.) See `server/catchall-exemption-audit.mjs`.
+
 ## Washington — explain the two undefined location codes
 
 1. **What was found:** The 2026-09-02 aggregate refresh found 30 of 469 active Washington ship-tos on undefined `WA000` and two more on undefined `WA3500`. Other configured groups use recognizable Washington DOR location-code conventions.
 2. **Question to answer:** Are `WA000` and `WA3500` intentional exemption/fallback assignments, or are these 32 ship-tos missing valid Washington destination location codes?
 3. **Why it matters:** Washington retail sales tax is destination-based, and local rates vary by exact receipt location. Undefined location codes cannot be compared safely with the official rate.
 4. **What the answer unlocks:** TaxAP can preserve verified exceptions or route the 32 ship-tos for manual setup while an exact DOR/SST location-code matcher handles configured groups.
+
+**September 15, 2026 audit evidence:** 25 of 30 active `WA000` ship-tos have a tax-exempt certificate on file (5 do not); 1 of 2 active `WA3500` ship-tos has one (1 does not). See `server/catchall-exemption-audit.mjs`.
 
 ## Wisconsin — explain `WI000` and City of Milwaukee treatment
 
@@ -185,12 +213,16 @@ One additional Virginia ship-to uses North Carolina tax body `NC092`; confirm wh
 3. **Why it matters:** Wisconsin DOR identifies 7.9% as the general City of Milwaukee total versus 5.9% elsewhere in Milwaukee County. A county-only assignment could understate tax for city destinations.
 4. **What the answer unlocks:** TaxAP can preserve verified exceptions, distinguish city from county destinations, and determine whether a dedicated A+ city setup or another documented mechanism is required.
 
+**September 15, 2026 audit evidence:** 28 of the 34 active `WI000` ship-tos have a tax-exempt certificate on file; **6 do not**. (This audit does not address the separate City of Milwaukee question above.) See `server/catchall-exemption-audit.mjs`.
+
 ## West Virginia — explain `WV000` and `WV961`
 
 1. **What was found:** The 2026-09-02 aggregate refresh found 21 of 112 active West Virginia ship-tos on undefined `WV000`. One additional ship-to uses `WV961`, whose description says “Missouri Lewisburg.” A separate 6% no-local group already exists and covers 23 ship-tos.
 2. **Question to answer:** Is `WV000` an intentional exemption/fallback? Is `WV961` a mislabeled West Virginia municipality, a Missouri assignment with the wrong prefix, or another approved exception?
 3. **Why it matters:** West Virginia municipalities add 1% only inside their boundaries, while legitimate no-local destinations remain 6%. Undefined or conflicting-state codes cannot establish the correct treatment.
 4. **What the answer unlocks:** TaxAP can preserve verified exceptions, route incorrect setup for manual correction, and compare the remaining municipality/no-local groups using an explicit map.
+
+**September 15, 2026 audit evidence:** 12 of the 21 active `WV000` ship-tos have a tax-exempt certificate on file; **9 do not**. (This audit does not address the separate `WV961` mislabel question above.) See `server/catchall-exemption-audit.mjs`.
 
 ## New Jersey — confirm whether Atlantic qualifies for a reduced seller rate
 
