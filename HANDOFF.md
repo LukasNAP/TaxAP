@@ -2,6 +2,37 @@
 
 Last updated September 15, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Catch-all exemption-certificate audit built, deployed, and run (September 15)
+
+Built a read-only, aggregate-only investigation (`server/catchall-exemption-audit.mjs`, endpoint `POST /api/aplus/catch-all-exemption-audit`) to add real evidence to the "is this catch-all tax-body code an intentional exemption or a missing-jurisdiction gap?" questions in `docs/pending-business-decisions.md`. It cross-references two A+ fields TaxAP had not previously read — `ADDR.SAEXNO` and `CUSMS.CMEXNO` (tax-exempt certificate numbers, confirmed via the aplus-erp schema reference) — against the 16 catch-all codes named in that memo (AL000, DC000, IA000, ID000, MN000, ND000, NE000, NV000, OK000, SD000, UT000, VT000, WA000, WA3500, WI000, WV000). It only counts certificate presence/absence per code; it does not decode `SAEXCC`/`SAEXDT`/`CMECED` expiration semantics (unconfirmed A+ date encoding for these specific fields) and exposes no certificate numbers, addresses, or customer identity — counts only.
+
+Deployed to apdock01 the same way as the Louisiana fix: confirmed no unexpected host drift (line-ending-only difference from the last-deployed commit), backed up the pre-change file, tagged image `taxap-rollback:before-catchall-audit`, copied files via `scp` with MD5 verification, rebuilt/restarted only `taxap-app`, confirmed all four containers healthy.
+
+Ran it live; results (active ship-tos / with certificate / without):
+
+| State | Code | Active | With cert | Without cert |
+|---|---|---|---|---|
+| AL | AL000 | 8 | 8 | 0 |
+| DC | DC000 | 21 | 11 | 10 |
+| IA | IA000 | 55 | 44 | 11 |
+| ID | ID000 | 12 | 11 | 1 |
+| MN | MN000 | 106 | 66 | 40 |
+| ND | ND000 | 33 | 6 | 27 |
+| NE | NE000 | 21 | 16 | 5 |
+| NV | NV000 | 8 | 5 | 3 |
+| OK | OK000 | 2 | 1 | 1 |
+| SD | SD000 | 9 | 7 | 2 |
+| UT | UT000 | 37 | 29 | 8 |
+| VT | VT000 | 9 | 8 | 1 |
+| WA | WA000 | 30 | 25 | 5 |
+| WA | WA3500 | 2 | 1 | 1 |
+| WI | WI000 | 34 | 28 | 6 |
+| WV | WV000 | 21 | 12 | 9 |
+
+Notable: Alabama's `AL000` has a certificate on file for all 8 currently-active ship-tos — the strongest evidence in this set that a catch-all code is a deliberate exemption bucket. That active count (8) is much lower than the ~101 quoted in the pending-decisions memo from an earlier snapshot; that population difference is unreconciled and should be checked before trusting either number. North Dakota's `ND000` has the weakest evidence (6 of 33), which combined with North Dakota's mandatory (non-optional) sales tax leans toward "unbuilt setup" rather than policy - worth prioritizing. Minnesota's `MN000` is a genuine 66/40 split with no clean answer.
+
+A populated certificate number is evidence toward "documented exemption," not proof of a currently valid one - none of this resolves the underlying business decisions, it only gives Ana/Liv real data to decide from. Findings recorded inline in `docs/pending-business-decisions.md` under each affected state, plus a summary note at the top of that file. Code committed and pushed as `f002e7b` (feature) and `009e04f` (docs); both validated with the full test suite (272/272), ESLint, and `tsc --noEmit` before deployment.
+
 ## Louisiana TLS fix deployed to apdock01; full shared batch now clean (September 15)
 
 User authorized deploying the committed Louisiana fix (`604c1c0`/`a4d0056`) to the host. Confirmed the host's `server/la-rates.mjs` was byte-identical (MD5) to the pre-fix baseline before touching anything, so this was a clean, isolated application of the same change — no other host drift was at risk. Backed up the original file (`server/la-rates.mjs.before-la-tls-fix`) and tagged the running image `taxap-rollback:before-la-tls-fix` before rebuilding. Copied only the fixed file via `scp`, verified MD5 match, validated Compose config, then rebuilt/restarted only the `taxap-app` service with the existing SQL-login Compose overlay. All four containers (app, router, signin, proxy) came up clean with no restart loops; no other service, SQL setting, or A+ write path was touched.
