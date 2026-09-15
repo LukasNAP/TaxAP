@@ -2,6 +2,14 @@
 
 Last updated September 15, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Louisiana TLS fix deployed to apdock01; full shared batch now clean (September 15)
+
+User authorized deploying the committed Louisiana fix (`604c1c0`/`a4d0056`) to the host. Confirmed the host's `server/la-rates.mjs` was byte-identical (MD5) to the pre-fix baseline before touching anything, so this was a clean, isolated application of the same change — no other host drift was at risk. Backed up the original file (`server/la-rates.mjs.before-la-tls-fix`) and tagged the running image `taxap-rollback:before-la-tls-fix` before rebuilding. Copied only the fixed file via `scp`, verified MD5 match, validated Compose config, then rebuilt/restarted only the `taxap-app` service with the existing SQL-login Compose overlay. All four containers (app, router, signin, proxy) came up clean with no restart loops; no other service, SQL setting, or A+ write path was touched.
+
+Reran the full shared batch (`/api/official/findings`) from inside the container over loopback: **`failedStates` is now empty — all 47 wired states succeeded**, up from the prior 45/47 (LA and ID had failed). 328 aggregate findings returned, no customer/address data inspected. LA: 222 active ship-tos, 5 compared, 217 unchecked — consistent with the still-open LA000 statewide-catch-all business decision in `docs/pending-business-decisions.md`, not a fetch problem. ID: 98 active ship-tos, 58 compared, 40 unchecked — consistent with its documented undefined-`ID000`/resort-city scope gap, also a business decision, not a fetch problem. Neither state's remaining unchecked/uncompared counts are resolved by this fix; only the underlying official-source connectivity failure is.
+
+The host checkout otherwise remains on its prior manually-deployed baseline (526fc4c plus its existing untracked SQL-login/sign-in modifications) — this deployment did not pull, reset, or otherwise sync the host to `main`; it applied only the one already-verified file.
+
 ## Louisiana official-source TLS fix committed and pushed (September 15)
 
 Diagnosed the `UNABLE_TO_VERIFY_LEAF_SIGNATURE` failure fetching `https://remotesellersfiling.la.gov/lookup/lookup.aspx` down to its actual cause: direct `openssl s_client` inspection confirmed the server sends only its leaf certificate and omits its GoDaddy intermediate ("Go Daddy Secure Certificate Authority - G2") from the TLS handshake. That intermediate chains to "Go Daddy Root Certificate Authority - G2," already trusted by both Node's default and the OS's system CA stores, so this was a server-side chain gap rather than a missing root or a container/CA-store problem.
