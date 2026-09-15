@@ -1,4 +1,5 @@
 import { comparisonHealth } from "./comparison-health.mjs";
+import { readCatchAllExemptionAudit } from "./catchall-exemption-audit.mjs";
 import { openSqlLoginPool } from "./sql-login.mjs";
 import { DefaultAzureCredential } from "@azure/identity";
 import sql from "mssql";
@@ -801,6 +802,19 @@ export function createConnectorServer({ reviews } = {}) {
         const message = error instanceof Error ? error.message : "Unknown connector error";
         console.error(JSON.stringify({ event: "aplus_tax_treatment_refresh", ok: false, message }));
         return sendJson(response, 503, { error: "The read-only A+ tax-treatment summary is unavailable." }, responseOrigin);
+      }
+    }
+
+    if (url.pathname === "/api/aplus/catch-all-exemption-audit" && (request.method === "GET" || request.method === "POST")) {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        const snapshot = await readCatchAllExemptionAudit({ openPool });
+        console.info(JSON.stringify({ event: "aplus_catch_all_exemption_audit", ok: true, states: snapshot.states.length, retrievedAt: snapshot.retrievedAt }));
+        return sendJson(response, 200, snapshot, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown connector error";
+        console.error(JSON.stringify({ event: "aplus_catch_all_exemption_audit", ok: false, message }));
+        return sendJson(response, 503, { error: "The read-only catch-all exemption audit is unavailable." }, responseOrigin);
       }
     }
 
