@@ -2,7 +2,17 @@
 
 Last updated September 22, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Customer names and ship-to addresses added locally (September 22)
+
+Delivery update: user authorized commit, push and deployment of this expansion. The implementation and earlier identifier-list deployment note are included in this delivery. Deployment verification is recorded after rollout; do not treat this authorization alone as proof of deployment.
+
+User explicitly approved expanding the identifiers-only list to show customer names and ship-to addresses inside signed-in TaxAP. This supersedes the earlier numbers-only restriction for that UI/API purpose; customer details remain excluded from logs, chat output, Git data, and documentation. Used aplus-erp schema to confirm CUSMS.CMCSNM and ADDR.SASAD1/SASAD2/SASCTY/SASHST/SASZIP. Extended the existing parameterized SELECT and explicit response allowlist; joins, active filters, treatment scope and pagination are unchanged. No contact, phone, certificate, invoice or ship-to-name fields added. API retains no-store and generic error responses behind the existing hosted sign-in gate. Do not expose the connector port publicly.
+
+Table now shows company, customer name, customer number, multiline ship-to address and ship-to number. Empty data has an unavailable label; no guessed address. Added horizontal scrolling/wrapping for the wider table using existing styles. Synthetic fixture verifies mapping/trim behavior and excluded fields. Build and all 275 tests passed; lint/TypeScript passed. Live local read verification printed only row count/shape booleans, no customer details. Browser acceptance and hosted deployment remain pending. No commit/push/deploy or A+ writes authorized/performed for this expansion. Preserve the earlier uncommitted deployment handoff note too.
+
 ## Finding ship-to identifier list implemented locally (September 22)
+
+Deployment update: user explicitly authorized deployment of c991213. Verified target host page/connector files match the parent-commit baseline before copying; protected configuration/review backup at `/var/atlanticapps/taxap-backups/shiptos-*`, with SQLite integrity check and image tag `taxap-rollback:before-shipto-list`. Copied only the two app and two server files, verified SHA256 matches, validated Compose and built/replaced only taxap-app with the SQL-login override. Hosted identifier endpoint through the internal router returned 200, no-store, only approved fields, two 50-row pages with no overlap and consistent totals. Only aggregate outcomes were printed. Review integrity passed; public root 302 and anonymous new endpoint 401; all four containers running without restarts. Feature is now deployed; earlier pending-deployment notes below are historical. User-facing browser acceptance remains for Ana/the user. This deployment note is local/uncommitted; deployment did not authorize a new commit/push.
 
 Delivery update: user authorized commit and push; the feature and its tests are included in this delivery commit on main. Deployment remains unauthorized and pending, so the hosted app does not yet include the list. The implementation-time no-commit statement below is historical.
 

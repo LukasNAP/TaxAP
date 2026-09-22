@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { findingShipTosQuery, validateShipToSelection, readFindingShipTos } from "../server/finding-ship-tos.mjs";
 import { createConnectorServer } from "../server/aplus-connector.mjs";
 
-test("ship-to query is scoped, parameterized, read-only and excludes names/addresses", () => {
+test("ship-to query is scoped, parameterized and selects only approved customer/address fields", () => {
   assert.match(findingShipTosQuery, /c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO/);
   assert.match(findingShipTosQuery, /a.SASTXB\)\) = @taxBody/);
   assert.match(findingShipTosQuery, /@scope = 'rate-risk' AND LTRIM\(RTRIM\(a.SATXCD\)\) = '0'/);
@@ -11,18 +11,19 @@ test("ship-to query is scoped, parameterized, read-only and excludes names/addre
   assert.match(findingShipTosQuery, /a.SACSUS/);
   assert.match(findingShipTosQuery, /c.CMSUSP/);
   assert.match(findingShipTosQuery, /OFFSET @offset ROWS FETCH NEXT 50 ROWS ONLY/);
-  assert.doesNotMatch(findingShipTosQuery, /SASHNM|CMCSNM|SASAD|SASZIP|\b(?:INSERT|UPDATE|DELETE|EXEC|MERGE)\b/i);
+  for (const field of ["c.CMCSNM", "a.SASAD1", "a.SASAD2", "a.SASCTY", "a.SASHST", "a.SASZIP"]) assert.ok(findingShipTosQuery.includes(field));
+  assert.doesNotMatch(findingShipTosQuery, /SASCNT|SAEXNO|CMEXNO|SASHAR|\b(?:INSERT|UPDATE|DELETE|EXEC|MERGE)\b/i);
   for (const query of ['taxBody=x%27&state=NC', 'taxBody=NC060&state=NC&scope=unknown', 'taxBody=NC060&state=NC&page=-1']) assert.throws(() => validateShipToSelection(new URLSearchParams(query)));
 });
 
 test("identifier output is allowlisted and padded ship-to numbers survive", async () => {
   let closed = false;
   const inputs = {};
-  const request = { input(k, t, v) { inputs[k] = v; return this; }, async query() { return { recordset: [{ total: 83, companyNumber: 1, customerNumber: 42, shipToNumber: "0000123", secret: "must not escape" }] }; } };
+  const request = { input(k, t, v) { inputs[k] = v; return this; }, async query() { return { recordset: [{ total: 83, companyNumber: 1, customerNumber: 42, shipToNumber: "0000123", customerName: " Synthetic customer  ", addressLine1: " 123 Example St ", city: "Example City", state: "NC", postalCode: "00000", secret: "must not escape" }] }; } };
   const result = await readFindingShipTos({ taxBody: "NC060", state: "NC", scope: "rate-risk", page: 1 }, { openPool: async () => ({ request: () => request, close: async () => { closed = true; } }), sql: { VarChar: n => n, Int: "int" } });
   assert.equal(inputs.offset, 50);
   assert.equal(inputs.taxBody, "NC060");
-  assert.deepEqual(result.rows, [{ companyNumber: "1", customerNumber: "42", shipToNumber: "0000123" }]);
+  assert.deepEqual(result.rows, [{ companyNumber: "1", customerNumber: "42", shipToNumber: "0000123", customerName: "Synthetic customer", address: { line1: "123 Example St", line2: "", city: "Example City", state: "NC", postalCode: "00000" } }]);
   assert.equal(closed, true);
 });
 

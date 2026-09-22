@@ -998,3 +998,7 @@ select:focus-visible { outline: 3px solid rgba(69,158,216,.35); outline-offset: 
   .validation-lists, .import-stats { grid-template-columns: 1fr; }
   .import-stats article + article, .import-stats article:nth-child(3) { border-left: 0; border-top: 1px solid var(--ap-lgray); }
 }
+
+.ship-to-detail-table { min-width: 620px; }
+.ship-to-detail-table td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+.ship-to-detail-table th:nth-child(2), .ship-to-detail-table th:nth-child(4) { min-width: 160px; }

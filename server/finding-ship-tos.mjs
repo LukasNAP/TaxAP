@@ -11,7 +11,9 @@ export function validateShipToSelection(params) {
 
 export const findingShipTosQuery = `WITH scoped AS (
   SELECT a.SACONO AS companyNumber, a.SACSNO AS customerNumber,
-    RTRIM(a.[SASHP#]) AS shipToNumber
+    RTRIM(a.[SASHP#]) AS shipToNumber, RTRIM(c.CMCSNM) AS customerName,
+    RTRIM(a.SASAD1) AS addressLine1, RTRIM(a.SASAD2) AS addressLine2,
+    RTRIM(a.SASCTY) AS city, RTRIM(a.SASHST) AS state, RTRIM(a.SASZIP) AS postalCode
   FROM dbo.ADDR AS a
   LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
   WHERE LTRIM(RTRIM(a.SASTXB)) = @taxBody
@@ -20,10 +22,12 @@ export const findingShipTosQuery = `WITH scoped AS (
     AND ((@scope = 'rate-risk' AND LTRIM(RTRIM(a.SATXCD)) = '0')
       OR (@scope = 'all' AND UPPER(LTRIM(RTRIM(a.SASHST))) = @state))
 )
-SELECT totals.total, page.companyNumber, page.customerNumber, page.shipToNumber
+SELECT totals.total, page.companyNumber, page.customerNumber, page.shipToNumber,
+  page.customerName, page.addressLine1, page.addressLine2, page.city, page.state, page.postalCode
 FROM (SELECT COUNT(*) AS total FROM scoped) AS totals
 OUTER APPLY (
-  SELECT companyNumber, customerNumber, shipToNumber FROM scoped
+  SELECT companyNumber, customerNumber, shipToNumber,
+    customerName, addressLine1, addressLine2, city, state, postalCode FROM scoped
   ORDER BY companyNumber, customerNumber, shipToNumber
   OFFSET @offset ROWS FETCH NEXT 50 ROWS ONLY
 ) AS page
@@ -43,6 +47,11 @@ export async function readFindingShipTos(selection, { openPool, sql }) {
       page: selection.page, pageSize: 50,
       rows: result.recordset.filter(row => row.companyNumber != null).map(row => ({
         companyNumber: String(row.companyNumber), customerNumber: String(row.customerNumber), shipToNumber: String(row.shipToNumber ?? ""),
+        customerName: String(row.customerName ?? "").trim(),
+        address: {
+          line1: String(row.addressLine1 ?? "").trim(), line2: String(row.addressLine2 ?? "").trim(),
+          city: String(row.city ?? "").trim(), state: String(row.state ?? "").trim(), postalCode: String(row.postalCode ?? "").trim(),
+        },
       })),
     };
   } finally { await pool.close(); }
