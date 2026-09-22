@@ -1,4 +1,5 @@
 import { comparisonHealth } from "./comparison-health.mjs";
+import { validateShipToSelection, readFindingShipTos } from "./finding-ship-tos.mjs";
 import { readCatchAllExemptionAudit } from "./catchall-exemption-audit.mjs";
 import { openSqlLoginPool } from "./sql-login.mjs";
 import { DefaultAzureCredential } from "@azure/identity";
@@ -722,7 +723,7 @@ function sendJson(response, status, payload, origin) {
   response.end(JSON.stringify(payload));
 }
 
-export function createConnectorServer({ reviews } = {}) {
+export function createConnectorServer({ reviews, readShipTos = selection => readFindingShipTos(selection, { openPool, sql }) } = {}) {
   return createServer(async (request, response) => {
     const origin = request.headers.origin;
     const responseOrigin = origin === allowedOrigin ? origin : allowedOrigin;
@@ -732,6 +733,14 @@ export function createConnectorServer({ reviews } = {}) {
     }
 
     const url = new URL(request.url || "/", `http://${request.headers.host || `${host}:${port}`}`);
+    if (url.pathname === "/api/aplus/finding-ship-tos" && request.method === "GET") {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      let selection;
+      try { selection = validateShipToSelection(url.searchParams); validateStateCode(selection.state); }
+      catch { return sendJson(response, 400, { error: "Invalid ship-to selection." }, responseOrigin); }
+      try { return sendJson(response, 200, await readShipTos(selection), responseOrigin); }
+      catch { return sendJson(response, 503, { error: "Ship-to list unavailable. Try again after refreshing A+ data." }, responseOrigin); }
+    }
     if (url.pathname === "/health" && request.method === "GET") {
       return sendJson(response, 200, {
         status: "ready",

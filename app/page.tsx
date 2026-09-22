@@ -1,6 +1,7 @@
 "use client";
 
 import { findingDecisionKey, findingReviewEvidence } from "./finding-review";
+import { FindingShipTos } from "./finding-ship-tos";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1377,6 +1378,7 @@ export default function Home() {
           ) : (
             <div className="comparison-note comparison-note-match"><span aria-hidden="true">✓</span><div><strong>{selectedCounty.comparisonStatus === "matched" ? "A+ matches the current NCDOR rate" : "Official comparison unavailable"}</strong><p>{selectedCounty.activeShipTos > 0 ? `${selectedCounty.activeShipTos.toLocaleString()} active ship-tos use this tax body.` : "No active A+ ship-to address is assigned to this standard county tax body."}</p></div></div>
           )}
+          <FindingShipTos key={selectedCounty.taxBody} apiBase={apiBaseUrl()} taxBody={selectedCounty.taxBody} state="NC" scope="all" expectedCount={selectedCounty.activeShipTos} />
           {(selectedCounty.comparisonStatus === "mismatch" || selectedCounty.comparisonStatus === "upcoming") && (
             <ReviewDecisionPanel
               approvalAllowed={Boolean(officialSnapshot) && batchHealth.status === "ready" && connectorStatus === "live"}
@@ -1400,6 +1402,7 @@ export default function Home() {
           <p className="drawer-lede">Review the official evidence and record the outcome. TaxAP never updates A+.</p>
           <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
           <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
+          <FindingShipTos key={findingDecisionKey(selectedFinding)} apiBase={apiBaseUrl()} taxBody={selectedFinding.taxBody} state={selectedFinding.stateCode} scope={"rateRiskShipTos" in selectedFinding && selectedFinding.rateRiskShipTos != null ? "rate-risk" : "all"} expectedCount={selectedFinding.activeShipTos} />
           {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{selectedFinding.confidenceNote} Resolve the jurisdiction before approving maintenance.</p>}
           <ReviewDecisionPanel key={findingDecisionKey(selectedFinding)} reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding)) ?? null} approvalAllowed={selectedFinding.confidence === "confirmed" && inboxFindings.some((finding) => findingDecisionKey(finding) === findingDecisionKey(selectedFinding)) && batchHealth.status === "ready"} onSave={(status, actor, note) => saveReview(findingReviewEvidence(selectedFinding), status, actor, note)} />
           {reviewCasesByKey.has(findingDecisionKey(selectedFinding)) && <ReviewAuditTrail reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding))!} />}

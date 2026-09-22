@@ -1,6 +1,16 @@
 # TaxAP project handoff
 
-Last updated September 15, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+Last updated September 22, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+
+## Finding ship-to identifier list implemented locally (September 22)
+
+Delivery update: user authorized commit and push; the feature and its tests are included in this delivery commit on main. Deployment remains unauthorized and pending, so the hosted app does not yet include the list. The implementation-time no-commit statement below is historical.
+
+Ana requested the individual ship-tos behind a finding count. User explicitly selected company/customer/ship-to numbers only. Consulted aplus-erp and explained the new SELECT before editing; no names, addresses, certificate numbers or invoice fields are selected or returned. Added an on-demand "View affected ship-tos" section to the finding and NC drawers, with 50-row pagination, loading/error/retry states and retrieval time. No export or persistent identifier storage added.
+
+New `/api/aplus/finding-ship-tos` GET endpoint validates selection and pagination, uses parameterized SQL and matching company/customer joins with existing suspended-customer/ship-to exclusions. Rate-risk scope matches the existing treatment-aware count: SATXCD 0 for the tax body across states. Unfiltered/NC scope selects active assignments to that tax body in the finding state. It lists current assignments, not a claim that each individual location was rate-verified. Different current/finding totals display an explicit warning, including possible narrower jurisdiction scope. Company/customer/ship-to keys remain distinct; padded ship-to numbers are preserved. Responses are no-store, disallowed origins rejected, raw SQL errors suppressed; hosted route is covered by the existing all-API sign-in gate.
+
+Files: `server/finding-ship-tos.mjs`, `app/finding-ship-tos.tsx`, `tests/finding-ship-tos.test.mjs`, and integration changes in page/connector. Full suite 275/275 passed; final production build, lint and TypeScript passed after fixing a UI apiBase reference. Live local Windows-auth SELECT checks returned only approved fields; two 50-row rate-risk pages had no duplicate keys and consistent total. Only aggregate test outcomes were printed. Browser interaction acceptance remains unperformed. No commit, push, deployment or A+ writes. User still needs to authorize deployment for Ana to see it on apdock01.
 
 ## Catch-all exemption-certificate audit built, deployed, and run (September 15)
 
