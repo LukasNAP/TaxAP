@@ -35,7 +35,9 @@ type LiveAPlusSnapshot = {
 };
 type StateSummary = { stateCode: string; activeShipTos: number; activeCustomers: number; taxBodyCount: number };
 type ExcludedStateValue = { value: string; activeShipTos: number; likelyState: string | null };
-type ExcludedStateBreakdown = { blank: number; fullStateName: number; other: number; distinctValues: number; topValues: ExcludedStateValue[] };
+type ExcludedTaxBodyCounts = { usState: number; otherCode: number; placeholder: number; none: number };
+type ExcludedTaxBodyBreakdown = { total: number; byStateValue: Record<"blank" | "fullStateName" | "other", ExcludedTaxBodyCounts>; usStateTaxBodies: { stateCode: string; activeShipTos: number }[]; inconsistent?: boolean };
+type ExcludedStateBreakdown = { blank: number; fullStateName: number; other: number; distinctValues: number; topValues: ExcludedStateValue[]; byTaxBody?: ExcludedTaxBodyBreakdown | null };
 type StateCoverageSnapshot = { retrievedAt: string; states: StateSummary[]; excludedShipTos: number; excludedBreakdown?: ExcludedStateBreakdown };
 type TaxTreatmentCode = "0" | "3" | "J" | "other";
 type TaxTreatmentBucket = { treatmentCode: TaxTreatmentCode; activeShipTos: number; activeCustomers: number };
@@ -872,6 +874,7 @@ export default function Home() {
           {stateCoverage?.excludedBreakdown && stateCoverage.excludedShipTos > 0 && <details><summary>{stateCoverage.excludedShipTos.toLocaleString()} active {stateCoverage.excludedShipTos === 1 ? "ship-to is" : "ship-tos are"} excluded from every state check · unrecognized A+ state value</summary>
             <p>These ship-tos have a ship-to state (SASHST) that is not a 2-letter U.S. state or D.C. code, so no state comparison includes them. {stateCoverage.excludedBreakdown.blank.toLocaleString()} blank; {stateCoverage.excludedBreakdown.fullStateName.toLocaleString()} spelled-out state {stateCoverage.excludedBreakdown.fullStateName === 1 ? "name" : "names"}; {stateCoverage.excludedBreakdown.other.toLocaleString()} other values, including possible foreign states or provinces. Spelled-out names are hints only and are not counted toward that state. Review these exclusions with the tax team; correct only confirmed data-entry errors in A+. Valid foreign destinations may remain outside U.S. state checks. Other raw values are withheld to avoid exposing misplaced customer details.</p>
             {stateCoverage.excludedBreakdown.topValues.length > 0 && <div className="table-scroll"><table className="coverage-table"><caption>Recognized spelled-out state names (up to 15; counts above include all excluded values)</caption><thead><tr><th scope="col">Recognized state name</th><th scope="col">Active ship-tos</th><th scope="col">Possible state</th></tr></thead><tbody>{stateCoverage.excludedBreakdown.topValues.map((entry) => <tr key={entry.value}><td>{entry.value}</td><td>{entry.activeShipTos.toLocaleString()}</td><td>{entry.likelyState ?? "—"}</td></tr>)}</tbody></table></div>}
+            {stateCoverage.excludedBreakdown.byTaxBody === null ? <p>The tax-body breakdown for these ship-tos is unavailable from the latest read.</p> : stateCoverage.excludedBreakdown.byTaxBody && <ExcludedTaxBodyTable breakdown={stateCoverage.excludedBreakdown.byTaxBody} />}
           </details>}
           {reviewStoreStatus === "error" && <p>Review history could not be loaded. Saved decisions may be missing from this view.</p>}
         </div></div>
@@ -1705,4 +1708,25 @@ function Drawer({ titleId, onClose, children, className = "" }: { titleId: strin
 
 function AppFooter() {
   return <footer><span>TaxAP · Sales and use tax monitoring</span><span>Read-only evidence and review workspace</span></footer>;
+}
+
+const EXCLUDED_STATE_VALUE_LABELS = { blank: "Blank state", fullStateName: "Spelled-out state name", other: "Other value" } as const;
+const US_TAX_BODY_STATE_LIMIT = 10;
+
+function ExcludedTaxBodyTable({ breakdown }: { breakdown: ExcludedTaxBodyBreakdown }) {
+  const rows = (Object.keys(EXCLUDED_STATE_VALUE_LABELS) as (keyof typeof EXCLUDED_STATE_VALUE_LABELS)[]).map((key) => ({ key, label: EXCLUDED_STATE_VALUE_LABELS[key], counts: breakdown.byStateValue[key] }));
+  const totals = rows.reduce((sum, row) => ({ usState: sum.usState + row.counts.usState, otherCode: sum.otherCode + row.counts.otherCode, placeholder: sum.placeholder + row.counts.placeholder, none: sum.none + row.counts.none }), { usState: 0, otherCode: 0, placeholder: 0, none: 0 });
+  const shownStates = breakdown.usStateTaxBodies.slice(0, US_TAX_BODY_STATE_LIMIT);
+  const hiddenStates = breakdown.usStateTaxBodies.slice(US_TAX_BODY_STATE_LIMIT);
+  const hiddenShipTos = hiddenStates.reduce((sum, entry) => sum + entry.activeShipTos, 0);
+  return <>
+    <p>Assigned tax-body code patterns for these excluded ship-tos. A U.S. state prefix is only a naming hint; it does not verify the destination, configured rate or actual tax treatment. Other codes may include foreign or unrecognized setups. These counts do not add ship-tos to any state comparison.</p>
+    {breakdown.inconsistent && <p className="queue-storage-warning">The separate reads do not reconcile by total or state-value category ({breakdown.total.toLocaleString()} ship-tos in this breakdown). Data may have changed between reads. Refresh and investigate if the difference persists.</p>}
+    <div className="table-scroll"><table className="coverage-table"><caption>Excluded ship-tos by state value and assigned tax body</caption>
+      <thead><tr><th scope="col">State value</th><th scope="col">U.S. state prefix</th><th scope="col">Other code</th><th scope="col">Placeholder (ZTEMP)</th><th scope="col">No tax body</th></tr></thead>
+      <tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{row.label}</th><td>{row.counts.usState.toLocaleString()}</td><td>{row.counts.otherCode.toLocaleString()}</td><td>{row.counts.placeholder.toLocaleString()}</td><td>{row.counts.none.toLocaleString()}</td></tr>)}
+        <tr><th scope="row">Total</th><td>{totals.usState.toLocaleString()}</td><td>{totals.otherCode.toLocaleString()}</td><td>{totals.placeholder.toLocaleString()}</td><td>{totals.none.toLocaleString()}</td></tr></tbody>
+    </table></div>
+    {shownStates.length > 0 && <p>U.S. state prefixes on excluded ship-tos: {shownStates.map((entry) => `${entry.stateCode} ${entry.activeShipTos.toLocaleString()}`).join(", ")}{hiddenStates.length > 0 && `, plus ${hiddenShipTos.toLocaleString()} across ${hiddenStates.length} more ${hiddenStates.length === 1 ? "state" : "states"}`}.</p>}
+  </>;
 }

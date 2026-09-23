@@ -2,6 +2,12 @@
 
 Last updated September 23, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Excluded-state tax-body breakdown (September 23)
+
+Reviewed/applied `taxap-excluded-tax-bodies.patch`. Adds a SELECT-only aggregate query grouped by state value and assigned tax body, with existing company/customer join and active filters. Consulted aplus-erp: SASHST is state/province and SASTXB is assigned tax body. Only category counts and recognized U.S. prefixes leave the connector; no raw state values, tax-body codes or customer details in this new response. Coverage banner displays blank/full-name/other state values crossed with U.S. prefix, other code, ZTEMP and no assigned code.
+
+Review corrections: unknown codes are not labeled foreign; prefixes never prove actual tax treatment or destination. Separate-read consistency checks cover each category as well as totals. Optional query failure retains main coverage and reports unavailable; new error log is generic. Added injected connection seam and tests for failure isolation/cleanup, matched and mismatched categories, aggregation and privacy. Production build, all 295 tests, lint, TypeScript and whitespace checks passed. User authorized commit, push and deploy; host target files match the committed baseline. Deployment results will be recorded after rollout. No ERP writes or reassignment.
+
 ## Reviewed Claude excluded-state-values patch (deployed September 23)
 
 Applied `taxap-excluded-state-values.patch` with review corrections. Existing aggregate state coverage now categorizes excluded active ship-tos as blank, recognizable full state names, or other values. The coverage banner exposes these counts and up to 15 canonical full-state-name hints. Hints never reassign ship-tos or alter comparison coverage. Consulted aplus-erp and confirmed ADDR.SASHST is the 30-character state/province field. SQL, joins, active filters and comparison logic remain unchanged.

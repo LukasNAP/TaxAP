@@ -199,6 +199,21 @@ export function buildStateCoverageQuery() {
   GROUP BY UPPER(LTRIM(RTRIM(a.SASHST)))`;
 }
 
+// Excluded ship-tos (SASHST not a clean U.S./D.C. code) grouped by their raw state value and
+// assigned tax body. Only the connector sees raw SASHST text; it is bucketed before leaving.
+export function buildExcludedTaxBodyQuery() {
+  const cleanCodes = [...US_STATE_CODES].map((code) => `'${code}'`).join(", ");
+  return `SELECT UPPER(LTRIM(RTRIM(a.SASHST))) AS StateCode,
+    UPPER(NULLIF(LTRIM(RTRIM(a.SASTXB)), '')) AS TaxBody,
+    COUNT(*) AS ActiveShipTos
+  FROM dbo.ADDR AS a
+  LEFT JOIN dbo.CUSMS AS c ON c.CMCONO = a.SACONO AND c.CMCSNO = a.SACSNO
+  WHERE ISNULL(UPPER(LTRIM(RTRIM(a.SASHST))), '') NOT IN (${cleanCodes})
+    AND ISNULL(LTRIM(RTRIM(a.SACSUS)), '') <> 'S'
+    AND ISNULL(LTRIM(RTRIM(c.CMSUSP)), '') <> 'S'
+  GROUP BY UPPER(LTRIM(RTRIM(a.SASHST))), UPPER(NULLIF(LTRIM(RTRIM(a.SASTXB)), ''))`;
+}
+
 export function buildStateTaxBodyQuery() {
   return `SELECT NULLIF(LTRIM(RTRIM(a.SASTXB)), '') AS TaxBody,
     COUNT(*) AS ActiveShipTos,
@@ -410,11 +425,63 @@ export function summarizeStateCoverageRows(rows) {
   };
 }
 
-export async function readStateSummaries() {
-  const pool = await openPool();
+const PLACEHOLDER_TAX_BODIES = new Set(["ZTEMP"]);
+const STATE_VALUE_BUCKETS = ["blank", "fullStateName", "other"];
+
+function stateValueBucket(stateCode) {
+  if (!stateCode) return "blank";
+  return STATE_CODE_BY_NAME.has(stateCode.replace(/\s+/g, " ")) ? "fullStateName" : "other";
+}
+
+// Classify code patterns only, never destination, rate validity or actual tax treatment.
+// Unknown prefixes remain other codes, not inferred foreign jurisdictions.
+export function classifyTaxBodyCode(taxBody) {
+  const code = String(taxBody ?? "").trim().toUpperCase();
+  if (!code) return { kind: "none", stateCode: null };
+  if (PLACEHOLDER_TAX_BODIES.has(code)) return { kind: "placeholder", stateCode: null };
+  const prefix = code.slice(0, 2);
+  if (/^[A-Z]{2}$/.test(prefix) && US_STATE_CODES.has(prefix)) return { kind: "usState", stateCode: prefix };
+  return { kind: "otherCode", stateCode: null };
+}
+
+export function summarizeExcludedTaxBodies(rows) {
+  const empty = () => ({ usState: 0, otherCode: 0, placeholder: 0, none: 0 });
+  const byStateValue = Object.fromEntries(STATE_VALUE_BUCKETS.map((bucket) => [bucket, empty()]));
+  const usStateTotals = new Map();
+  let total = 0;
+  for (const row of rows) {
+    const stateCode = String(rowValue(row, "StateCode") || "").trim().toUpperCase();
+    if (US_STATE_CODES.has(stateCode)) continue;
+    const activeShipTos = numericValue(rowValue(row, "ActiveShipTos"));
+    const taxBody = classifyTaxBodyCode(rowValue(row, "TaxBody"));
+    byStateValue[stateValueBucket(stateCode)][taxBody.kind] += activeShipTos;
+    if (taxBody.stateCode) usStateTotals.set(taxBody.stateCode, (usStateTotals.get(taxBody.stateCode) ?? 0) + activeShipTos);
+    total += activeShipTos;
+  }
+  const usStateTaxBodies = [...usStateTotals].map(([stateCode, activeShipTos]) => ({ stateCode, activeShipTos }))
+    .sort((a, b) => b.activeShipTos - a.activeShipTos || a.stateCode.localeCompare(b.stateCode));
+  return { total, byStateValue, usStateTaxBodies };
+}
+
+export async function readStateSummaries({ connect = openPool } = {}) {
+  const pool = await connect();
   try {
-    const result = await pool.request().query(buildStateCoverageQuery());
-    return { retrievedAt: new Date().toISOString(), ...summarizeStateCoverageRows(result.recordset) };
+    const [coverage, excludedTaxBodies] = await Promise.allSettled([
+      pool.request().query(buildStateCoverageQuery()),
+      pool.request().query(buildExcludedTaxBodyQuery()),
+    ]);
+    if (coverage.status === "rejected") throw coverage.reason;
+    const snapshot = summarizeStateCoverageRows(coverage.value.recordset);
+    let byTaxBody = null;
+    if (excludedTaxBodies.status === "fulfilled") {
+      byTaxBody = summarizeExcludedTaxBodies(excludedTaxBodies.value.recordset);
+      // Separate reads may differ even when their grand totals are equal.
+      if (byTaxBody.total !== snapshot.excludedShipTos || STATE_VALUE_BUCKETS.some(bucket =>
+        Object.values(byTaxBody.byStateValue[bucket]).reduce((sum, count) => sum + count, 0) !== snapshot.excludedBreakdown[bucket])) byTaxBody = { ...byTaxBody, inconsistent: true };
+    } else {
+      console.error(JSON.stringify({ event: "aplus_excluded_tax_body_refresh", ok: false, message: "Excluded tax-body breakdown unavailable" }));
+    }
+    return { retrievedAt: new Date().toISOString(), ...snapshot, excludedBreakdown: { ...snapshot.excludedBreakdown, byTaxBody } };
   } finally {
     await pool.close();
   }
