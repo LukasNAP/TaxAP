@@ -115,10 +115,12 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   assert.match(page, /dashboardCountsReady && needsAttentionCount > 0/);
   assert.match(page, /customer names and ship-to addresses are not returned to the browser/);
   assert.match(page, /LIVE_REFRESH_INTERVAL_MS = 6 \* 60 \* 60 \* 1000/);
-  assert.match(page, /matchesJurisdictionFilters/);
+  const inventoryView = await readFile(new URL("../app/jurisdiction-inventory-view.tsx", import.meta.url), "utf8");
+  assert.match(page, /JurisdictionInventoryView/);
+  assert.match(inventoryView, /matchesJurisdictionFilters/);
   assert.match(page, /Effective date/);
   assert.match(page, /Official source/);
-  assert.match(page, /Any review status/);
+  assert.match(inventoryView, /Any review status/);
   assert.match(importParser, /XATXBD_COLUMN_COUNT = 19/);
   assert.match(importParser, /Missing standard county tax bodies/);
   assert.match(importParser, /current total does not equal its rate components/);

@@ -16,7 +16,8 @@ import {
   type ResolvedCase,
 } from "./tax-data";
 import { validateXatxbdCsv, type APlusImportResult, type ImportedTaxBody } from "./aplus-import";
-import { matchesJurisdictionFilters, type EffectiveFilter, type ReviewFilter, type SourceFilter } from "./jurisdiction-filters";
+import { JurisdictionInventoryView } from "./jurisdiction-inventory-view";
+import type { InventoryRow } from "./jurisdiction-inventory";
 import { combineFindings, gaFindingsFromReconciliation, type JurisdictionFinding } from "./dashboard-findings";
 import { describesOtherJurisdiction, isRetiredTaxBody, STATE_NAME_BY_CODE } from "./tax-body-policy";
 import { ReviewAuditTrail, ReviewDecisionPanel, reviewStatusLabels, type ReviewCase, type ReviewStatus } from "./review-workflow";
@@ -373,29 +374,6 @@ function mergeOfficialRates(current: ComparedCounty[], official: OfficialNcSnaps
   });
 }
 
-function downloadCoverageCsv(coverage: ComparedCounty[], snapshotDate: string) {
-  const rows = [
-    ["County", "A+ Tax Body", "A+ Configured Rate", "Official NCDOR Rate", "Difference", "Active Ship-tos", "Active Customers", "Comparison Status"],
-    ...coverage.map((county) => [
-      county.county,
-      county.taxBody,
-      formatRate(county.currentRate),
-      county.officialRate === null ? "Not checked" : formatRate(county.officialRate),
-      county.rateDifference === null ? "" : `${county.rateDifference.toFixed(2)}%`,
-      String(county.activeShipTos),
-      String(county.activeCustomers),
-      comparisonLabels[county.comparisonStatus],
-    ]),
-  ];
-  const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `taxap-nc-county-coverage-${snapshotDate}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function Home() {
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [activeCountyCoverage, setActiveCountyCoverage] = useState<ComparedCounty[]>(() => mergeOfficialRates(initializeComparisons(countyCoverage), validatedOfficialNcFallback));
@@ -443,14 +421,7 @@ export default function Home() {
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
   const [selectedReviewCase, setSelectedReviewCase] = useState<ReviewCase | null>(null);
   const [reviewStoreStatus, setReviewStoreStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ComparisonStatus | "all">("all");
-  const [stateFilter, setStateFilter] = useState<"all" | "NC">("all");
-  const [jurisdictionTypeFilter, setJurisdictionTypeFilter] = useState<"all" | "county">("all");
-  const [effectiveFilter, setEffectiveFilter] = useState<EffectiveFilter>("all");
-  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [sortBy, setSortBy] = useState<"county" | "ship-tos" | "effective">("ship-tos");
+
 
   useEffect(() => {
     const closeDrawer = (event: KeyboardEvent) => {
@@ -571,36 +542,16 @@ export default function Home() {
 
   const reviewCasesByKey = useMemo(() => new Map(reviewCases.map((reviewCase) => [reviewCase.findingKey, reviewCase])), [reviewCases]);
 
-  const filteredCounties = useMemo(() => {
-    return activeCountyCoverage
-      .filter((county) => {
-        const reviewCase = reviewCasesByKey.get(reviewFindingKey(county));
-        const effectiveState = county.comparisonStatus === "upcoming" ? "upcoming" : county.officialRate === null ? "undated" : "current";
-        return matchesJurisdictionFilters({
-          stateCode: "NC",
-          jurisdictionType: "county",
-          jurisdictionName: `${county.county} County`,
-          taxBody: county.taxBody,
-          comparisonStatus: county.comparisonStatus,
-          effectiveState,
-          sourceStatus: county.officialRate === null ? "unavailable" : "validated",
-          reviewStatus: reviewCase?.status ?? null,
-        }, {
-          query,
-          state: stateFilter,
-          jurisdictionType: jurisdictionTypeFilter,
-          comparison: statusFilter,
-          effective: effectiveFilter,
-          source: sourceFilter,
-          review: reviewFilter,
-        });
-      })
-      .sort((a, b) => sortBy === "county"
-        ? a.county.localeCompare(b.county)
-        : sortBy === "effective"
-          ? (a.futureChanges[0]?.effectiveDate ?? a.recentEffectiveDate ?? "9999").localeCompare(b.futureChanges[0]?.effectiveDate ?? b.recentEffectiveDate ?? "9999")
-          : b.activeShipTos - a.activeShipTos || a.county.localeCompare(b.county));
-  }, [activeCountyCoverage, effectiveFilter, jurisdictionTypeFilter, query, reviewCasesByKey, reviewFilter, sortBy, sourceFilter, stateFilter, statusFilter]);
+  const ncInventoryRows = useMemo<InventoryRow[]>(() => activeCountyCoverage.map(county => ({
+    id: `NC-${county.taxBody}`, stateCode: "NC", jurisdictionType: "county",
+    jurisdictionName: `${county.county} County`, taxBody: county.taxBody,
+    comparisonStatus: county.comparisonStatus,
+    effectiveState: county.comparisonStatus === "upcoming" ? "upcoming" : county.officialRate === null ? "undated" : "current",
+    sourceStatus: county.officialRate === null ? "unavailable" : "validated", reviewStatus: null,
+    officialRate: county.officialRate, componentRate: null, aplusRate: county.currentRate,
+    shipTos: county.activeShipTos, effectiveDate: county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? null,
+    reviewKey: reviewFindingKey(county),
+  })), [activeCountyCoverage]);
 
   const openFindings = useMemo(
     () => activeCountyCoverage.filter((county) => county.comparisonStatus === "mismatch" && county.activeShipTos > 0),
@@ -1046,78 +997,17 @@ export default function Home() {
             eyebrow="Searchable rate inventory"
             title="All jurisdictions"
             description="Search the current jurisdiction inventory and open connected state sources for validated state, county, city, and special-jurisdiction detail. A+ comparisons remain separate until jurisdiction matching is validated."
-            action={<button className="secondary-button export-button" type="button" onClick={() => downloadCoverageCsv(activeCountyCoverage, new Date().toISOString().slice(0, 10))}>Export aggregate CSV</button>}
           />
-          <div className="coverage-summary">
-            <div><strong>100</strong><span>validated NC counties</span></div>
-            <div><strong>93</strong><span>with active ship-tos</span></div>
-            <div><strong>{officialSources.filter((source) => source.status === "connected").length}</strong><span>official state adapters</span></div>
-            <p>The table shows the last locally validated NC comparison evidence. Connected state inventories are available through the state drill-down; Georgia jurisdiction components require a supervised A+ reconciliation before comparison.</p>
-          </div>
-          <div className="table-card">
-            <div className="table-toolbar jurisdiction-toolbar">
-              <label className="search-field">
-                <span>Search</span>
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Jurisdiction or tax body…" />
-              </label>
-              <label>
-                <span>State</span>
-                <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as "all" | "NC")}><option value="all">All available</option><option value="NC">North Carolina</option></select>
-              </label>
-              <label>
-                <span>Jurisdiction</span>
-                <select value={jurisdictionTypeFilter} onChange={(event) => setJurisdictionTypeFilter(event.target.value as "all" | "county")}><option value="all">All types</option><option value="county">County</option></select>
-              </label>
-              <label>
-                <span>Comparison</span>
-                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ComparisonStatus | "all")}>
-                  <option value="all">All comparisons</option>
-                  <option value="matched">A+ matches</option>
-                  <option value="recent-match">Recent change matched</option>
-                  <option value="mismatch">A+ differs</option>
-                  <option value="upcoming">Upcoming change</option>
-                  <option value="not-checked">Not checked</option>
-                </select>
-              </label>
-              <label><span>Effective date</span><select value={effectiveFilter} onChange={(event) => setEffectiveFilter(event.target.value as "all" | "current" | "upcoming" | "undated")}><option value="all">Any date</option><option value="current">Current</option><option value="upcoming">Upcoming</option><option value="undated">Unavailable</option></select></label>
-              <label><span>Review</span><select value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value as ReviewFilter)}><option value="all">Any review status</option><option value="unreviewed">Unreviewed</option><option value="new">New</option><option value="in_review">In review</option><option value="approved">Approved</option><option value="resolved">Resolved</option><option value="not_applicable">Not applicable</option></select></label>
-              <label><span>Official source</span><select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as "all" | "validated" | "unavailable")}><option value="all">Any source status</option><option value="validated">Validated</option><option value="unavailable">Unavailable</option></select></label>
-              <label>
-                <span>Sort</span>
-                <select value={sortBy} onChange={(event) => setSortBy(event.target.value as "county" | "ship-tos" | "effective")}>
-                  <option value="ship-tos">Most ship-tos</option>
-                  <option value="county">Jurisdiction A–Z</option>
-                  <option value="effective">Effective date</option>
-                </select>
-              </label>
-            </div>
-            <div className="result-count">Showing {filteredCounties.length} of 100 available jurisdictions</div>
-            <div className="table-scroll">
-              <table className="coverage-table jurisdiction-table">
-                <thead><tr><th>Effective</th><th>State</th><th>Jurisdiction</th><th>Type</th><th>A+ tax body</th><th>Official rate</th><th>A+ rate</th><th>Difference</th><th>Ship-tos</th><th>Source</th><th>Review</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead>
-                <tbody>
-                  {filteredCounties.map((county) => (
-                    <tr key={county.taxBody}>
-                      <td>{county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? (county.officialRate === null ? "—" : "Current")}</td>
-                      <td>NC</td>
-                      <td><button type="button" className="table-link" onClick={() => setSelectedCounty(county)}>{county.county} County</button></td>
-                      <td>County</td>
-                      <td><code>{county.taxBody}</code></td>
-                      <td>{county.officialRate === null ? "Unavailable" : formatRate(county.officialRate)}</td>
-                      <td>{formatRate(county.currentRate)}</td>
-                      <td>{county.rateDifference === null ? "—" : `${county.rateDifference > 0 ? "+" : ""}${county.rateDifference.toFixed(2)} pp`}</td>
-                      <td>{county.activeShipTos.toLocaleString()}</td>
-                      <td><span className={`source-rollout-status ${county.officialRate === null ? "source-rollout-research-needed" : "source-rollout-connected"}`}>{county.officialRate === null ? "Unavailable" : "Validated"}</span></td>
-                      <td>{reviewCasesByKey.get(reviewFindingKey(county)) ? reviewStatusLabels[reviewCasesByKey.get(reviewFindingKey(county))!.status] : county.comparisonStatus === "recent-match" ? "Already handled" : "Unreviewed"}</td>
-                      <td><ComparisonPill status={county.comparisonStatus} /></td>
-                      <td><button className="icon-button" type="button" onClick={() => setSelectedCounty(county)} aria-label={`Open ${county.county} County`}>›</button></td>
-                    </tr>
-                  ))}
-                  {filteredCounties.length === 0 && <tr><td colSpan={13}><div className="empty-table"><strong>No jurisdictions match these filters.</strong><span>Clear one or more filters to widen the results.</span></div></td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <JurisdictionInventoryView
+            ncRows={ncInventoryRows} apiBase={apiBaseUrl()} offline={OFFLINE_MODE}
+            comparisonStates={["GA", ...FLAT_STATE_APLUS_STATES, ...DIRECT_MAPPING_APLUS_STATES].join(",")}
+            reviews={reviewCasesByKey}
+            onOpen={row => {
+              const county = row.stateCode === "NC" ? activeCountyCoverage.find(item => item.taxBody === row.taxBody) : null;
+              if (county) setSelectedCounty(county);
+              else void openState(row.stateCode);
+            }}
+          />
           <AppFooter />
         </section>
       )}

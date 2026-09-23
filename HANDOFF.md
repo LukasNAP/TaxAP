@@ -1,6 +1,16 @@
 # TaxAP project handoff
 
-Last updated September 22, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+Last updated September 23, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+
+## Nationwide All jurisdictions view (September 22; release September 23)
+
+September 23: user authorized commit, push and deployment. Fresh production build, 282 tests, lint and TypeScript passed. Host page/styles match the prior committed baseline. Deployment verification will be recorded after rollout.
+
+Replaced the NC-only table/filter/export with a nationwide inventory view. The state selector includes all 50 states plus DC; DE/MT/NH/OR display the no-general-sales-tax classification. Existing official-source and reconciliation endpoints load with three workers, request timeouts, cancellation on leaving the view, visible partial/failure messages and manual refresh. No SQL, adapters, ERP behavior or access controls changed.
+
+Published jurisdiction rows and A+ assignment rows remain distinct (no unsafe join by name). Component rates are separate from combined totals. Only explicit comparison evidence produces matched/difference labels; ambiguous GA assignments, missing rates and excluded assignments remain not checked. Deliberate no-tax policy detail remains in state drill-down. NC retains its dashboard evidence and fallback notice. Search, type/comparison/date/source/review filters, sorting, 100-row pages and filtered aggregate CSV work across loaded states. CSV neutralizes spreadsheet formula prefixes. Row links open existing NC/state evidence drawers.
+
+Validation: production build, 282 tests, lint and TypeScript passed; local offline browser verified all state options, California filtering/unavailable notice, and Delaware classification. Live nationwide loading and hosted visual acceptance were not exercised. Opening the view performs additional read-only source/comparison requests, bounded to three concurrent requests; subsequent visits reload, and counts explicitly describe loaded rows rather than total national coverage. Not committed, pushed or deployed.
 
 ## Customer names and ship-to addresses added locally (September 22)
 

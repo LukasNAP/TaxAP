@@ -1002,3 +1002,7 @@ select:focus-visible { outline: 3px solid rgba(69,158,216,.35); outline-offset: 
 .ship-to-detail-table { min-width: 620px; }
 .ship-to-detail-table td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
 .ship-to-detail-table th:nth-child(2), .ship-to-detail-table th:nth-child(4) { min-width: 160px; }
+
+@media (min-width: 1021px) {
+  .coverage-summary.inventory-summary { grid-template-columns: 1fr 1fr 3fr; }
+}
