@@ -2,6 +2,11 @@
 
 Last updated September 23, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+
+## Documentation reconciliation (September 23)
+
+Documentation-only pass. README, roadmap, rollout notes and the dashboard banner were brought in line with the current deployment: hosted A+ reads are live through the dedicated SQL login; the all-state batch completed 47/47 after the September 15 Louisiana TLS fix; the signed-in ship-to list deliberately shows customer names and ship-to addresses (approved September 22); the shared SQL pool settings are documented. Historical entries below that said otherwise are marked superseded rather than rewritten. The standing constraint about customer data in the browser was updated to match the approved exception. No code behaviour, SQL, or A+ access changed except removing the outdated "hosted A+ connectivity remains unvalidated" sentence from the dashboard banner.
+
 ## Shared SQL pool patch (September 23)
 
 Reviewed/applied `taxap-shared-sql-pool.patch` with lifecycle corrections. Uses one pool per process (default max5, allowed1-20), preserves lazy Windows driver loading and existing SQL/auth/TLS/read-only queries. Readers receive leases; finally/close releases the lease. Connection errors or near-expiry Entra tokens retire a pool for new readers, and the old pool closes only after all leases release. This replaces the patch's unsafe fixed120-second close timer. Connect failures clean up, pool error listeners are attached, invalid configuration fails explicitly. Timing logs omit SQL/parameters; batch timing counters are approximate under overlapping requests. Lifetime longest query is labeled accordingly instead of resetting a shared counter.
@@ -40,7 +45,7 @@ Delivery update: user authorized commit, push and deployment of this expansion. 
 
 User explicitly approved expanding the identifiers-only list to show customer names and ship-to addresses inside signed-in TaxAP. This supersedes the earlier numbers-only restriction for that UI/API purpose; customer details remain excluded from logs, chat output, Git data, and documentation. Used aplus-erp schema to confirm CUSMS.CMCSNM and ADDR.SASAD1/SASAD2/SASCTY/SASHST/SASZIP. Extended the existing parameterized SELECT and explicit response allowlist; joins, active filters, treatment scope and pagination are unchanged. No contact, phone, certificate, invoice or ship-to-name fields added. API retains no-store and generic error responses behind the existing hosted sign-in gate. Do not expose the connector port publicly.
 
-Table now shows company, customer name, customer number, multiline ship-to address and ship-to number. Empty data has an unavailable label; no guessed address. Added horizontal scrolling/wrapping for the wider table using existing styles. Synthetic fixture verifies mapping/trim behavior and excluded fields. Build and all 275 tests passed; lint/TypeScript passed. Live local read verification printed only row count/shape booleans, no customer details. Browser acceptance and hosted deployment remain pending. No commit/push/deploy or A+ writes authorized/performed for this expansion. Preserve the earlier uncommitted deployment handoff note too.
+Table now shows company, customer name, customer number, multiline ship-to address and ship-to number. Empty data has an unavailable label; no guessed address. Added horizontal scrolling/wrapping for the wider table using existing styles. Synthetic fixture verifies mapping/trim behavior and excluded fields. Build and all 275 tests passed; lint/TypeScript passed. Live local read verification printed only row count/shape booleans, no customer details. Browser acceptance and hosted deployment remain pending. No commit/push/deploy or A+ writes authorized/performed for this expansion at the time of writing. [Superseded: later committed as `86335df` and deployed; see commit `3d0710f`.] Preserve the earlier uncommitted deployment handoff note too.
 
 ## Finding ship-to identifier list implemented locally (September 22)
 
@@ -103,7 +108,7 @@ Verified against live sources (not fixtures): the Louisiana adapter now succeeds
 
 User authorized commit and push; delivered as commit `a4d0056` on `main` (`9aac563..a4d0056`, fast-forward). This does not update the apdock01 host checkout/deployment, which remains on its own manually-deployed state per the sections below.
 
-The full comparison batch has not been rerun since this fix; the last known batch result (45/47 successful, ID/LA failed) is superseded for the LA/ID individual-source checks above but not yet re-confirmed at the batch level.
+The full comparison batch has not been rerun since this fix; the last known batch result (45/47 successful, ID/LA failed) is superseded for the LA/ID individual-source checks above but not yet re-confirmed at the batch level. [Superseded: the clean 47/47 batch was recorded on September 15, commit `3e3c0d7`.]
 
 ## Source-control delivery (September 15)
 
@@ -111,7 +116,7 @@ User authorized committing and pushing all outstanding changes, including SQL-lo
 
 ## Latest source-failure diagnosis and Claude transition (September 15)
 
-After the deployment batch reported ID/LA failures, isolated checks from the running application container showed Idaho's official rules, geography and full A+ comparison all succeeded on retry. The earlier Idaho failure appears transient, but its exact cause was not retained. Louisiana reproducibly fails fetching `https://remotesellersfiling.la.gov/lookup/lookup.aspx` with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`; its revenue.louisiana.gov state-rate page returns 200. This is official-source HTTPS trust, separate from the successful SQL03 connection and its approved trustServerCertificate exception. No blanket HTTPS bypass has been added. No subsequent full-batch success is claimed.
+After the deployment batch reported ID/LA failures, isolated checks from the running application container showed Idaho's official rules, geography and full A+ comparison all succeeded on retry. The earlier Idaho failure appears transient, but its exact cause was not retained. Louisiana reproducibly fails fetching `https://remotesellersfiling.la.gov/lookup/lookup.aspx` with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`; its revenue.louisiana.gov state-rate page returns 200. This is official-source HTTPS trust, separate from the successful SQL03 connection and its approved trustServerCertificate exception. No blanket HTTPS bypass has been added. No subsequent full-batch success is claimed. [Superseded: Louisiana's missing intermediate certificate was fixed in `a4d0056`, and a clean 47/47 batch followed.]
 
 User requested a Claude context package. `CLAUDE-START.md` provides harness setup and a dated operational snapshot; this HANDOFF remains the sole ongoing shared handoff. No commit or push authorized for this documentation task. Preserve uncommitted local changes and server-side deployment differences.
 
@@ -240,11 +245,11 @@ Do not treat this application as a tax calculation engine yet. It is currently a
 ## User decisions and constraints
 
 - Ana and Liv will be the primary users.
-- Microsoft Entra ID sign-in will be added later using their Microsoft 365 work accounts.
-- The owner-only private preview is hosted through Sites. Shared access, Entra ID authentication, production connectivity, and Azure resources remain deferred. Source control is the private `LukasNAP/TaxAP` GitHub repository.
+- The apdock01 deployment is gated by the single-tenant Entra sign-in proxy with a required access group (anonymous API requests return 401). Reviewer identity inside TaxAP is still selected manually, not taken from sign-in.
+- Hosted A+ reads use a dedicated read-only SQL login. The legacy owner-only Sites preview remains snapshot-only. Source control is the private `LukasNAP/TaxAP` GitHub repository.
 - TaxAP must never guess an official rate when a source is unavailable, incomplete, ambiguous, or fails validation.
 - TaxAP must not write to A+ in the current phase.
-- Customer names, addresses, invoice details, credentials, and tokens must not be sent to the browser.
+- Credentials, tokens, and invoice details must not be sent to the browser. Customer names and ship-to addresses may appear only in the signed-in, on-demand ship-to list approved on September 22, and must never be logged, exported, stored by TaxAP, or put in Git, docs, or chat output. Every other endpoint stays aggregate-only.
 - Review decisions belong to TaxAP, not A+.
 - Do not commit, push, deploy, reset, stash, or discard existing work unless Lukas explicitly asks.
 - The dashboard redesign and nationwide-source milestone are committed on `main`.

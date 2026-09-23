@@ -1,6 +1,6 @@
 # Roadmap: all 50 states + DC in the dashboard
 
-Last updated: September 4, 2026 — all 51 jurisdictions are now accounted for at the official-source layer: 47 have connected, validated official-rate/policy adapters, and DE, MT, NH, and OR are explicitly classified as having no general sales tax. Missouri is the newest connection. The dated August 26 research sections below remain useful source history, but their old counts are not the current registry total.
+Last updated: September 23, 2026 — the "Current implementation" section below is the current status. Everything after it is dated research history (August 26 through September 4); its counts and "only NC/GA" statements are superseded.
 
 ## Current implementation — September 8, 2026
 

@@ -44,6 +44,6 @@ Other additions were verified with official sources and synthetic fixtures; curr
 - Improve unmatched coverage within wired states. Missouri's exact filing-name scope is narrow; Minnesota rejects conflicting official identities; South Carolina retains multi-county ambiguity. Assigned-name/code matching does not prove the delivery address belongs to that jurisdiction.
 - Preserve county qualifiers, special tax scopes, effective dates and source conflicts. Do not guess exemptions, tax liability or unidentified locations.
 - Validate current A+ aggregates separately from synthetic tests. Keep output aggregate-only and all ERP access read-only.
-- Address refresh-failure visibility and the NC-only review form before user acceptance. Keep hosted data labelled snapshot/fallback until connectivity is validated.
+- Address refresh-failure visibility and the NC-only review form before user acceptance. Hosted connectivity was validated on September 15 through the dedicated SQL login; the app must still label data as snapshot/fallback whenever the connector is not live.
 
 The state-wiring objective is complete under the confirmed no-tax policies; complete assignment matching and application acceptance are separate outstanding work. Committing this batch does not imply deployment or acceptance of unresolved mappings.

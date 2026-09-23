@@ -48,6 +48,6 @@ For a restore drill, open the backup as a separate test database, compare aggreg
 
 1. Ana and Liv complete and approve the acceptance session above.
 2. IT restricts application/API access and establishes authenticated reviewer attribution. User identity is separate from SQL workload identity.
-3. When the owner resumes hosted Entra work, validate certificate, workload identity, least-privilege SQL access and network path end to end. Until then hosted A+ data remains snapshot/fallback.
+3. Hosted A+ access was validated end to end on September 15 using a dedicated read-only SQL login. The certificate-based Entra workload path is an alternative that has not been exercised on the host.
 4. Agree who owns unresolved assignments, review cadence and backups. The application refreshes while open; it is not a guaranteed unattended monitoring/notification service.
 5. Explicitly approve release/deployment of the reviewed commit. No deployment was performed for this readiness work.

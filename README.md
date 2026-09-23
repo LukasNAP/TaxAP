@@ -1,14 +1,14 @@
 # TaxAP
 
-September 15 hosted update: SQL-login connectivity on apdock01 has been verified against SQL03/DWStage and the APLUS tax-body link. Fresh connector reads succeeded; the comparison batch completed 45 checks with ID/LA failures still unresolved. This supersedes older snapshot-only hosted-connection notes below. See HANDOFF.md for deployment state and limitations.
+September 23 status: the hosted connector on apdock01 reads live A+ data through a dedicated read-only SQL login (verified September 15) and a shared connection pool. The latest hosted all-state batches completed all 47 checks in about 11 seconds. The Louisiana official-source TLS failure was fixed on September 15; any failed state in a later batch is shown in the coverage banner. See HANDOFF.md for deployment history and limitations.
 
-Hosted database authentication also supports a dedicated SQL login with a protected password file (`TAXAP_SQL_AUTHENTICATION=sql`). See [SQL login deployment](deployment/apdock01/README.md#dedicated-read-only-sql-login). This is separate from user sign-in and still requires IT-provisioned read-only permissions and end-to-end validation; the existing Windows and Entra modes remain available.
+Hosted database authentication also supports a dedicated SQL login with a protected password file (`TAXAP_SQL_AUTHENTICATION=sql`). See [SQL login deployment](deployment/apdock01/README.md#dedicated-read-only-sql-login). This is separate from user sign-in. It is the mode apdock01 uses, validated end to end on September 15 with IT-provisioned read-only permissions; the existing Windows and Entra modes remain available.
 
 TaxAP is Atlantic Packaging's internal, read-only sales and use tax monitoring application. It compares authoritative state tax-rate publications with the tax bodies assigned to active A+ ship-to records, surfaces discrepancies for human review, and preserves aggregate evidence. It does **not** calculate customer tax or update A+.
 
 ## Current status
 
-Status as of September 10, 2026:
+Status as of September 23, 2026:
 
 - The application UI and Docker deployment are working.
 - The official-source registry covers all 50 states plus the District of Columbia: 47 entries have connected source adapters, while Delaware, Montana, New Hampshire, and Oregon are intentionally excluded because they have no general sales tax.
@@ -16,7 +16,7 @@ Status as of September 10, 2026:
 - Alaska, Hawaii, North Dakota and Wyoming are wired to explicit deliberate no-tax policies confirmed by the user on September 10. Only the confirmed existing zero-rate codes are excluded; new codes, nonzero rates and missing definitions remain unresolved. These policies are not official 0% rate matches.
 - Every state now has a comparison path or explicit no-tax classification: 43 comparison jurisdictions, four deliberate no-tax policies and four no-general-sales-tax states. Significant unmatched assignment and delivery-boundary gaps remain within comparison states.
 - The local Windows application can read A+ through the existing `SQL03` to `APLUS` linked-server path using the signed-in Windows account.
-- The deployment on `apdock01` serves the application over HTTPS, but its A+ connector remains on the validated fallback snapshot until a non-interactive Microsoft Entra identity receives read-only SQL access.
+- The deployment on `apdock01` serves the application over HTTPS behind the Entra sign-in proxy. Its A+ connector reads live data using a dedicated read-only SQL login (`TAXAP_SQL_AUTHENTICATION=sql`). The certificate-based path, using a non-interactive Microsoft Entra identity, remains a supported alternative but is not what the host uses today.
 - The legacy owner-only Sites preview is also snapshot-only and cannot contact A+ or provide shared review storage.
 
 An HTTP 200 response from the proxy proves that the interface is available; it does **not** prove that the hosted A+ connector is live. Check the connector status and refresh result in the application.
@@ -60,7 +60,7 @@ Browser
                     +-- APLUS linked server / APLUSV8FAQ
 ```
 
-The connector returns only aggregate coverage, tax-body definitions, and rates. Customer names, street addresses, invoice numbers, Microsoft tokens, and database credentials are not sent to browser code or committed to the repository.
+By default the connector returns only aggregate coverage, tax-body definitions, and rates. One deliberate exception, approved on September 22: the signed-in **View affected ship-tos** list returns company number, customer number and name, ship-to number, and ship-to address for the ship-tos behind a finding, on demand, with `no-store` responses. Those details are never logged, exported, stored by TaxAP, or committed. Contact, phone, certificate, and invoice fields are not selected. Raw A+ state values for excluded ship-tos never leave the connector; only counts and recognized state names do. Microsoft tokens and database credentials are never sent to browser code or committed.
 
 ## Run locally with live A+ data
 
@@ -124,13 +124,21 @@ Windows Authentication works for the local process under the user's Windows iden
 4. The combined client certificate and private key mounted at the path expected by the Compose deployment.
 5. Tenant ID, client ID, and certificate path configured in `deployment/apdock01/.env` without committing secrets.
 
-Until those checks pass, the hosted application is suitable for interface review but must identify its A+ data as fallback or snapshot data.
+These steps apply only if the host moves from the SQL login to the Entra workload identity. Either way, the application must label its A+ data as fallback or snapshot whenever the connector is not live.
 
 ### User access control is separate
 
 The Entra identity above authenticates the backend workload to SQL. It does not sign Ana into TaxAP. The deployment configuration now includes a single-tenant OAuth2 Proxy with an explicit access-group requirement, protecting both the web application and API. Its `/oauth2/callback` route is prepared but must be configured with the registration details, securely provisioned credentials, and deployed/tested before broad internal distribution. See [`deployment/apdock01/README.md`](deployment/apdock01/README.md). Review identities remain manually selected until a separate application integration is completed. This can be completed after the workload connection, but it remains a production-readiness item.
 
 See [`deployment/apdock01/README.md`](deployment/apdock01/README.md) for the host-specific checklist.
+
+## Connector settings
+
+The connector keeps one shared SQL connection pool per process. These settings are read when the container is created, so change them in `deployment/apdock01/.env` and recreate the app with `docker compose ... up -d --no-build taxap-app` (a plain `restart` keeps the old values):
+
+- `TAXAP_SQL_POOL_MAX`: maximum pooled connections, 1-20, default 5.
+- `TAXAP_SQL_SHARED_POOL=false`: rollback switch that restores one pool per request.
+- `TAXAP_SQL_TIMING_LOG=true`: logs one line per query (path, tables, duration, row count; never SQL text or parameters). Leave it off in normal use. The per-refresh `timing` summary on the `all_wired_state_findings` log line is always recorded.
 
 ## Review storage
 

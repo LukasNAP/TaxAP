@@ -866,7 +866,7 @@ export default function Home() {
           <p>{batchHealth.status === "loading" ? "Refreshing all wired states…" : `${batchHealth.stateChecks.length} state checks succeeded; ${batchHealth.failedStates.length} failed.`}{batchHealth.retrievedAt ? ` Last returned batch: ${new Date(batchHealth.retrievedAt).toLocaleString()}.` : ""}</p>
           {batchHealth.failedStates.length > 0 && <p>Failed state checks: {batchHealth.failedStates.join(", ")}. These states are missing from the refreshed inbox.</p>}
           {batchHealth.status === "error" && <p>The latest batch failed. Any retained findings are from an earlier read.</p>}
-          <p>Official-source coverage is not assignment coverage. No findings does not mean every ship-to has been verified. Reviewers are manually selected; hosted A+ connectivity remains unvalidated until its end-to-end checks pass.</p>
+          <p>Official-source coverage is not assignment coverage. No findings does not mean every ship-to has been verified. Reviewers are manually selected.</p>
           <details><summary>Assignments without a rate comparison · all-state batch</summary>
             {batchHealth.stateChecks.length === 0 ? <p>Coverage counts unavailable.</p> : batchHealth.stateChecks.map((check) => <p key={check.stateCode}>{check.stateCode}: {check.uncheckedShipTos === null ? "unknown" : check.uncheckedShipTos.toLocaleString()} unchecked or excluded; {check.intentionalNoTaxShipTos.toLocaleString()} deliberate no-tax assignments.</p>)}
             <p>All wired states use this batch. Open a state for its coverage and exclusions. DE, MT, NH and OR are classified as having no general sales tax.</p>

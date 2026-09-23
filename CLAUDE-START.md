@@ -1,5 +1,7 @@
 # TaxAP: Claude startup context
 
+**September 23 note:** deployments since September 22 have been made from pushed commits on `main`, so the "open the existing folder, not a fresh clone" warning below is historical; still check `git status` in whatever checkout you use. Current status lives at the top of `HANDOFF.md` and `README.md`.
+
 Prepared September 15, 2026. This is a startup package, not a replacement for the shared `HANDOFF.md`. Refresh facts from the working tree and server before acting.
 
 Delivery update: the user subsequently authorized committing and pushing all changes. This file and the SQL-login/routing changes are included in that delivery commit. The uncommitted-file list and 526fc4c local baseline below describe the pre-delivery snapshot; inspect Git for the new local HEAD. The host checkout still has copied runtime modifications beyond its 526fc4c baseline. A fresh full build and all 265 tests passed for delivery, with lint and TypeScript checks. Do not assume pushing updates the host checkout automatically.
