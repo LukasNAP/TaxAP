@@ -7,7 +7,7 @@ import sql from "mssql";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { validateXatxbdCsv } from "../app/aplus-import.ts";
-import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
+import { isRetiredTaxBody, STATE_NAME_BY_CODE } from "../app/tax-body-policy.ts";
 import { buildWantedAddressKeys, readGeorgiaBoundaryArchive, parseBoundaryCsv, reconcileGeorgiaBoundary } from "./ga-boundary.mjs";
 import { readOfficialCaRates } from "./ca-rates.mjs";
 import { readOfficialFlRates } from "./fl-rates.mjs";
@@ -360,28 +360,61 @@ export async function readLiveTaxBodies() {
   }
 }
 
-export async function readStateSummaries() {
-  const pool = await openPool();
-  try {
-    const result = await pool.request().query(buildStateCoverageQuery());
-    const summaries = [];
-    let excludedShipTos = 0;
-    for (const row of result.recordset) {
-      const stateCode = String(rowValue(row, "StateCode") || "").trim().toUpperCase();
-      const activeShipTos = numericValue(rowValue(row, "ActiveShipTos"));
-      if (!US_STATE_CODES.has(stateCode)) {
-        excludedShipTos += activeShipTos;
-        continue;
-      }
+const STATE_CODE_BY_NAME = new Map([...STATE_NAME_BY_CODE].map(([code, name]) => [name.toUpperCase(), code]));
+const EXCLUDED_VALUE_LIMIT = 15;
+
+
+// Ship-tos whose SASHST is not a clean 2-letter code never enter any state's comparison.
+// They are counted and categorized here so the UI can show the gap instead of hiding it.
+// A recognizable full state name is reported as a hint only; it is never counted toward that
+// state, because reassigning it would be a guess about A+ data.
+export function summarizeStateCoverageRows(rows) {
+  const summaries = [];
+  const excludedValues = [];
+  const breakdown = { blank: 0, fullStateName: 0, other: 0 };
+  let excludedShipTos = 0;
+  for (const row of rows) {
+    const stateCode = String(rowValue(row, "StateCode") || "").trim().toUpperCase();
+    const activeShipTos = numericValue(rowValue(row, "ActiveShipTos"));
+    if (US_STATE_CODES.has(stateCode)) {
       summaries.push({
         stateCode,
         activeShipTos,
         activeCustomers: numericValue(rowValue(row, "ActiveCustomers")),
         taxBodyCount: numericValue(rowValue(row, "TaxBodyCount")),
       });
+      continue;
     }
-    summaries.sort((a, b) => b.activeShipTos - a.activeShipTos || a.stateCode.localeCompare(b.stateCode));
-    return { retrievedAt: new Date().toISOString(), states: summaries, excludedShipTos };
+    excludedShipTos += activeShipTos;
+    if (!stateCode) { breakdown.blank += activeShipTos; continue; }
+    const likelyState = STATE_CODE_BY_NAME.get(stateCode.replace(/\s+/g, " ")) ?? null;
+    if (likelyState) breakdown.fullStateName += activeShipTos;
+    else breakdown.other += activeShipTos;
+    // Arbitrary state/province text may contain misplaced customer details.
+    // Return only canonical names from the state registry, never unknown raw values.
+    excludedValues.push({ value: likelyState ? STATE_NAME_BY_CODE.get(likelyState) : null, activeShipTos, likelyState });
+  }
+  summaries.sort((a, b) => b.activeShipTos - a.activeShipTos || a.stateCode.localeCompare(b.stateCode));
+  return {
+    states: summaries,
+    excludedShipTos,
+    excludedBreakdown: {
+      ...breakdown,
+      distinctValues: excludedValues.length,
+      topValues: [...excludedValues.filter(entry => entry.likelyState).reduce((byState, entry) => {
+        const previous = byState.get(entry.likelyState);
+        byState.set(entry.likelyState, { ...entry, activeShipTos: (previous?.activeShipTos ?? 0) + entry.activeShipTos });
+        return byState;
+      }, new Map()).values()].sort((a, b) => b.activeShipTos - a.activeShipTos || a.value.localeCompare(b.value)).slice(0, EXCLUDED_VALUE_LIMIT),
+    },
+  };
+}
+
+export async function readStateSummaries() {
+  const pool = await openPool();
+  try {
+    const result = await pool.request().query(buildStateCoverageQuery());
+    return { retrievedAt: new Date().toISOString(), ...summarizeStateCoverageRows(result.recordset) };
   } finally {
     await pool.close();
   }
@@ -792,7 +825,7 @@ export function createConnectorServer({ reviews, readShipTos = selection => read
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
         const snapshot = await readStateSummaries();
-        console.info(JSON.stringify({ event: "aplus_state_coverage_refresh", ok: true, states: snapshot.states.length, retrievedAt: snapshot.retrievedAt }));
+        console.info(JSON.stringify({ event: "aplus_state_coverage_refresh", ok: true, states: snapshot.states.length, excludedShipTos: snapshot.excludedShipTos, retrievedAt: snapshot.retrievedAt }));
         return sendJson(response, 200, snapshot, responseOrigin);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown connector error";

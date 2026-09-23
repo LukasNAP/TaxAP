@@ -34,7 +34,9 @@ type LiveAPlusSnapshot = {
   warnings: string[];
 };
 type StateSummary = { stateCode: string; activeShipTos: number; activeCustomers: number; taxBodyCount: number };
-type StateCoverageSnapshot = { retrievedAt: string; states: StateSummary[]; excludedShipTos: number };
+type ExcludedStateValue = { value: string; activeShipTos: number; likelyState: string | null };
+type ExcludedStateBreakdown = { blank: number; fullStateName: number; other: number; distinctValues: number; topValues: ExcludedStateValue[] };
+type StateCoverageSnapshot = { retrievedAt: string; states: StateSummary[]; excludedShipTos: number; excludedBreakdown?: ExcludedStateBreakdown };
 type TaxTreatmentCode = "0" | "3" | "J" | "other";
 type TaxTreatmentBucket = { treatmentCode: TaxTreatmentCode; activeShipTos: number; activeCustomers: number };
 type TaxBodyTreatment = { taxBody: string | null; treatments: TaxTreatmentBucket[] };
@@ -867,6 +869,10 @@ export default function Home() {
             {batchHealth.stateChecks.length === 0 ? <p>Coverage counts unavailable.</p> : batchHealth.stateChecks.map((check) => <p key={check.stateCode}>{check.stateCode}: {check.uncheckedShipTos === null ? "unknown" : check.uncheckedShipTos.toLocaleString()} unchecked or excluded; {check.intentionalNoTaxShipTos.toLocaleString()} deliberate no-tax assignments.</p>)}
             <p>All wired states use this batch. Open a state for its coverage and exclusions. DE, MT, NH and OR are classified as having no general sales tax.</p>
           </details>
+          {stateCoverage?.excludedBreakdown && stateCoverage.excludedShipTos > 0 && <details><summary>{stateCoverage.excludedShipTos.toLocaleString()} active {stateCoverage.excludedShipTos === 1 ? "ship-to is" : "ship-tos are"} excluded from every state check · unrecognized A+ state value</summary>
+            <p>These ship-tos have a ship-to state (SASHST) that is not a 2-letter U.S. state or D.C. code, so no state comparison includes them. {stateCoverage.excludedBreakdown.blank.toLocaleString()} blank; {stateCoverage.excludedBreakdown.fullStateName.toLocaleString()} spelled-out state {stateCoverage.excludedBreakdown.fullStateName === 1 ? "name" : "names"}; {stateCoverage.excludedBreakdown.other.toLocaleString()} other values, including possible foreign states or provinces. Spelled-out names are hints only and are not counted toward that state. Review these exclusions with the tax team; correct only confirmed data-entry errors in A+. Valid foreign destinations may remain outside U.S. state checks. Other raw values are withheld to avoid exposing misplaced customer details.</p>
+            {stateCoverage.excludedBreakdown.topValues.length > 0 && <div className="table-scroll"><table className="coverage-table"><caption>Recognized spelled-out state names (up to 15; counts above include all excluded values)</caption><thead><tr><th scope="col">Recognized state name</th><th scope="col">Active ship-tos</th><th scope="col">Possible state</th></tr></thead><tbody>{stateCoverage.excludedBreakdown.topValues.map((entry) => <tr key={entry.value}><td>{entry.value}</td><td>{entry.activeShipTos.toLocaleString()}</td><td>{entry.likelyState ?? "—"}</td></tr>)}</tbody></table></div>}
+          </details>}
           {reviewStoreStatus === "error" && <p>Review history could not be loaded. Saved decisions may be missing from this view.</p>}
         </div></div>
       </section>

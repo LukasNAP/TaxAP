@@ -2,6 +2,14 @@
 
 Last updated September 23, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Reviewed Claude excluded-state-values patch (local only)
+
+Applied `taxap-excluded-state-values.patch` with review corrections. Existing aggregate state coverage now categorizes excluded active ship-tos as blank, recognizable full state names, or other values. The coverage banner exposes these counts and up to 15 canonical full-state-name hints. Hints never reassign ship-tos or alter comparison coverage. Consulted aplus-erp and confirmed ADDR.SASHST is the 30-character state/province field. SQL, joins, active filters and comparison logic remain unchanged.
+
+Corrections to supplied patch: arbitrary raw excluded values are withheld from the API/UI because malformed state text may contain misplaced customer details; canonical full-name variants are merged for display; UI does not tell users to correct valid foreign/province values; removed unrelated exemption-audit logging change referencing a nonexistent property. Synthetic tests cover totals, hint-only semantics, unknown-value suppression, merged hints and display cap without count loss.
+
+Validation: production build, all 288 tests, lint, TypeScript and diff whitespace checks passed. No live database query or hosted UI verification performed for this patch. Not committed, pushed or deployed; prior deployed release remains 71285b3 with verification documentation e42fd6e.
+
 ## Nationwide All jurisdictions view (September 22; release September 23)
 
 September 23 deployment verified: implementation committed/pushed as `71285b3`. Fresh production build, 282 tests, lint and TypeScript passed. Host page/styles matched the prior baseline; four application files transferred with SHA-256 verification. Protected configuration/source and consistent SQLite backups saved under `/var/atlanticapps/taxap-backups/jurisdictions-20260923-081211`; rollback image `taxap-rollback:before-jurisdictions`. Built with both Compose files and replaced only taxap-app. Deployed bundle contains the nationwide inventory view. Private router returned 200 for the page, CA official inventory (541 rates), CA comparison (150 assignment groups/143 comparison rows), FL comparison (68/59), and GA boundary (126 comparison rows). Review integrity passed. Public HTTPS root redirects (302), anonymous inventory API is denied (401), and all four containers run with zero restarts. These checks verify representative endpoint data, not every state or signed-in browser acceptance. Existing host modifications and credentials were preserved; no A+ writes.
