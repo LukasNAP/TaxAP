@@ -2,6 +2,12 @@
 
 Last updated September 23, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Shared SQL pool patch (September 23)
+
+Reviewed/applied `taxap-shared-sql-pool.patch` with lifecycle corrections. Uses one pool per process (default max5, allowed1-20), preserves lazy Windows driver loading and existing SQL/auth/TLS/read-only queries. Readers receive leases; finally/close releases the lease. Connection errors or near-expiry Entra tokens retire a pool for new readers, and the old pool closes only after all leases release. This replaces the patch's unsafe fixed120-second close timer. Connect failures clean up, pool error listeners are attached, invalid configuration fails explicitly. Timing logs omit SQL/parameters; batch timing counters are approximate under overlapping requests. Lifetime longest query is labeled accordingly instead of resetting a shared counter.
+
+Operational switches (restart required): `TAXAP_SQL_SHARED_POOL=false` restores per-request pools; `TAXAP_SQL_POOL_MAX` defaults5; `TAXAP_SQL_TIMING_LOG=true` enables aggregate per-query measurements. Existing settings and SQL03 trust exception unchanged. Tests cover concurrent first-use, idempotent release, expiry drain, connection error replacement, connection failure retry and timing-log privacy. Build,302 tests,lint,TypeScript passed. User authorized commit,push,deploy. Deployment verification pending below.
+
 ## Excluded-state tax-body breakdown (September 23)
 
 Reviewed/applied `taxap-excluded-tax-bodies.patch`. Adds a SELECT-only aggregate query grouped by state value and assigned tax body, with existing company/customer join and active filters. Consulted aplus-erp: SASHST is state/province and SASTXB is assigned tax body. Only category counts and recognized U.S. prefixes leave the connector; no raw state values, tax-body codes or customer details in this new response. Coverage banner displays blank/full-name/other state values crossed with U.S. prefix, other code, ZTEMP and no assigned code.

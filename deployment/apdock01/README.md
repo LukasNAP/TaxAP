@@ -96,3 +96,13 @@ node --test tests/signin-proxy.integration.mjs
 The normal test suite also checks that the public ingress has no direct route to the application and no API authentication bypass. Local Windows Nginx syntax validation passed with synthetic TLS material and local service-name substitutions. Docker Desktop failed during startup on this workstation, so the actual Linux container stack and real Entra browser sign-in remain deployment acceptance checks.
 
 References: [OAuth2 Proxy Entra provider](https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/ms_entra_id/) and [configuration options](https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/).
+
+## Shared read-only SQL pool
+
+The connector reuses a pool with up to five connections per process. Existing queries and SQL permissions remain unchanged. Retired pools drain active reader leases before closing. Restart/recreate the app to apply setting or credential changes.
+
+- `TAXAP_SQL_SHARED_POOL`: `true` by default; `false` restores one pool per reader.
+- `TAXAP_SQL_POOL_MAX`: integer1-20, default5, for shared mode.
+- `TAXAP_SQL_TIMING_LOG=true`: optional query timing logs with known table labels and row counts only, never SQL text or parameters. Batch timing counters are approximate when requests overlap; longest-query timing is process-lifetime.
+
+Invalid sharing/max settings fail explicitly. Entra expiry replacement has synthetic lifecycle coverage; the hosted deployment uses the SQL-login path.

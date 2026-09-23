@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 // SQL permissions must enforce read-only access; an application name is not a permission boundary.
-export async function openSqlLoginPool(ConnectionPool, env = process.env) {
+export async function openSqlLoginPool(ConnectionPool, env = process.env, { maxConnections = 1 } = {}) {
   for (const name of ["TAXAP_SQL_SERVER", "TAXAP_SQL_DATABASE", "TAXAP_SQL_USER", "TAXAP_SQL_PASSWORD_FILE"]) {
     if (!env[name]?.trim()) throw new Error(`Missing required setting: ${name}`);
   }
@@ -20,10 +20,11 @@ export async function openSqlLoginPool(ConnectionPool, env = process.env) {
     password,
     port,
     options: { encrypt: true, trustServerCertificate: trustSetting === "true", appName: "TaxAP read-only connector" },
-    pool: { max: 1, min: 0, idleTimeoutMillis: 5_000 },
+    pool: { max: maxConnections, min: 0, idleTimeoutMillis: 30_000 },
     connectionTimeout: 20_000,
     requestTimeout: 60_000,
   });
+  pool.on?.("error", () => {});
   try { await pool.connect(); }
   catch {
     try { await pool.close(); } catch { /* Keep driver details out of the API response. */ }

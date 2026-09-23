@@ -1,3 +1,4 @@
+import { createSharedPoolManager } from "./shared-sql-pool.mjs";
 import { comparisonHealth } from "./comparison-health.mjs";
 import { validateShipToSelection, readFindingShipTos } from "./finding-ship-tos.mjs";
 import { readCatchAllExemptionAudit } from "./catchall-exemption-audit.mjs";
@@ -284,7 +285,8 @@ function recordsetToCsv(recordset) {
   }).join(",")).join("\n");
 }
 
-export async function openPool() {
+// Creates one connection pool. Returns the pool and, for Entra, when its access token expires.
+async function createPool(maxConnections) {
   const server = requiredSetting("TAXAP_SQL_SERVER");
   const database = requiredSetting("TAXAP_SQL_DATABASE");
   const authentication = String(process.env.TAXAP_SQL_AUTHENTICATION || "entra").trim().toLowerCase();
@@ -297,14 +299,15 @@ export async function openPool() {
       database,
       driver: "ODBC Driver 18 for SQL Server",
       options: { trustedConnection: true, encrypt: false },
-      pool: { max: 1, min: 0, idleTimeoutMillis: 5_000 },
+      pool: { max: maxConnections, min: 0, idleTimeoutMillis: 30_000 },
       connectionTimeout: 20_000,
       requestTimeout: 60_000,
     });
-    await pool.connect();
-    return pool;
+    pool.on("error", () => {});
+    try { await pool.connect(); } catch (error) { await pool.close().catch(() => {}); throw error; }
+    return { pool, expiresAt: null };
   }
-  if (authentication === "sql") return openSqlLoginPool(sql.ConnectionPool);
+  if (authentication === "sql") return { pool: await openSqlLoginPool(sql.ConnectionPool, process.env, { maxConnections }), expiresAt: null };
   if (authentication !== "entra") throw new Error("TAXAP_SQL_AUTHENTICATION must be entra, windows or sql.");
   const credential = new DefaultAzureCredential();
   const accessToken = await credential.getToken("https://database.windows.net/.default");
@@ -323,13 +326,72 @@ export async function openPool() {
       trustServerCertificate: false,
       appName: "TaxAP read-only connector",
     },
-    pool: { max: 1, min: 0, idleTimeoutMillis: 5_000 },
+    pool: { max: maxConnections, min: 0, idleTimeoutMillis: 30_000 },
     connectionTimeout: 20_000,
     requestTimeout: 60_000,
   });
 
-  await pool.connect();
-  return pool;
+  pool.on("error", () => {});
+  try { await pool.connect(); } catch (error) { await pool.close().catch(() => {}); throw error; }
+  return { pool, expiresAt: Number(accessToken.expiresOnTimestamp) || null };
+}
+
+
+// Shared leases preserve existing readers' finally/close behavior without disconnecting
+// other readers. Disable sharing with TAXAP_SQL_SHARED_POOL=false (restart required).
+const CONNECTION_ERROR_CODES = new Set(["ESOCKET", "ECONNCLOSED", "ENOTOPEN", "ELOGIN", "ECONNRESET"]);
+export const sqlTimingStats = { queries: 0, totalMs: 0, longestMs: 0, connects: 0, connectMs: 0, failures: 0 };
+function poolMaxConnections() {
+  const value = Number(process.env.TAXAP_SQL_POOL_MAX || 5);
+  if (!Number.isInteger(value) || value < 1 || value > 20) throw new Error("TAXAP_SQL_POOL_MAX must be an integer from 1 to 20.");
+  return value;
+}
+async function measuredPool(maxConnections) {
+  const started = performance.now();
+  const created = await createPool(maxConnections);
+  sqlTimingStats.connects += 1;
+  sqlTimingStats.connectMs += performance.now() - started;
+  return created;
+}
+const sharedPools = createSharedPoolManager({ create: () => measuredPool(poolMaxConnections()), wrapRequest: timedRequest });
+
+export function queryLabel(text) {
+  const tables = [...new Set(String(text).toUpperCase().match(/\b(XATXBD|ADDR|CUSMS)\b/g) ?? [])];
+  return { path: /OPENQUERY/i.test(text) ? "linked-server" : "dwstage", tables: tables.join("+") || "other" };
+}
+
+// Wraps request.query to record duration and row count. SQL text and parameters are never logged.
+export function timedRequest(request, onConnectionError) {
+  const query = request.query.bind(request);
+  request.query = async (text) => {
+    const started = performance.now();
+    const label = queryLabel(text);
+    try {
+      const result = await query(text);
+      const ms = performance.now() - started;
+      sqlTimingStats.queries += 1;
+      sqlTimingStats.totalMs += ms;
+      sqlTimingStats.longestMs = Math.max(sqlTimingStats.longestMs, ms);
+      if (process.env.TAXAP_SQL_TIMING_LOG === "true") console.info(JSON.stringify({ event: "sql_query", ok: true, ...label, ms: Math.round(ms), rows: result?.recordset?.length ?? 0 }));
+      return result;
+    } catch (error) {
+      sqlTimingStats.failures += 1;
+      if (process.env.TAXAP_SQL_TIMING_LOG === "true") console.info(JSON.stringify({ event: "sql_query", ok: false, ...label, ms: Math.round(performance.now() - started) }));
+      if (CONNECTION_ERROR_CODES.has(error?.code) || CONNECTION_ERROR_CODES.has(error?.originalError?.code)) onConnectionError();
+      throw error;
+    }
+  };
+  return request;
+}
+
+export async function openPool() {
+  const shared = String(process.env.TAXAP_SQL_SHARED_POOL || "true").trim().toLowerCase();
+  if (!["true", "false"].includes(shared)) throw new Error("TAXAP_SQL_SHARED_POOL must be true or false.");
+  if (shared === "false") {
+    const { pool } = await measuredPool(1);
+    return { request: () => timedRequest(pool.request(), () => {}), close: () => pool.close() };
+  }
+  return sharedPools.acquire();
 }
 
 function rowValue(row, name) {
@@ -1122,8 +1184,13 @@ export function createConnectorServer({ reviews, readShipTos = selection => read
     if (url.pathname === "/api/official/findings" && (request.method === "GET" || request.method === "POST")) {
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
+        const batchStarted = performance.now();
+        const sqlBefore = { ...sqlTimingStats };
         const result = await readAllWiredStateFindings();
-        console.info(JSON.stringify({ event: "all_wired_state_findings", ok: true, findings: result.findings.length, failedStates: result.failedStates, retrievedAt: result.retrievedAt }));
+        const sqlDelta = (key) => Math.round(sqlTimingStats[key] - sqlBefore[key]);
+        // Overlapping requests share these counters, so treat the SQL figures as approximate.
+        console.info(JSON.stringify({ event: "all_wired_state_findings", ok: true, findings: result.findings.length, failedStates: result.failedStates, retrievedAt: result.retrievedAt,
+          timing: { batchMs: Math.round(performance.now() - batchStarted), sqlQueries: sqlDelta("queries"), sqlTotalMs: sqlDelta("totalMs"), sqlLifetimeLongestMs: Math.round(sqlTimingStats.longestMs), sqlConnects: sqlDelta("connects"), sqlConnectMs: sqlDelta("connectMs"), sqlFailures: sqlDelta("failures") } }));
         return sendJson(response, 200, result, responseOrigin);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown wired-state findings error";
