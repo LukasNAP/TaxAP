@@ -7,6 +7,12 @@ Last updated September 23, 2026. The latest dated updates supersede historical s
 
 Documentation-only pass. README, roadmap, rollout notes and the dashboard banner were brought in line with the current deployment: hosted A+ reads are live through the dedicated SQL login; the all-state batch completed 47/47 after the September 15 Louisiana TLS fix; the signed-in ship-to list deliberately shows customer names and ship-to addresses (approved September 22); the shared SQL pool settings are documented. Historical entries below that said otherwise are marked superseded rather than rewritten. The standing constraint about customer data in the browser was updated to match the approved exception. No code behaviour, SQL, or A+ access changed except removing the outdated "hosted A+ connectivity remains unvalidated" sentence from the dashboard banner.
 
+## Ship-to address visibility fix (local only)
+
+Ana reported clipped addresses in the narrow finding panel. Expanded both NC and general finding drawers to1040px maximum (viewport bounded). Ship-to table uses fixed percentage columns with wrapping instead of a620px minimum; at container widths650px or below it becomes labeled stacked fields, preserving full customer/address/identifier content without horizontal scrolling. Reused Atlantic styles. No SQL/API/data/access changes.
+
+Production build, lint, TypeScript and302 existing tests passed. Browser-checked the real CSS with a synthetic five-field ship-to table at1040px and420px panel widths: full multiline address and ship-to number visible, with table semantics retained in the accessibility tree. This was a synthetic layout check, not a hosted/customer-data acceptance test. Not committed,pushed or deployed.
+
 ## Shared SQL pool patch (September 23)
 
 Reviewed/applied `taxap-shared-sql-pool.patch` with lifecycle corrections. Uses one pool per process (default max5, allowed1-20), preserves lazy Windows driver loading and existing SQL/auth/TLS/read-only queries. Readers receive leases; finally/close releases the lease. Connection errors or near-expiry Entra tokens retire a pool for new readers, and the old pool closes only after all leases release. This replaces the patch's unsafe fixed120-second close timer. Connect failures clean up, pool error listeners are attached, invalid configuration fails explicitly. Timing logs omit SQL/parameters; batch timing counters are approximate under overlapping requests. Lifetime longest query is labeled accordingly instead of resetting a shared counter.

@@ -1251,7 +1251,7 @@ export default function Home() {
       )}
 
       {selectedCounty && (
-        <Drawer titleId="county-title" onClose={() => setSelectedCounty(null)}>
+        <Drawer titleId="county-title" className="ship-to-drawer" onClose={() => setSelectedCounty(null)}>
           <div className="drawer-kicker"><span className="section-label">County rate comparison</span><ComparisonPill status={selectedCounty.comparisonStatus} /></div>
           <h2 id="county-title">{selectedCounty.county} County</h2>
           <p className="drawer-lede">Validated A+ configuration compared with the official NCDOR general sales and use tax county table. TaxAP requires all 100 counties before displaying a result.</p>
@@ -1295,7 +1295,7 @@ export default function Home() {
       )}
 
       {selectedFinding && (
-        <Drawer titleId="finding-review-title" onClose={() => setSelectedFinding(null)}>
+        <Drawer titleId="finding-review-title" className="ship-to-drawer" onClose={() => setSelectedFinding(null)}>
           <div className="drawer-kicker"><span className="section-label">{selectedFinding.stateCode} · Read-only rate comparison</span></div>
           <h2 id="finding-review-title">{selectedFinding.jurisdictionLabel}</h2>
           <p className="drawer-lede">Review the official evidence and record the outcome. TaxAP never updates A+.</p>
