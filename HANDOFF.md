@@ -3,11 +3,11 @@
 Last updated September 24, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
 
-## Three-decimal percentage display (September 24; local only)
+## Three-decimal percentage display (deployed September 24)
 
 All numeric rate displays now use exactly three decimal places, including dashboard/finding panels, reconciliation tables, historical rates, jurisdiction inventory and aggregate CSV exports. Percentage text in app-supplied descriptions also uses three decimals. Examples: 7.000%, 6.500%, 6.625%. Tax-body identifiers remain verbatim. Stored values, SQL, matching and comparison calculations are unchanged; missing rates remain unavailable rather than zero.
 
-Production build and all 305 tests passed, plus lint, TypeScript and diff checks. Added precision, prose/identifier preservation and CSV formatting tests; refreshed the existing historical-copy assertion. No hosted/browser acceptance test performed for this formatting change. Not committed, pushed or deployed.
+Production build and all 305 tests passed, plus lint, TypeScript and diff checks. Added precision, prose/identifier preservation and CSV formatting tests; refreshed the existing historical-copy assertion. No hosted/browser acceptance test performed for this formatting change. User authorized release: committed/pushed as 076e028 and deployed to apdock01. Verified prior host files against the parent commit and uploaded SHA-256 hashes. Protected backup: /var/atlanticapps/taxap-backups/rate-format-20260924; rollback image: taxap-rollback:before-rate-format. Built with both Compose files and replaced only taxap-app. Private router page returned 200 with three-decimal historical rate text; served page bundle includes the three-decimal formatter. Review SQLite integrity passed; public root302/API401; all four containers running with zero restarts. Signed-in visual acceptance remains pending.
 
 ## Documentation reconciliation (September 23)
 
