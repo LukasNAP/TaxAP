@@ -1,5 +1,6 @@
 "use client";
 
+import { formatRate, formatRateText } from "./rate-format";
 import { useEffect, useMemo, useState } from "react";
 import { inventoryCsv, inventoryRows, type InventoryPayload, type InventoryRow } from "./jurisdiction-inventory";
 import { matchesJurisdictionFilters, type JurisdictionFilters } from "./jurisdiction-filters";
@@ -9,7 +10,7 @@ const initialFilters: JurisdictionFilters = { query: "", state: "all", jurisdict
 const noGeneralTax = new Set(["DE", "MT", "NH", "OR"]);
 const states = [...STATE_NAME_BY_CODE].sort((a, b) => a[1].localeCompare(b[1]));
 const labels: Record<string, string> = { matched: "A+ matches", "recent-match": "Recent change matched", mismatch: "A+ differs", upcoming: "Upcoming change", "not-checked": "Not checked", state: "State", county: "County", city: "City", special: "Special", assignment: "A+ assignment", unreviewed: "Unreviewed", new: "New", in_review: "In review", approved: "Approved", resolved: "Resolved", not_applicable: "Not applicable", validated: "Available", unavailable: "Unavailable", current: "Current", undated: "Date unavailable" };
-const rate = (value: number | null) => value === null ? "—" : `${value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}%`;
+const rate = (value: number | null) => value === null ? "—" : formatRate(value);
 
 export function JurisdictionInventoryView({ ncRows, apiBase, offline, comparisonStates, reviews, onOpen }: {
   ncRows: InventoryRow[]; apiBase: string; offline: boolean; comparisonStates: string;
@@ -94,7 +95,7 @@ export function JurisdictionInventoryView({ ncRows, apiBase, offline, comparison
       </div>
       <div className="table-scroll"><table className="coverage-table jurisdiction-table"><thead><tr>{["State", "Jurisdiction", "Type", "A+ tax body", "Official total", "Official component", "A+ rate", "Ship-tos", "Effective", "Source", "Review", "Comparison"].map(title => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{filtered.slice(currentPage * 100, (currentPage + 1) * 100).map(row => <tr key={row.id}>
-          <td>{row.stateCode}</td><td><button className="table-link" type="button" onClick={() => onOpen(row)}>{row.jurisdictionName}</button></td><td>{labels[row.jurisdictionType] ?? row.jurisdictionType}</td><td>{row.taxBody || "—"}</td><td>{rate(row.officialRate)}</td><td>{rate(row.componentRate)}</td><td>{rate(row.aplusRate)}</td><td>{row.shipTos?.toLocaleString() ?? "—"}</td><td>{row.effectiveDate ?? labels[row.effectiveState]}</td><td>{labels[row.sourceStatus]}</td><td>{labels[row.reviewStatus ?? "unreviewed"]}</td><td>{labels[row.comparisonStatus]}</td>
+          <td>{row.stateCode}</td><td><button className="table-link" type="button" onClick={() => onOpen(row)}>{formatRateText(row.jurisdictionName)}</button></td><td>{labels[row.jurisdictionType] ?? row.jurisdictionType}</td><td>{row.taxBody || "—"}</td><td>{rate(row.officialRate)}</td><td>{rate(row.componentRate)}</td><td>{rate(row.aplusRate)}</td><td>{row.shipTos?.toLocaleString() ?? "—"}</td><td>{row.effectiveDate ?? labels[row.effectiveState]}</td><td>{labels[row.sourceStatus]}</td><td>{labels[row.reviewStatus ?? "unreviewed"]}</td><td>{labels[row.comparisonStatus]}</td>
         </tr>)}{!filtered.length && <tr><td colSpan={12}>No loaded rows match these filters. Check loading or unavailable states above, or clear filters.</td></tr>}</tbody>
       </table></div>
       <div className="result-count"><button className="secondary-button" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>{" "}<button className="secondary-button" type="button" disabled={(currentPage + 1) * 100 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next</button></div>

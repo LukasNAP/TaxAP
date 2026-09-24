@@ -1,7 +1,13 @@
 # TaxAP project handoff
 
-Last updated September 23, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+Last updated September 24, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+
+## Three-decimal percentage display (September 24; local only)
+
+All numeric rate displays now use exactly three decimal places, including dashboard/finding panels, reconciliation tables, historical rates, jurisdiction inventory and aggregate CSV exports. Percentage text in app-supplied descriptions also uses three decimals. Examples: 7.000%, 6.500%, 6.625%. Tax-body identifiers remain verbatim. Stored values, SQL, matching and comparison calculations are unchanged; missing rates remain unavailable rather than zero.
+
+Production build and all 305 tests passed, plus lint, TypeScript and diff checks. Added precision, prose/identifier preservation and CSV formatting tests; refreshed the existing historical-copy assertion. No hosted/browser acceptance test performed for this formatting change. Not committed, pushed or deployed.
 
 ## Documentation reconciliation (September 23)
 

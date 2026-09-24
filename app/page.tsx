@@ -1,4 +1,5 @@
 "use client";
+import { formatRate, formatRateText } from "./rate-format";
 
 import { findingDecisionKey, findingReviewEvidence } from "./finding-review";
 import { FindingShipTos } from "./finding-ship-tos";
@@ -297,10 +298,6 @@ const navItems: { id: View; label: string }[] = [
   { id: "sources", label: "Sources" },
   { id: "import", label: "Admin import" },
 ];
-
-function formatRate(rate: number) {
-  return `${rate.toFixed(2)}%`;
-}
 
 function reviewDateKey(county: ComparedCounty) {
   const source = county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? county.officialEffectivePeriod ?? "current";
@@ -931,12 +928,12 @@ export default function Home() {
                       <tr key={finding.id}>
                         <td>{finding.effectiveDate ?? "Current"}</td>
                         <td>{finding.stateCode}</td>
-                        <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{finding.jurisdictionLabel}</strong></button></td>
+                        <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{formatRateText(finding.jurisdictionLabel)}</strong></button></td>
                         <td>{finding.officialRate === null ? "Unavailable" : formatRate(finding.officialRate)}</td>
                         <td>{finding.aplusRate === null ? "Unavailable" : formatRate(finding.aplusRate)}</td>
                         <td>{finding.activeShipTos.toLocaleString()}{(finding.lineLevelReviewShipTos ?? 0) > 0 && <small className="treatment-impact-note">+ {finding.lineLevelReviewShipTos?.toLocaleString()} line-level</small>}</td>
-                        <td><ComparisonPill status={finding.comparisonStatus} />{finding.confidence === "unverified" && <span className="rate-warning" title={finding.confidenceNote ?? undefined}> !</span>}</td>
-                        <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${finding.jurisdictionLabel}`}>›</button></td>
+                        <td><ComparisonPill status={finding.comparisonStatus} />{finding.confidence === "unverified" && <span className="rate-warning" title={finding.confidenceNote ? formatRateText(finding.confidenceNote) : undefined}> !</span>}</td>
+                        <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${formatRateText(finding.jurisdictionLabel)}`}>›</button></td>
                       </tr>
                     )) : !dashboardCountsReady ? (
                       <tr><td colSpan={8}><div className="inbox-empty"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>The all-state batch is still comparing official rates with A+ — this can take a few seconds.</p></div></div></td></tr>
@@ -951,7 +948,7 @@ export default function Home() {
               )}
               <div className="recent-publication">
                 <span className="status-mark">✓</span>
-                <div><span className="section-label">Imported historical evidence</span><strong>Mecklenburg County · 8.25% effective July 1, 2026</strong><p>A+ now matches and the prior-rate invoices were handled by the tax team.</p></div>
+                <div><span className="section-label">Imported historical evidence</span><strong>Mecklenburg County · 8.250% effective July 1, 2026</strong><p>A+ now matches and the prior-rate invoices were handled by the tax team.</p></div>
                 <button className="secondary-button" type="button" onClick={() => setSelectedCase(resolvedCases[0])}>View evidence</button>
               </div>
             </article>
@@ -971,7 +968,7 @@ export default function Home() {
               ) : rateRiskFindings.slice(0, 4).map((finding) => (
                 <button className="alert-row" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                   <span className={`alert-icon comparison-${finding.comparisonStatus}`} aria-hidden="true">{finding.comparisonStatus === "mismatch" ? "!" : "↗"}</span>
-                  <span className="alert-copy"><strong>{finding.jurisdictionLabel}</strong><span>{finding.stateCode} · A+ {finding.aplusRate === null ? "pending" : formatRate(finding.aplusRate)} · Official {finding.officialRate === null ? "pending" : formatRate(finding.officialRate)}</span><small>{comparisonLabels[finding.comparisonStatus]}{(finding.lineLevelReviewShipTos ?? 0) > 0 ? ` · ${finding.lineLevelReviewShipTos?.toLocaleString()} line-level review` : ""}{finding.confidence === "unverified" ? " · unverified jurisdiction match" : ""}</small></span>
+                  <span className="alert-copy"><strong>{formatRateText(finding.jurisdictionLabel)}</strong><span>{finding.stateCode} · A+ {finding.aplusRate === null ? "pending" : formatRate(finding.aplusRate)} · Official {finding.officialRate === null ? "pending" : formatRate(finding.officialRate)}</span><small>{comparisonLabels[finding.comparisonStatus]}{(finding.lineLevelReviewShipTos ?? 0) > 0 ? ` · ${finding.lineLevelReviewShipTos?.toLocaleString()} line-level review` : ""}{finding.confidence === "unverified" ? " · unverified jurisdiction match" : ""}</small></span>
                   <span className="shipto-count"><strong>{finding.activeShipTos.toLocaleString()}</strong><small>ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
                 </button>
               ))}
@@ -981,7 +978,7 @@ export default function Home() {
                   <span className="alert-icon resolved" aria-hidden="true">✓</span>
                   <span className="alert-copy">
                     <strong>{resolvedCase.place}</strong>
-                    <span>{resolvedCase.previousRate} → {resolvedCase.currentRate}</span>
+                    <span>{formatRateText(resolvedCase.previousRate)} → {formatRateText(resolvedCase.currentRate)}</span>
                     <small>{resolvedCase.resolution}</small>
                   </span>
                   <span className="shipto-count"><strong>{resolvedCase.invoices}</strong><small>invoices</small></span>
@@ -1040,7 +1037,7 @@ export default function Home() {
                  return (
                    <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                     <span className={`status-mark comparison-${finding.comparisonStatus}`}>{finding.comparisonStatus === "upcoming" ? "↗" : "!"}</span>
-                     <span><strong>{finding.jurisdictionLabel}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} rate-risk ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
+                     <span><strong>{formatRateText(finding.jurisdictionLabel)}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} rate-risk ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
                      <span className="history-rate">A+ {finding.aplusRate === null ? "Pending" : formatRate(finding.aplusRate)} → <strong>{finding.officialRate === null ? "Pending" : formatRate(finding.officialRate)}</strong></span>
                      <span className="row-arrow" aria-hidden="true">›</span>
                    </button>
@@ -1096,7 +1093,7 @@ export default function Home() {
               </button>
             )) : reviewStoreStatus === "ready" ? <p>No reviews have been recorded in this database.</p> : resolvedCases.map((resolvedCase) => (
               <button className="history-card" type="button" key={resolvedCase.id} onClick={() => setSelectedCase(resolvedCase)}>
-                <span className="status-mark">✓</span><span><strong>{resolvedCase.place}</strong><small>{resolvedCase.taxBody} · imported historical evidence</small></span><span className="history-rate">{resolvedCase.previousRate} → <strong>{resolvedCase.currentRate}</strong></span><span className="row-arrow" aria-hidden="true">›</span>
+                <span className="status-mark">✓</span><span><strong>{resolvedCase.place}</strong><small>{resolvedCase.taxBody} · imported historical evidence</small></span><span className="history-rate">{formatRateText(resolvedCase.previousRate)} → <strong>{formatRateText(resolvedCase.currentRate)}</strong></span><span className="row-arrow" aria-hidden="true">›</span>
               </button>
             ))}
             {reviewStoreStatus === "error" && <p className="queue-storage-warning" role="status">Review storage is unavailable. Imported historical evidence does not confirm that current reviews were saved.</p>}
@@ -1137,7 +1134,7 @@ export default function Home() {
                       : <><strong>{source.stateCode}</strong> · {source.stateName}</>}</td>
                     <td>{source.activeShipTos.toLocaleString()}</td>
                       <td><span className={`source-rollout-status source-rollout-${source.status}`}>{source.status === "connected" ? "Connected" : source.status === "machine-readable-source" ? "Machine source identified" : source.status === "official-document-source" ? "Official document identified" : source.status === "no-general-sales-tax" ? "No general sales tax" : "Research needed"}</span></td>
-                    <td>{source.coverage}</td>
+                    <td>{formatRateText(source.coverage)}</td>
                     <td>{source.sourceUrl ? <a href={source.sourceUrl} target="_blank" rel="noreferrer">{source.sourceName} ↗</a> : source.sourceName}</td>
                   </tr>
                 ))}</tbody>
@@ -1150,7 +1147,7 @@ export default function Home() {
               <table className="coverage-table">
                 <thead><tr><th>A+ tax body</th><th>A+ description</th><th>Configured rate</th><th>County handling</th></tr></thead>
                 <tbody>{visibleSpecialTaxBodies.map((taxBody) => (
-                  <tr key={taxBody.taxBody}><td><code>{taxBody.taxBody}</code></td><td>{taxBody.description}</td><td>{formatRate(taxBody.currentRate)}</td><td>Excluded</td></tr>
+                  <tr key={taxBody.taxBody}><td><code>{taxBody.taxBody}</code></td><td>{formatRateText(taxBody.description)}</td><td>{formatRate(taxBody.currentRate)}</td><td>Excluded</td></tr>
                 ))}</tbody>
               </table>
             </div>
@@ -1206,7 +1203,7 @@ export default function Home() {
                     {inStateTaxBodies.map((row, index) => (
                       <tr key={`${row.taxBody ?? "unassigned"}-${index}`} className={row.definitionStatus === "missing" ? "definition-missing" : undefined}>
                         <td><code>{row.taxBody ?? "Unassigned"}</code></td>
-                        <td>{row.description || (row.taxBody ? "Definition not found in XATXBD" : "No tax body on ship-to")}</td>
+                        <td>{formatRateText(row.description || (row.taxBody ? "Definition not found in XATXBD" : "No tax body on ship-to"))}</td>
                         <td>{row.currentRate === null ? "—" : formatRate(row.currentRate)}{row.rateTotalValid === false && <span className="rate-warning" title="The configured components do not equal the configured total"> !</span>}</td>
                         <td>{row.activeShipTos.toLocaleString()}</td>
                         <td>{row.activeCustomers.toLocaleString()}</td>
@@ -1229,7 +1226,7 @@ export default function Home() {
                       {anomalousTaxBodies.map((row, index) => (
                         <tr key={`anomaly-${row.taxBody ?? "unassigned"}-${index}`} className="definition-missing">
                           <td><code>{row.taxBody ?? "Unassigned"}</code></td>
-                          <td>{row.description}</td>
+                          <td>{formatRateText(row.description ?? "")}</td>
                           <td>{row.currentRate === null ? "—" : formatRate(row.currentRate)}{row.rateTotalValid === false && <span className="rate-warning" title="The configured components do not equal the configured total"> !</span>}</td>
                           <td>{row.activeShipTos.toLocaleString()}</td>
                           <td>{row.activeCustomers.toLocaleString()}</td>
@@ -1260,7 +1257,7 @@ export default function Home() {
             <div><dt>A+ tax body</dt><dd>{selectedCounty.taxBody}</dd></div>
             <div><dt>A+ configured rate</dt><dd>{formatRate(selectedCounty.currentRate)}</dd></div>
             <div><dt>Official NCDOR rate</dt><dd>{selectedCounty.officialRate === null ? "Comparison unavailable" : formatRate(selectedCounty.officialRate)}</dd></div>
-            <div><dt>Difference</dt><dd>{selectedCounty.rateDifference === null ? "—" : `${selectedCounty.rateDifference > 0 ? "+" : ""}${selectedCounty.rateDifference.toFixed(2)} percentage points`}</dd></div>
+            <div><dt>Difference</dt><dd>{selectedCounty.rateDifference === null ? "—" : `${selectedCounty.rateDifference > 0 ? "+" : ""}${selectedCounty.rateDifference.toFixed(3)} percentage points`}</dd></div>
             <div><dt>Rate components</dt><dd>{selectedCounty.rateComponents.map((component) => `${formatRate(component.rate)} ${component.label}`).join(" + ")}</dd></div>
             <div><dt>Scheduled next rate</dt><dd>{selectedCounty.scheduledRate === null ? "None in A+" : `${formatRate(selectedCounty.scheduledRate)} · ${selectedCounty.scheduledEffectiveDate}`}</dd></div>
             <div><dt>State</dt><dd>North Carolina</dd></div>
@@ -1297,12 +1294,12 @@ export default function Home() {
       {selectedFinding && (
         <Drawer titleId="finding-review-title" className="ship-to-drawer" onClose={() => setSelectedFinding(null)}>
           <div className="drawer-kicker"><span className="section-label">{selectedFinding.stateCode} · Read-only rate comparison</span></div>
-          <h2 id="finding-review-title">{selectedFinding.jurisdictionLabel}</h2>
+          <h2 id="finding-review-title">{formatRateText(selectedFinding.jurisdictionLabel)}</h2>
           <p className="drawer-lede">Review the official evidence and record the outcome. TaxAP never updates A+.</p>
           <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
           <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
           <FindingShipTos key={findingDecisionKey(selectedFinding)} apiBase={apiBaseUrl()} taxBody={selectedFinding.taxBody} state={selectedFinding.stateCode} scope={"rateRiskShipTos" in selectedFinding && selectedFinding.rateRiskShipTos != null ? "rate-risk" : "all"} expectedCount={selectedFinding.activeShipTos} />
-          {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{selectedFinding.confidenceNote} Resolve the jurisdiction before approving maintenance.</p>}
+          {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{formatRateText(selectedFinding.confidenceNote ?? "")} Resolve the jurisdiction before approving maintenance.</p>}
           <ReviewDecisionPanel key={findingDecisionKey(selectedFinding)} reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding)) ?? null} approvalAllowed={selectedFinding.confidence === "confirmed" && inboxFindings.some((finding) => findingDecisionKey(finding) === findingDecisionKey(selectedFinding)) && batchHealth.status === "ready"} onSave={(status, actor, note) => saveReview(findingReviewEvidence(selectedFinding), status, actor, note)} />
           {reviewCasesByKey.has(findingDecisionKey(selectedFinding)) && <ReviewAuditTrail reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding))!} />}
           <div className="drawer-actions">
@@ -1339,7 +1336,7 @@ export default function Home() {
           <div className="drawer-kicker"><span className="section-label">Resolved rate change</span><span className="status-badge">✓ Resolved</span></div>
           <h2 id="review-title">{selectedCase.place}</h2>
           <p className="drawer-lede">The first verified TaxAP audit case, preserved as aggregate evidence.</p>
-          <div className="rate-comparison"><div><span>Previous A+ rate</span><strong>{selectedCase.previousRate}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedCase.currentRate}</strong></div></div>
+          <div className="rate-comparison"><div><span>Previous A+ rate</span><strong>{formatRateText(selectedCase.previousRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{formatRateText(selectedCase.currentRate)}</strong></div></div>
           <dl className="review-facts">
             <div><dt>A+ tax body</dt><dd>{selectedCase.taxBody}</dd></div>
             <div><dt>Effective date</dt><dd>{selectedCase.effectiveDate}</dd></div>
@@ -1350,7 +1347,7 @@ export default function Home() {
             <div><dt>Initial one-point estimate</dt><dd>{selectedCase.reviewEstimate}</dd></div>
             <div><dt>Official source</dt><dd><a href={sources[0].url ?? "#"} target="_blank" rel="noreferrer">North Carolina DOR ↗</a></dd></div>
           </dl>
-          <div className="resolution-note"><span aria-hidden="true">✓</span><div><strong>Resolved by {selectedCase.resolvedBy}</strong><p>The A+ rate was changed and invoices that used the prior 7.25% rate were handled. The estimate above is not an outstanding balance.</p><small>Recorded {selectedCase.resolvedOn}</small></div></div>
+          <div className="resolution-note"><span aria-hidden="true">✓</span><div><strong>Resolved by {selectedCase.resolvedBy}</strong><p>The A+ rate was changed and invoices that used the prior 7.250% rate were handled. The estimate above is not an outstanding balance.</p><small>Recorded {selectedCase.resolvedOn}</small></div></div>
           <div className="no-write-note"><strong>No A+ records were changed by TaxAP.</strong>This application preserves the aggregate evidence and the tax team&apos;s resolution.</div>
           <div className="drawer-actions"><button className="primary-button" type="button" onClick={() => setSelectedCase(null)}>Close case</button></div>
         </Drawer>
@@ -1451,7 +1448,7 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
       <p className="official-boundary-note">
         Matched by address: {matchTierCounts.address.toLocaleString()} · ZIP+4: {matchTierCounts.zip9.toLocaleString()} · ZIP-5: {matchTierCounts.zip5.toLocaleString()} · ZIP+4 sub-ranges in agreement (no ZIP-5 row published): {matchTierCounts.zip5FromZip9.toLocaleString()}.
         Unmatched and ambiguous ship-tos are reported, not guessed.
-        {excludedForNoAplusRate > 0 && ` ${excludedForNoAplusRate} tax ${excludedForNoAplusRate === 1 ? "body" : "bodies"} excluded from the rows below for having no A+ rate configured (retired, DO NOT USE, or a blank 0% definition).`}
+        {excludedForNoAplusRate > 0 && ` ${excludedForNoAplusRate} tax ${excludedForNoAplusRate === 1 ? "body" : "bodies"} excluded from the rows below for having no A+ rate configured (retired, DO NOT USE, or a blank 0.000% definition).`}
         {crossStateAssignments.taxBodyCount > 0 && ` ${crossStateAssignments.rateBearingTaxBodyCount} rate-bearing different-jurisdiction tax ${crossStateAssignments.rateBearingTaxBodyCount === 1 ? "body" : "bodies"}, covering ${crossStateAssignments.rateBearingShipToCount.toLocaleString()} ship-tos, are excluded from Georgia rate comparison. ${crossStateAssignments.taxBodyCount - crossStateAssignments.rateBearingTaxBodyCount} additional zero-rate outside-jurisdiction assignment groups remain visible below.`}
       </p>
       {crossStateAssignments.taxBodyCount > 0 && (
@@ -1459,7 +1456,7 @@ function GeorgiaBoundaryPanel({ status, reconciliation }: { status: StateDetailS
           <summary>View {crossStateAssignments.taxBodyCount} different-state or country assignment groups ({crossStateAssignments.shipToCount.toLocaleString()} ship-tos)</summary>
           <div className="table-scroll"><table className="coverage-table official-rate-table"><thead><tr><th>Tax body</th><th>Description</th><th>Ship-tos</th><th>A+ rate</th><th>Handling</th></tr></thead><tbody>
             {crossStateAssignments.taxBodies.map((row) => (
-              <tr key={row.taxBody}><td><code>{row.taxBody}</code></td><td>{row.description ?? "Different-state tax body"}</td><td>{row.activeShipTos.toLocaleString()}</td><td>{row.aplusRate === null ? "—" : formatRate(row.aplusRate)}</td><td>Excluded from GA comparison</td></tr>
+              <tr key={row.taxBody}><td><code>{row.taxBody}</code></td><td>{formatRateText(row.description ?? "Different-state tax body")}</td><td>{row.activeShipTos.toLocaleString()}</td><td>{row.aplusRate === null ? "—" : formatRate(row.aplusRate)}</td><td>Excluded from GA comparison</td></tr>
             ))}
           </tbody></table></div>
         </details>
@@ -1535,11 +1532,11 @@ function DirectMappingAplusPanel({ status, reconciliation }: { status: StateDeta
         <div><span>Misinputs excluded</span><strong>{totals.misinputShipTos.toLocaleString()}</strong></div>
         <div><span>Cross-state excluded</span><strong>{totals.crossStateShipTos.toLocaleString()}</strong></div>
       </div>
-      {reconciliation.noTaxPolicy && <p className="official-boundary-note">{totals.intentionalNoTaxShipTos?.toLocaleString() ?? "0"} ship-tos follow the deliberate no-tax policy confirmed {reconciliation.noTaxPolicy.confirmedOn}. {reconciliation.noTaxPolicy.description}</p>}
+      {reconciliation.noTaxPolicy && <p className="official-boundary-note">{totals.intentionalNoTaxShipTos?.toLocaleString() ?? "0"} ship-tos follow the deliberate no-tax policy confirmed {reconciliation.noTaxPolicy.confirmedOn}. {formatRateText(reconciliation.noTaxPolicy.description)}</p>}
       {mismatches.length > 0 ? (
         <div className="official-source-table-wrap"><table><thead><tr><th>Tax body</th><th>Jurisdiction</th><th>Official</th><th>A+</th><th>Ship-tos</th></tr></thead><tbody>
           {mismatches.map((finding) => (
-            <tr key={finding.taxBody}><td>{finding.taxBody}</td><td>{finding.jurisdictionLabel}</td><td>{finding.officialRate === null ? "—" : formatRate(finding.officialRate)}</td><td>{finding.aplusRate === null ? "—" : formatRate(finding.aplusRate)}</td><td>{finding.activeShipTos.toLocaleString()}</td></tr>
+            <tr key={finding.taxBody}><td>{finding.taxBody}</td><td>{formatRateText(finding.jurisdictionLabel)}</td><td>{finding.officialRate === null ? "—" : formatRate(finding.officialRate)}</td><td>{finding.aplusRate === null ? "—" : formatRate(finding.aplusRate)}</td><td>{finding.activeShipTos.toLocaleString()}</td></tr>
           ))}
         </tbody></table></div>
       ) : (
@@ -1648,8 +1645,8 @@ function ImportSnapshotView({
 
           {(result.errors.length > 0 || result.warnings.length > 0) && (
             <div className="validation-lists">
-              {result.errors.length > 0 && <div><h3>Errors</h3><ul>{result.errors.map((error) => <li key={error}>{error}</li>)}</ul></div>}
-              {result.warnings.length > 0 && <div><h3>Notes</h3><ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
+              {result.errors.length > 0 && <div><h3>Errors</h3><ul>{result.errors.map((error) => <li key={error}>{formatRateText(error)}</li>)}</ul></div>}
+              {result.warnings.length > 0 && <div><h3>Notes</h3><ul>{result.warnings.map((warning) => <li key={warning}>{formatRateText(warning)}</li>)}</ul></div>}
             </div>
           )}
 
@@ -1658,7 +1655,7 @@ function ImportSnapshotView({
               <div className="panel-heading"><div><span className="section-label">Representative rows</span><h2>Rate preview</h2></div><span className="count-pill quiet">4</span></div>
               <div className="table-scroll"><table className="coverage-table"><thead><tr><th>Tax body</th><th>Description</th><th>Base</th><th>Local components</th><th>Total</th><th>Next rate</th></tr></thead><tbody>
                 {result.standardRows.filter((row) => ["NC032", "NC060", "NC068", "NC092"].includes(row.taxBody)).map((row) => (
-                  <tr key={row.taxBody}><td><code>{row.taxBody}</code></td><td>{row.description}</td><td>{formatRate(row.baseRate)}</td><td>{row.localRates.filter((rate) => rate !== 0).map(formatRate).join(" + ") || "—"}</td><td><strong>{formatRate(row.currentRate)}</strong></td><td>{row.nextRate > 0 ? `${formatRate(row.nextRate)} · ${row.nextEffectiveDate}` : "None"}</td></tr>
+                  <tr key={row.taxBody}><td><code>{row.taxBody}</code></td><td>{formatRateText(row.description ?? "")}</td><td>{formatRate(row.baseRate)}</td><td>{row.localRates.filter((rate) => rate !== 0).map(formatRate).join(" + ") || "—"}</td><td><strong>{formatRate(row.currentRate)}</strong></td><td>{row.nextRate > 0 ? `${formatRate(row.nextRate)} · ${row.nextEffectiveDate}` : "None"}</td></tr>
                 ))}
               </tbody></table></div>
             </div>

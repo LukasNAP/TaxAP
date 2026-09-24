@@ -1,3 +1,4 @@
+import { formatRateValue, formatRateText } from "./rate-format.ts";
 import type { JurisdictionFilterRow } from "./jurisdiction-filters";
 
 export type InventoryRow = JurisdictionFilterRow & {
@@ -59,5 +60,5 @@ export function inventoryCsv(rows: InventoryRow[]): string {
     return `"${text.replaceAll('"', '""')}"`;
   }).join(",");
   return [cells(["State", "Jurisdiction", "Type", "Tax body", "Official total %", "Official component %", "A+ %", "Ship-tos", "Comparison", "Effective date", "Source", "Review"]),
-    ...rows.map(row => cells([row.stateCode, row.jurisdictionName, row.jurisdictionType, row.taxBody, row.officialRate, row.componentRate, row.aplusRate, row.shipTos, row.comparisonStatus, row.effectiveDate, row.sourceStatus, row.reviewStatus]))].join("\n");
+    ...rows.map(row => cells([row.stateCode, formatRateText(row.jurisdictionName), row.jurisdictionType, row.taxBody, row.officialRate === null ? "" : formatRateValue(row.officialRate), row.componentRate === null ? "" : formatRateValue(row.componentRate), row.aplusRate === null ? "" : formatRateValue(row.aplusRate), row.shipTos, row.comparisonStatus, row.effectiveDate, row.sourceStatus, row.reviewStatus]))].join("\n");
 }

@@ -59,7 +59,7 @@ test("keeps the MVP read-only and preserves verified aggregate data", async () =
   ]);
 
   assert.match(page, /No A\+ records were changed by TaxAP\./);
-  assert.match(page, /A\+ rate was changed and invoices that used the prior 7\.25% rate were handled/);
+  assert.match(page, /A\+ rate was changed and invoices that used the prior 7\.250% rate were handled/);
   assert.match(taxData, /taxableSales: "\$91,211\.53"/);
   assert.match(taxData, /activeNcShipTos: 5518/);
   assert.match(taxData, /standardCountyAssignments: 5498/);
