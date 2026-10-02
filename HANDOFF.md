@@ -2,6 +2,14 @@
 
 Last updated October 2, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
+## Rate precision and stale treatment fixes (October 2; local only)
+
+User selected assessment-response items 1 and 2: small differences missed and stale treatment counts suppressing findings. Consulted aplus-erp and explained the comparison change before editing. All rate-comparison paths (NC, direct mapping, flat states, NJ and GA) now share hasRateDifference, using the existing four-decimal difference calculation and a 0.001 percentage-point threshold. Differences such as 6.625 versus 6.630 now flag for human review. Missing/nonfinite differences remain unavailable. No SQL, matching rules, official rate values or A+ writes changed.
+
+Treatment snapshots clear on refresh and failure; applyFindingTreatments only uses counts from a ready read. Failed/pending reads cannot suppress findings using a prior zero-risk count. Unknown treatment counts preserve comparison assignment counts with visible unknown labels; the dashboard affected rate-risk total stays unknown instead of treating assignment counts as verified risk counts. Successful current treatment exclusions still work.
+
+Build, all 311 tests, lint, TypeScript and diff checks passed. Synthetic regressions cover positive/negative 0.001 and 0.005 differences across all comparison families, below-threshold/equal/missing cases, failed refresh after zero-risk evidence and recovery. Existing Arizona test updated to flag its 0.002-point difference. Hosted/browser acceptance not performed. Not committed, pushed or deployed.
+
 ## All jurisdictions review filters deployed (October 2)
 
 Non-NC assignment inventory rows now use the shared findingDecisionKey function with the same A+/official rate pair as saved decisions. Saved in-review, approved, resolved and not-applicable statuses now attach to the correct rows and filters/CSV. Changed rates receive distinct keys; no migration or fallback to an older rate pair. Published source rows remain separate, and uncertain comparisons retain their existing not-checked status. NC's existing key construction is unchanged. Extracted the existing review-status attachment into applyInventoryReviews so regression tests exercise the production lookup/filter path with synthetic saved review records for direct mapping, statewide and Georgia (including uncertain) findings.

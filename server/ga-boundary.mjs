@@ -1,3 +1,4 @@
+import { hasRateDifference } from "../app/rate-comparison.ts";
 import { createHash } from "node:crypto";
 import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
 import { readSingleFileZip } from "./zip-utils.mjs";
@@ -404,7 +405,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
       officialRate,
       aplusRate,
       rateDifference,
-      hasDifference: rateDifference !== null && Math.abs(rateDifference) >= 0.01,
+      hasDifference: hasRateDifference(rateDifference),
     };
   });
 

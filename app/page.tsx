@@ -1,5 +1,7 @@
 "use client";
 import { formatRate, formatRateText } from "./rate-format";
+import { hasRateDifference } from "./rate-comparison";
+import { applyFindingTreatments } from "./finding-treatment";
 
 import { findingDecisionKey, findingReviewEvidence } from "./finding-review";
 import { FindingShipTos } from "./finding-ship-tos";
@@ -56,13 +58,6 @@ type TaxTreatmentSnapshot = {
   };
 };
 type TaxTreatmentStatus = "idle" | "loading" | "ready" | "error";
-type TreatmentAwareFinding = JurisdictionFinding & {
-  totalAssignedShipTos: number;
-  rateRiskShipTos: number | null;
-  neverTaxedShipTos: number | null;
-  lineLevelReviewShipTos: number | null;
-  otherTreatmentShipTos: number | null;
-};
 type StateTaxBody = {
   taxBody: string | null;
   description: string | null;
@@ -362,7 +357,7 @@ function mergeOfficialRates(current: ComparedCounty[], official: OfficialNcSnaps
     const futureChanges = changesByCounty.get(county.county) ?? [];
     return {
       ...county,
-      comparisonStatus: Math.abs(difference) >= 0.001 ? "mismatch" : futureChanges.length > 0 ? "upcoming" : officialRow.recentChange ? "recent-match" : "matched",
+      comparisonStatus: hasRateDifference(difference) ? "mismatch" : futureChanges.length > 0 ? "upcoming" : officialRow.recentChange ? "recent-match" : "matched",
       officialRate: officialRow.officialRate,
       officialEffectivePeriod: official.effectivePeriod,
       officialSourceUrl: official.sourceUrl,
@@ -481,6 +476,7 @@ export default function Home() {
     setConnectorStatus((current) => current === "live" ? "refreshing" : "connecting");
     setConnectorMessage("Refreshing the all-state comparison batch…");
     setTaxTreatmentStatus("loading");
+    setTaxTreatmentSnapshot(null);
     const apiBase = apiBaseUrl();
     if (!apiBase) {
       setBatchHealth((current) => ({ ...current, status: "error" }));
@@ -509,7 +505,7 @@ export default function Home() {
         get<TaxTreatmentSnapshot>("/api/aplus/tax-treatment"),
       ]);
       if (treatment) { setTaxTreatmentSnapshot(treatment); setTaxTreatmentStatus("ready"); }
-      else setTaxTreatmentStatus("error");
+      else { setTaxTreatmentSnapshot(null); setTaxTreatmentStatus("error"); }
       if (coverage) setStateCoverage(coverage);
       if (!result || !Array.isArray(result.failedStates) || !Array.isArray(result.stateChecks) || !("nc" in result) || !("ga" in result)) throw new Error("Comparison batch unavailable");
       if (result.nc) {
@@ -590,26 +586,7 @@ export default function Home() {
     () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings).filter((finding) => !batchHealth.failedStates.includes(finding.stateCode)),
     [batchHealth.failedStates, dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
-  const treatmentByTaxBody = useMemo(() => new Map((taxTreatmentSnapshot?.taxBodies ?? [])
-    .filter((row): row is TaxBodyTreatment & { taxBody: string } => Boolean(row.taxBody))
-    .map((row) => [row.taxBody, new Map(row.treatments.map((treatment) => [treatment.treatmentCode, treatment.activeShipTos]))])), [taxTreatmentSnapshot]);
-  const treatmentAwareInboxFindings = useMemo<TreatmentAwareFinding[]>(() => inboxFindings.map((finding) => {
-    const treatments = treatmentByTaxBody.get(finding.taxBody);
-    if (!treatments) return { ...finding, totalAssignedShipTos: finding.activeShipTos, rateRiskShipTos: null, neverTaxedShipTos: null, lineLevelReviewShipTos: null, otherTreatmentShipTos: null };
-    const rateRiskShipTos = treatments.get("0") ?? 0;
-    const neverTaxedShipTos = treatments.get("3") ?? 0;
-    const lineLevelReviewShipTos = treatments.get("J") ?? 0;
-    const otherTreatmentShipTos = treatments.get("other") ?? 0;
-    return {
-      ...finding,
-      totalAssignedShipTos: rateRiskShipTos + neverTaxedShipTos + lineLevelReviewShipTos + otherTreatmentShipTos,
-      rateRiskShipTos,
-      neverTaxedShipTos,
-      lineLevelReviewShipTos,
-      otherTreatmentShipTos,
-      activeShipTos: rateRiskShipTos,
-    };
-  }), [inboxFindings, treatmentByTaxBody]);
+  const treatmentAwareInboxFindings = useMemo(() => applyFindingTreatments(inboxFindings, taxTreatmentSnapshot, taxTreatmentStatus), [inboxFindings, taxTreatmentSnapshot, taxTreatmentStatus]);
   const rateRiskFindings = useMemo(() => treatmentAwareInboxFindings
     .filter((finding) => finding.rateRiskShipTos === null || finding.rateRiskShipTos > 0)
     .sort((left, right) => right.activeShipTos - left.activeShipTos || left.jurisdictionLabel.localeCompare(right.jurisdictionLabel)), [treatmentAwareInboxFindings]);
@@ -889,7 +866,7 @@ export default function Home() {
           <SummaryStats
             openCount={dashboardCountsReady ? needsAttentionCount : null}
             upcomingCount={dashboardCountsReady ? upcomingFindings.length : null}
-            affectedShipTos={dashboardCountsReady ? rateRiskFindings.reduce((total, finding) => total + finding.activeShipTos, 0) : null}
+            affectedShipTos={dashboardCountsReady && rateRiskFindings.every(finding => finding.rateRiskShipTos !== null) ? rateRiskFindings.reduce((total, finding) => total + finding.activeShipTos, 0) : null}
             connectedSources={officialSources.filter((source) => source.status === "connected").length}
             lastRefresh={officialSnapshot?.retrievedAt ?? null}
           />
@@ -931,7 +908,7 @@ export default function Home() {
                         <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{formatRateText(finding.jurisdictionLabel)}</strong></button></td>
                         <td>{finding.officialRate === null ? "Unavailable" : formatRate(finding.officialRate)}</td>
                         <td>{finding.aplusRate === null ? "Unavailable" : formatRate(finding.aplusRate)}</td>
-                        <td>{finding.activeShipTos.toLocaleString()}{(finding.lineLevelReviewShipTos ?? 0) > 0 && <small className="treatment-impact-note">+ {finding.lineLevelReviewShipTos?.toLocaleString()} line-level</small>}</td>
+                        <td>{finding.activeShipTos.toLocaleString()}{finding.rateRiskShipTos === null && <small className="treatment-impact-note">Treatment unknown</small>}{(finding.lineLevelReviewShipTos ?? 0) > 0 && <small className="treatment-impact-note">+ {finding.lineLevelReviewShipTos?.toLocaleString()} line-level</small>}</td>
                         <td><ComparisonPill status={finding.comparisonStatus} />{finding.confidence === "unverified" && <span className="rate-warning" title={finding.confidenceNote ? formatRateText(finding.confidenceNote) : undefined}> !</span>}</td>
                         <td><button className="icon-button" type="button" onClick={() => openFinding(finding)} aria-label={`Open ${formatRateText(finding.jurisdictionLabel)}`}>›</button></td>
                       </tr>
@@ -969,7 +946,7 @@ export default function Home() {
                 <button className="alert-row" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                   <span className={`alert-icon comparison-${finding.comparisonStatus}`} aria-hidden="true">{finding.comparisonStatus === "mismatch" ? "!" : "↗"}</span>
                   <span className="alert-copy"><strong>{formatRateText(finding.jurisdictionLabel)}</strong><span>{finding.stateCode} · A+ {finding.aplusRate === null ? "pending" : formatRate(finding.aplusRate)} · Official {finding.officialRate === null ? "pending" : formatRate(finding.officialRate)}</span><small>{comparisonLabels[finding.comparisonStatus]}{(finding.lineLevelReviewShipTos ?? 0) > 0 ? ` · ${finding.lineLevelReviewShipTos?.toLocaleString()} line-level review` : ""}{finding.confidence === "unverified" ? " · unverified jurisdiction match" : ""}</small></span>
-                  <span className="shipto-count"><strong>{finding.activeShipTos.toLocaleString()}</strong><small>ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
+                  <span className="shipto-count"><strong>{finding.activeShipTos.toLocaleString()}</strong><small>{finding.rateRiskShipTos === null ? "assigned; treatment unknown" : "ship-tos"}</small></span><span className="row-arrow" aria-hidden="true">›</span>
                 </button>
               ))}
                <div className="recent-heading"><span>Imported historical evidence</span><button type="button" onClick={() => navigate("history")}>View history</button></div>
@@ -1037,7 +1014,7 @@ export default function Home() {
                  return (
                    <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                     <span className={`status-mark comparison-${finding.comparisonStatus}`}>{finding.comparisonStatus === "upcoming" ? "↗" : "!"}</span>
-                     <span><strong>{formatRateText(finding.jurisdictionLabel)}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} rate-risk ship-tos{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
+                     <span><strong>{formatRateText(finding.jurisdictionLabel)}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} {finding.rateRiskShipTos === null ? "assigned ship-tos; treatment unknown" : "rate-risk ship-tos"}{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
                      <span className="history-rate">A+ {finding.aplusRate === null ? "Pending" : formatRate(finding.aplusRate)} → <strong>{finding.officialRate === null ? "Pending" : formatRate(finding.officialRate)}</strong></span>
                      <span className="row-arrow" aria-hidden="true">›</span>
                    </button>
@@ -1361,7 +1338,7 @@ function TaxTreatmentPanel({ snapshot, status, connectorStatus }: { snapshot: Ta
     return <section className="tax-treatment-panel" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Reading aggregate treatment counts…</strong></section>;
   }
   if (status === "error" || !snapshot) {
-    return <section className="tax-treatment-panel tax-treatment-unavailable" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Treatment summary unavailable</strong><p>{connectorStatus === "fallback" ? "Live A+ data is unavailable, so TaxAP is not showing a tax-treatment conclusion." : "TaxAP could not load the aggregate treatment summary. No treatment conclusion is shown."}</p></section>;
+    return <section className="tax-treatment-panel tax-treatment-unavailable" aria-labelledby="tax-treatment-title"><span className="section-label">A+ tax treatment context</span><strong id="tax-treatment-title">Treatment summary unavailable</strong><p>{connectorStatus === "fallback" ? "Live A+ data is unavailable, so TaxAP is not showing a tax-treatment conclusion." : "TaxAP could not load the aggregate treatment summary. No treatment conclusion is shown."} Findings remain visible; their ship-to counts are comparison assignment counts, not verified rate-risk counts.</p></section>;
   }
 
   const bucket = (treatmentCode: TaxTreatmentCode) => snapshot.treatments.find((item) => item.treatmentCode === treatmentCode) ?? { treatmentCode, activeShipTos: 0, activeCustomers: 0 };

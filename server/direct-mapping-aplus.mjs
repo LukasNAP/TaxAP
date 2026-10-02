@@ -1,3 +1,4 @@
+import { hasRateDifference } from "../app/rate-comparison.ts";
 import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
 
 /**
@@ -40,7 +41,7 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
       officialRate,
       aplusRate,
       rateDifference,
-      hasDifference: rateDifference !== null && Math.abs(rateDifference) >= 0.01,
+      hasDifference: hasRateDifference(rateDifference),
       matched: hasResolvedRate,
     };
   });

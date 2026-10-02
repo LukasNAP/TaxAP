@@ -17,7 +17,8 @@ test("Arizona treats a bare place name with no Co suffix as a city, even if it s
   const stateDetail = { stateCode: "AZ", activeShipTos: 1, taxBodies: [{ taxBody: "AZ4002", description: "Arizona Yuma", activeShipTos: 1, currentRate: 8.41 }] };
   const result = await readArizonaAplusComparison(stateDetail, { readOfficialAzRates: async () => officialSnapshot });
   assert.equal(result.findings[0].officialRate, 8.412);
-  assert.equal(result.findings[0].hasDifference, false);
+  assert.equal(result.findings[0].rateDifference, 0.002);
+  assert.equal(result.findings[0].hasDifference, true);
 });
 
 test("Arizona resolves a city+county-named code (Maricopa/Pinal) to the summed total, not the bare county rate", async () => {

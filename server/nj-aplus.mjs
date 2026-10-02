@@ -1,3 +1,4 @@
+import { hasRateDifference } from "../app/rate-comparison.ts";
 import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
 
 const EXPECTED_TAX_BODY = "NJ000";
@@ -47,8 +48,8 @@ export function reconcileNewJerseyAplus({ stateDetail, officialSnapshot }) {
     officialRate,
     aplusRate,
     rateDifference,
-    hasDifference: rateDifference !== null && Math.abs(rateDifference) >= 0.01,
-    comparisonStatus: rateDifference === null ? "unavailable" : Math.abs(rateDifference) >= 0.01 ? "difference" : "matched",
+    hasDifference: hasRateDifference(rateDifference),
+    comparisonStatus: rateDifference === null ? "unavailable" : hasRateDifference(rateDifference) ? "difference" : "matched",
     totals,
     crossStateAssignments,
     unclassifiedAssignments,
