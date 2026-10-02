@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -62,7 +63,7 @@ export function parseOklahomaCopoCsv(text, { asOfDate = new Date().toISOString()
   return rates;
 }
 
-export async function readOklahomaCombinedRates({ fetchImpl = fetch, readSst = () => readOfficialSstStateRates("OK"), now = new Date() } = {}) {
+export async function readOklahomaCombinedRates({ fetchImpl = fetchOfficial, readSst = () => readOfficialSstStateRates("OK"), now = new Date() } = {}) {
   const page = await fetchImpl(OKLAHOMA_COPO_PAGE, { signal: AbortSignal.timeout(20000) });
   if (!page.ok || !(await page.text()).includes(new URL(OKLAHOMA_COPO_CSV).pathname)) throw new Error("Oklahoma COPO directory is unavailable or changed.");
   const response = await fetchImpl(OKLAHOMA_COPO_CSV, { signal: AbortSignal.timeout(20000) });

@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readXlsxRows } from "./xlsx-utils.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -24,7 +25,7 @@ export function parseKansasCombinedRows(rows, { asOfDate, minimumRows = 700 } = 
   return rates;
 }
 
-export async function readKansasCombinedRates({ fetchImpl = fetch, now = new Date() } = {}) {
+export async function readKansasCombinedRates({ fetchImpl = fetchOfficial, now = new Date() } = {}) {
   const month = Math.floor(now.getUTCMonth() / 3) * 3;
   const year = now.getUTCFullYear();
   const url = `https://www.ksrevenue.gov/pdf/pub1700${String(month + 1).padStart(2, "0")}${String(year).slice(-2)}.xlsx`;

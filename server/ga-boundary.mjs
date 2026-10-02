@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { hasRateDifference } from "../app/rate-comparison.ts";
 import { createHash } from "node:crypto";
 import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
@@ -496,7 +497,7 @@ async function fetchText(url, fetchImpl) {
  * Discovers, downloads, and validates the current Georgia boundary archive, returning its raw CSV text
  * plus evidence (URL, retrieval time, SHA-256 fingerprint). Cached for six hours like the rate adapter.
  */
-export async function readGeorgiaBoundaryArchive({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readGeorgiaBoundaryArchive({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedBoundaryFile && Date.now() < cacheExpiresAt) return cachedBoundaryFile;
   const directoryHtml = await fetchText(GEORGIA_BOUNDARY_DIRECTORY_URL, fetchImpl);
   const boundaryFileUrl = findLatestBoundaryZip(directoryHtml, "GA");

@@ -1,0 +1,12 @@
+# Optional: add only after IT provisions the dedicated Graph mail credential.
+# Email stays disabled unless TAXAP_ALERT_EMAIL_ENABLED=true is explicitly set.
+services:
+  taxap-app:
+    environment:
+      TAXAP_ALERT_EMAIL_ENABLED: ${TAXAP_ALERT_EMAIL_ENABLED:-false}
+      TAXAP_ALERT_CLIENT_SECRET_FILE: /run/secrets/taxap-alert-client-secret
+    secrets:
+      - taxap-alert-client-secret
+secrets:
+  taxap-alert-client-secret:
+    file: ${TAXAP_ALERT_CLIENT_SECRET_FILE:?Set the protected host mail credential file path}

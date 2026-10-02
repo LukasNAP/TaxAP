@@ -30,3 +30,8 @@ test("missing treatment snapshot or tax body is unknown, not zero", () => {
     assert.equal(rows[0].rateRiskShipTos, null);
   }
 });
+
+test("current treatment counts cannot suppress retained stale findings", () => {
+  const rows = applyFindingTreatments([{ ...findings[0], evidenceStatus: "stale" }], oldSnapshot, "ready");
+  assert.equal(visible(rows).length, 1); assert.equal(rows[0].rateRiskShipTos, null); assert.equal(rows[0].activeShipTos, 12);
+});

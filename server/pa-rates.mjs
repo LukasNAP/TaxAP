@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 
 export const PENNSYLVANIA_DOR_RATES_URL = "https://www.pa.gov/agencies/revenue/resources/tax-types-and-information/sales-use-and-hotel-occupancy-tax";
@@ -60,7 +61,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialPaRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialPaRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

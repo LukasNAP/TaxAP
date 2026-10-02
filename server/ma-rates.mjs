@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 
 export const MASSACHUSETTS_DOR_RATES_URL = "https://www.mass.gov/guides/sales-and-use-tax";
@@ -38,7 +39,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialMaRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialMaRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

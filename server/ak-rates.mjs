@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readZipEntries } from "./zip-utils.mjs";
 
@@ -143,7 +144,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialAkRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialAkRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

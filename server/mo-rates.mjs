@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readZipEntries } from "./zip-utils.mjs";
 
@@ -87,15 +88,15 @@ export function parseMissouriRateWorkbook(buffer, { beginDate, endDate, minimumR
   const sheetXml = target ? entries.get(`xl/${target.replace(/^\.\//, "")}`)?.toString("utf8") : null;
   if (!sheetXml) throw new Error("Missouri workbook is missing its rate worksheet.");
   const rows = worksheetRows(sheetXml, sharedStrings(entries.get("xl/sharedStrings.xml")?.toString("utf8")));
-  const header = rows.find((row) => row.rowNumber === 12)?.values;
   const expectedHeaders = {
     B: "JurisdictionName", C: "JurisdictionCode", D: "SalesTaxRate(0000)", E: "UseTaxRate(0000)(0010)",
     F: "FoodSalesTax(1001)", G: "FoodUseTax(1001)(1011)", I: "DomesticUtilityRate(3200)", J: "AMJRate(7004)",
   };
-  if (!header || Object.entries(expectedHeaders).some(([column, expected]) => normalizedText(header[column]).replace(/\s/g, "") !== expected)) {
+  const headers = rows.filter(row => Object.entries(expectedHeaders).every(([column, expected]) => normalizedText(row.values[column]).replace(/\s/g, "") === expected));
+  if (headers.length !== 1) {
     throw new Error("Missouri workbook rate columns changed; review the format before accepting it.");
   }
-  const sourceRows = rows.filter((row) => /^\d{5}-\d{3}-\d{3}$/.test(String(row.values.C ?? "")));
+  const sourceRows = rows.filter((row) => row.rowNumber > headers[0].rowNumber && /^\d{5}-\d{3}-\d{3}$/.test(String(row.values.C ?? "")));
   if (sourceRows.length < minimumRows) throw new Error(`Missouri workbook returned only ${sourceRows.length} jurisdiction rows.`);
   const codes = new Set();
   const rates = sourceRows.map(({ rowNumber, values }) => {
@@ -133,7 +134,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialMoRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialMoRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

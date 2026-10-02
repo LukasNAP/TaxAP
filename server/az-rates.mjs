@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 
 export const ARIZONA_DOR_RATE_TABLE_URL = "https://azdor.gov/business/transaction-privilege-tax/tax-rate-table";
@@ -93,7 +94,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialAzRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialAzRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

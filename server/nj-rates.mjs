@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 
 // NJ Division of Taxation. Per an explicit prior decision (see docs/states/nj.md), the stale
@@ -146,7 +147,7 @@ let inFlightRead = null;
  * deliberately does not resolve: NJ's Urban Enterprise Zone / Salem County reduced rate, which
  * depends on the seller's own certification, not on any ship-to's jurisdiction.
  */
-export async function readOfficialNjRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialNjRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

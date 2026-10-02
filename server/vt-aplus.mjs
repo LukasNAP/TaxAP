@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -51,7 +52,7 @@ export function parseVermontSalesAreas(data, html, { now = new Date(), expectedA
   return { rates, localSalesAreas: active.size };
 }
 
-export async function readVermontSalesRates({ fetchImpl = fetch, now = new Date(), readBase = () => readOfficialSstStateRates("VT", { now }) } = {}) {
+export async function readVermontSalesRates({ fetchImpl = fetchOfficial, now = new Date(), readBase = () => readOfficialSstStateRates("VT", { now }) } = {}) {
   const query = new URLSearchParams({ f: "json", where: "1=1", outFields: "TOWNNAME,Sales,LOT_Sales,Start_Sales,End_Sales", returnGeometry: "false", resultRecordCount: "1000" });
   const [base, mapResponse, pageResponse] = await Promise.all([readBase(), fetchImpl(`${VT_SALES_LAYER_URL}/query?${query}`, { signal: AbortSignal.timeout(25000) }), fetchImpl(VT_LOCAL_OPTION_URL, { signal: AbortSignal.timeout(25000) })]);
   if (base.stateRate !== 6 || !mapResponse.ok || !pageResponse.ok) throw new Error("Vermont official sales-tax sources are unavailable or changed.");

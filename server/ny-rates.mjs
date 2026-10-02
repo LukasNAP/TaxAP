@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 
@@ -131,7 +132,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialNyRates({ fetchImpl = fetch, now = new Date(), bypassCache = false, extractTextImpl = extractNewYorkPublicationText } = {}) {
+export async function readOfficialNyRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false, extractTextImpl = extractNewYorkPublicationText } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

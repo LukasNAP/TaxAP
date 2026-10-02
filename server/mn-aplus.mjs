@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { extractPdfTableText } from "./pdf-utils.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -29,7 +30,7 @@ export function parseMinnesotaCombinedText(text, { asOfDate, minimumRows = 300 }
   return rates;
 }
 
-export async function readMinnesotaCombinedRates({ fetchImpl = fetch, now = new Date() } = {}) {
+export async function readMinnesotaCombinedRates({ fetchImpl = fetchOfficial, now = new Date() } = {}) {
   const key = `${now.getUTCFullYear()}-q${Math.floor(now.getUTCMonth() / 3) + 1}`;
   const page = await fetchImpl(MINNESOTA_RATE_PAGE, { signal: AbortSignal.timeout(20000) });
   if (!page.ok) throw new Error("Minnesota rate directory is unavailable.");
@@ -63,7 +64,7 @@ export function parseMinnesotaMap(data, { minimumRows = 150 } = {}) {
   });
 }
 
-export async function readMinnesotaMapRates({ fetchImpl = fetch, now = new Date() } = {}) {
+export async function readMinnesotaMapRates({ fetchImpl = fetchOfficial, now = new Date() } = {}) {
   const period = `${now.getUTCFullYear()}Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
   const key = `locgnrl_sales_usetax_areas_${period}`;
   const mapUrl = "https://www.arcgis.com/sharing/rest/content/items/97be9ae93d9649bfa826c8b092a267dd/data?f=json";

@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { extractPdfTableText } from "./pdf-utils.mjs";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
@@ -42,7 +43,7 @@ export function parseArkansasLocalTable(text, { period, stateRate, minimumCities
   return rates;
 }
 
-export async function readArkansasCombinedRates({ fetchImpl = fetch, now = new Date(), readStateRate = () => readOfficialSstStateRates("AR") } = {}) {
+export async function readArkansasCombinedRates({ fetchImpl = fetchOfficial, now = new Date(), readStateRate = () => readOfficialSstStateRates("AR") } = {}) {
   const year = now.getUTCFullYear();
   const [suffix, label] = quarters[Math.floor(now.getUTCMonth() / 3)];
   const url = `https://www.dfa.arkansas.gov/wp-content/uploads/cityCountyTaxTable_${suffix}_${year}.pdf`;

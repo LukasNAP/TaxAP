@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 
@@ -164,7 +165,7 @@ function enableSystemCertificateAuthorities() {
   systemCertificateAuthoritiesEnabled = true;
 }
 
-export async function readOfficialLaRates({ fetchImpl = fetch, now = new Date(), bypassCache = false, expectedParishes = LOUISIANA_EXPECTED_PARISHES, minimumRates = 400 } = {}) {
+export async function readOfficialLaRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false, expectedParishes = LOUISIANA_EXPECTED_PARISHES, minimumRates = 400 } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

@@ -10,6 +10,8 @@ export type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcomi
 export type FindingConfidence = "confirmed" | "unverified";
 
 export type JurisdictionFinding = {
+  evidenceStatus?: "stale";
+  evidenceRetrievedAt?: string;
   id: string;
   reviewFindingKey: string;
   stateCode: string;

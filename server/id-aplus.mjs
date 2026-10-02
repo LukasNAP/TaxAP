@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialIdRates, IDAHO_TAX_COMMISSION_CITY_TAX_URL } from "./id-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -31,7 +32,7 @@ export function buildIdahoSalesAreas({ cities, counties, resortCities, resortCou
 
 let cached = null;
 let expires = 0;
-export async function readIdahoSalesAreas({ fetchImpl = fetch, readBase = readOfficialIdRates, bypassCache = false } = {}) {
+export async function readIdahoSalesAreas({ fetchImpl = fetchOfficial, readBase = readOfficialIdRates, bypassCache = false } = {}) {
   if (!bypassCache && fetchImpl === fetch && cached && Date.now() < expires) return cached;
   const get = async (url, options = {}) => {
     const r = await fetchImpl(url, { ...options, signal: AbortSignal.timeout(30000) });

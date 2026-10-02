@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
@@ -38,7 +39,7 @@ export function parseWashingtonGeneralRates(html, { now = new Date(), minimumRow
   return { stateCode: "WA", stateRate: 6.5, rates, sourceUrl: WA_GENERAL_RATE_URL, retrievedAt: now.toISOString(), asOfDate: today, effectivePeriod: `${start} through ${end}`, sourceHash: createHash("sha256").update(html).digest("hex") };
 }
 
-export async function readWashingtonGeneralRates({ fetchImpl = fetch, now = new Date() } = {}) {
+export async function readWashingtonGeneralRates({ fetchImpl = fetchOfficial, now = new Date() } = {}) {
   const response = await fetchImpl(WA_GENERAL_RATE_URL, { signal: AbortSignal.timeout(20000), headers: { "User-Agent": "TaxAP/0.1 official-rate monitor" } });
   if (!response.ok) throw new Error(`Washington DOR returned HTTP ${response.status}.`);
   return parseWashingtonGeneralRates(await response.text(), { now });

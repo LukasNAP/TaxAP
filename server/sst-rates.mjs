@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { SST_RATE_DIRECTORY_URL } from "./official-source-registry.mjs";
 import { readSingleFileZip } from "./zip-utils.mjs";
@@ -185,7 +186,7 @@ async function readCensusNames(stateFips, fetchImpl) {
 const genericCache = new Map();
 const genericInFlight = new Map();
 
-export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialSstStateRates(stateCode, { fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   const code = String(stateCode || "").trim().toUpperCase();
   const config = GENERIC_SST_STATES[code];
   if (!config) throw new Error(`${code || "Requested state"} does not have a validated generic SST adapter.`);
@@ -280,7 +281,7 @@ let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialGaRates({ fetchImpl = fetch, now = new Date(), bypassCache = false } = {}) {
+export async function readOfficialGaRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

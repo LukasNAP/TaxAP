@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readXlsxRows } from "./xlsx-utils.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -55,7 +56,7 @@ export function parseIowaSalesRows(rows, { now = new Date(), expectedRows = 1136
   return { rates, asOfDate: half };
 }
 
-export async function readIowaSalesRates({ fetchImpl = fetch, now = new Date(), readBase = () => readIowaBase(fetchImpl, now) } = {}) {
+export async function readIowaSalesRates({ fetchImpl = fetchOfficial, now = new Date(), readBase = () => readIowaBase(fetchImpl, now) } = {}) {
   const [base, response] = await Promise.all([readBase(), fetchImpl(IA_LOST_WORKBOOK_URL, { signal: AbortSignal.timeout(25000) })]);
   if (!response.ok || base.stateRate !== 6) throw new Error("Iowa sales-tax sources are unavailable or the state rate changed.");
   const buffer = Buffer.from(await response.arrayBuffer());

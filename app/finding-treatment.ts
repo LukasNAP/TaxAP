@@ -18,7 +18,7 @@ export function applyFindingTreatments(
     .filter(row => Boolean(row.taxBody))
     .map(row => [row.taxBody, new Map(row.treatments.map(t => [t.treatmentCode, t.activeShipTos]))]));
   return findings.map(finding => {
-    const treatments = byBody.get(finding.taxBody);
+    const treatments = finding.evidenceStatus === "stale" ? undefined : byBody.get(finding.taxBody);
     if (!treatments) return { ...finding, totalAssignedShipTos: finding.activeShipTos, rateRiskShipTos: null, neverTaxedShipTos: null, lineLevelReviewShipTos: null, otherTreatmentShipTos: null };
     const rateRiskShipTos = treatments.get("0") ?? 0;
     const neverTaxedShipTos = treatments.get("3") ?? 0;

@@ -1,5 +1,6 @@
 "use client";
 import { formatRate, formatRateText } from "./rate-format";
+import { markRetainedEvidence, type RetainedState } from "./state-retention";
 import { hasRateDifference } from "./rate-comparison";
 import { applyFindingTreatments } from "./finding-treatment";
 
@@ -411,7 +412,7 @@ export default function Home() {
   const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
   const [stateDrawerCheckedAt, setStateDrawerCheckedAt] = useState<number | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<JurisdictionFinding | null>(null);
-  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[] }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [] });
+  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[]; retainedStates: RetainedState[]; stateFailures: { stateCode: string; reason: string }[]; evidenceWarnings: string[]; emailAlertStatus?: string }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [], retainedStates: [], stateFailures: [], evidenceWarnings: [] });
   const [selectedCounty, setSelectedCounty] = useState<ComparedCounty | null>(null);
   const [selectedCase, setSelectedCase] = useState<ResolvedCase | null>(null);
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
@@ -496,7 +497,7 @@ export default function Home() {
     };
     try {
       const [result, coverage, treatment] = await Promise.all([
-        get<{ findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
+        get<{ emailAlertStatus?: string; retainedStates?: RetainedState[]; stateFailures?: { stateCode: string; reason: string }[]; evidenceWarnings?: string[]; findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
           stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[];
           nc: { aplusSnapshot: LiveAPlusSnapshot; officialSnapshot: OfficialNcSnapshot } | null;
           ga: GaBoundaryReconciliation | null;
@@ -518,7 +519,7 @@ export default function Home() {
       } else setOfficialSnapshot(null);
       setDashboardGaBoundary(result.ga);
       setDashboardOtherFindings(result.findings);
-      setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks });
+      setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks, retainedStates: result.retainedStates ?? [], stateFailures: result.stateFailures ?? [], evidenceWarnings: result.evidenceWarnings ?? [], emailAlertStatus: result.emailAlertStatus });
       setConnectorStatus(coverage ? "live" : "fallback");
       setConnectorMessage(`${result.stateChecks.length} state checks succeeded; ${result.failedStates.length} failed.${coverage ? "" : " A+ assignment inventory could not refresh; retained inventory may be stale."}`);
     } catch {
@@ -544,11 +545,11 @@ export default function Home() {
     jurisdictionName: `${county.county} County`, taxBody: county.taxBody,
     comparisonStatus: county.comparisonStatus,
     effectiveState: county.comparisonStatus === "upcoming" ? "upcoming" : county.officialRate === null ? "undated" : "current",
-    sourceStatus: county.officialRate === null ? "unavailable" : "validated", reviewStatus: null,
+    sourceStatus: county.officialRate === null || batchHealth.failedStates.includes("NC") ? "unavailable" : "validated", reviewStatus: null,
     officialRate: county.officialRate, componentRate: null, aplusRate: county.currentRate,
     shipTos: county.activeShipTos, effectiveDate: county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? null,
     reviewKey: reviewFindingKey(county),
-  })), [activeCountyCoverage]);
+  })), [activeCountyCoverage, batchHealth.failedStates]);
 
   const openFindings = useMemo(
     () => activeCountyCoverage.filter((county) => county.comparisonStatus === "mismatch" && county.activeShipTos > 0),
@@ -583,8 +584,8 @@ export default function Home() {
     [dashboardGaBoundary],
   );
   const inboxFindings = useMemo(
-    () => combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings).filter((finding) => !batchHealth.failedStates.includes(finding.stateCode)),
-    [batchHealth.failedStates, dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
+    () => markRetainedEvidence(combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings), batchHealth.retainedStates).filter((finding) => !batchHealth.failedStates.includes(finding.stateCode) || batchHealth.retainedStates.some(state => state.stateCode === finding.stateCode)),
+    [batchHealth.failedStates, batchHealth.retainedStates, dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
   const treatmentAwareInboxFindings = useMemo(() => applyFindingTreatments(inboxFindings, taxTreatmentSnapshot, taxTreatmentStatus), [inboxFindings, taxTreatmentSnapshot, taxTreatmentStatus]);
   const rateRiskFindings = useMemo(() => treatmentAwareInboxFindings
@@ -838,8 +839,12 @@ export default function Home() {
           <span className="section-label">Comparison coverage · latest checks</span>
           <strong>{batchHealth.status === "ready" ? "Available checks completed; assignment gaps remain separate" : "Checks incomplete — visible findings are a partial view"}</strong>
           <p>{batchHealth.status === "loading" ? "Refreshing all wired states…" : `${batchHealth.stateChecks.length} state checks succeeded; ${batchHealth.failedStates.length} failed.`}{batchHealth.retrievedAt ? ` Last returned batch: ${new Date(batchHealth.retrievedAt).toLocaleString()}.` : ""}</p>
-          {batchHealth.failedStates.length > 0 && <p>Failed state checks: {batchHealth.failedStates.join(", ")}. These states are missing from the refreshed inbox.</p>}
+          {batchHealth.failedStates.length > 0 && <p>Failed state checks: {batchHealth.failedStates.join(", ")}. Current checks are unavailable for these states. Retained evidence, where available, remains visible and cannot authorize maintenance.</p>}
           {batchHealth.status === "error" && <p>The latest batch failed. Any retained findings are from an earlier read.</p>}
+          {batchHealth.retainedStates.map(state => <p key={state.stateCode}>{state.stateCode}: stale evidence retained; last source retrieval {new Date(state.sourceRetrievedAt).toLocaleString()}. Last validated comparison {new Date(state.validatedAt).toLocaleString()}. Current verification required.</p>)}
+          {batchHealth.stateFailures.map(state => <p key={state.stateCode}>{state.stateCode}: {state.reason}.</p>)}
+          {batchHealth.emailAlertStatus === "error" && <p>Email alert submission failed. Check the mail configuration; coverage warnings remain available here.</p>}
+          {batchHealth.evidenceWarnings.length > 0 && <p>Evidence storage unavailable or invalid for {batchHealth.evidenceWarnings.join(", ")}. Retention is not guaranteed until storage is repaired.</p>}
           <p>Official-source coverage is not assignment coverage. No findings does not mean every ship-to has been verified. Reviewers are manually selected.</p>
           <details><summary>Assignments without a rate comparison · all-state batch</summary>
             {batchHealth.stateChecks.length === 0 ? <p>Coverage counts unavailable.</p> : batchHealth.stateChecks.map((check) => <p key={check.stateCode}>{check.stateCode}: {check.uncheckedShipTos === null ? "unknown" : check.uncheckedShipTos.toLocaleString()} unchecked or excluded; {check.intentionalNoTaxShipTos.toLocaleString()} deliberate no-tax assignments.</p>)}
@@ -903,7 +908,7 @@ export default function Home() {
                   <tbody>
                     {rateRiskFindings.length > 0 ? rateRiskFindings.slice(0, 6).map((finding) => (
                       <tr key={finding.id}>
-                        <td>{finding.effectiveDate ?? "Current"}</td>
+                        <td>{finding.evidenceStatus === "stale" ? "Stale evidence" : finding.effectiveDate ?? "Current"}</td>
                         <td>{finding.stateCode}</td>
                         <td><button className="table-link" type="button" onClick={() => openFinding(finding)}><strong>{formatRateText(finding.jurisdictionLabel)}</strong></button></td>
                         <td>{finding.officialRate === null ? "Unavailable" : formatRate(finding.officialRate)}</td>
@@ -1228,6 +1233,7 @@ export default function Home() {
         <Drawer titleId="county-title" className="ship-to-drawer" onClose={() => setSelectedCounty(null)}>
           <div className="drawer-kicker"><span className="section-label">County rate comparison</span><ComparisonPill status={selectedCounty.comparisonStatus} /></div>
           <h2 id="county-title">{selectedCounty.county} County</h2>
+          {batchHealth.failedStates.includes("NC") && <p className="queue-storage-warning">Current North Carolina verification is unavailable. Any retained rates below are stale; maintenance approval is blocked.</p>}
           <p className="drawer-lede">Validated A+ configuration compared with the official NCDOR general sales and use tax county table. TaxAP requires all 100 counties before displaying a result.</p>
           <div className="county-metrics"><div><span>Active ship-tos</span><strong>{selectedCounty.activeShipTos.toLocaleString()}</strong></div><div><span>Active customers</span><strong>{selectedCounty.activeCustomers.toLocaleString()}</strong></div></div>
           <dl className="review-facts">
@@ -1276,7 +1282,8 @@ export default function Home() {
           <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
           <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
           <FindingShipTos key={findingDecisionKey(selectedFinding)} apiBase={apiBaseUrl()} taxBody={selectedFinding.taxBody} state={selectedFinding.stateCode} scope={"rateRiskShipTos" in selectedFinding && selectedFinding.rateRiskShipTos != null ? "rate-risk" : "all"} expectedCount={selectedFinding.activeShipTos} />
-          {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{formatRateText(selectedFinding.confidenceNote ?? "")} Resolve the jurisdiction before approving maintenance.</p>}
+          {batchHealth.failedStates.includes(selectedFinding.stateCode) && <p className="queue-storage-warning">Current state verification is unavailable. Any retained rates below are stale; maintenance approval is blocked.</p>}
+          {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{formatRateText(selectedFinding.confidenceNote ?? "")} Verify a current, confirmed comparison before approving maintenance.</p>}
           <ReviewDecisionPanel key={findingDecisionKey(selectedFinding)} reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding)) ?? null} approvalAllowed={selectedFinding.confidence === "confirmed" && inboxFindings.some((finding) => findingDecisionKey(finding) === findingDecisionKey(selectedFinding)) && batchHealth.status === "ready"} onSave={(status, actor, note) => saveReview(findingReviewEvidence(selectedFinding), status, actor, note)} />
           {reviewCasesByKey.has(findingDecisionKey(selectedFinding)) && <ReviewAuditTrail reviewCase={reviewCasesByKey.get(findingDecisionKey(selectedFinding))!} />}
           <div className="drawer-actions">

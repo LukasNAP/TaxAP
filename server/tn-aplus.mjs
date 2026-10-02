@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -32,7 +33,7 @@ export function reconcileTennesseeInventory(data, sst, { minimumRows = 400, expe
   return rates;
 }
 
-export async function readTennesseeCombinedRates({ fetchImpl = fetch, readSst = () => readOfficialSstStateRates("TN") } = {}) {
+export async function readTennesseeCombinedRates({ fetchImpl = fetchOfficial, readSst = () => readOfficialSstStateRates("TN") } = {}) {
   const query = new URLSearchParams({ f: "json", where: "1=1", outFields: fields, returnDistinctValues: "true", returnGeometry: "false", orderByFields: "situs", resultRecordCount: "2000" });
   const url = `${TENNESSEE_RATE_SERVICE}?${query}`;
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(20000) });

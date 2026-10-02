@@ -26,3 +26,20 @@ test("Utah requires a code AND exact name and reports actual compared assignment
 test("Utah will not choose the published future quarter when the current file is absent", async () => {
   await assert.rejects(readUtahCombinedRates({ now: new Date("2026-09-08"), fetchImpl: async () => new Response('<a href="https://files.tax.utah.gov/tax/salestax/rate/26q4combined.xlsx">Future</a>') }), /current-quarter/);
 });
+
+import { buildStoredZip } from "./helpers/xlsx.mjs";
+function quarterWorkbook(period = "October 1, 2026") {
+  const strings = []; const cell = (col, r, value) => {
+    if (typeof value === "number") return `<c r="${col}${r}"><v>${value}</v></c>`;
+    strings.push(value); return `<c r="${col}${r}" t="s"><v>${strings.length - 1}</v></c>`;
+  };
+  const rows = [{ E: `Rates In effect as of ${period}` }, header, ...Array.from({ length: 300 }, (_, i) => ({ ...row, A: `Synthetic ${i}`, C: `01-${String(i).padStart(3, "0")}` }))];
+  const xml = rows.map((values, i) => `<row r="${i + 1}">${Object.entries(values).map(([col, value]) => cell(col, i + 1, typeof value === "string" && /^0\.\d+$/.test(value) ? Number(value) : value)).join("")}</row>`).join("");
+  return buildStoredZip([["xl/sharedStrings.xml", `<sst>${strings.map(s => `<si><t>${s}</t></si>`).join("")}</sst>`], ["xl/worksheets/sheet1.xml", `<worksheet><sheetData>${xml}</sheetData></worksheet>`]]);
+}
+test("Utah validates the official current workbook during a directory outage", async () => {
+  const calls = [];
+  const result = await readUtahCombinedRates({ now: new Date("2026-10-02"), fetchImpl: async url => { calls.push(url); return url.endsWith(".xlsx") ? new Response(quarterWorkbook()) : new Response("", { status: 403 }); } });
+  assert.equal(result.rates.length, 300); assert.match(calls[1], /26q4combined/); assert.equal(result.effectivePeriod, "2026 Q4");
+  await assert.rejects(readUtahCombinedRates({ now: new Date("2026-10-02"), fetchImpl: async url => url.endsWith(".xlsx") ? new Response(quarterWorkbook("July 1, 2026")) : new Response("", { status: 403 }) }), /effective date/);
+});

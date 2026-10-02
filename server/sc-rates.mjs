@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { extractSouthCarolinaPdf } from "./sc-pdf.mjs";
 import { createHash } from "node:crypto";
 
@@ -167,7 +168,7 @@ let cacheExpiresAt = 0;
 let inFlightRead = null;
 
 /** Reads ST-575 using the bundled PDF.js table extractor and validates every county row. */
-export async function readOfficialScRates({ fetchImpl = fetch, now = new Date(), bypassCache = false, extractText = extractSouthCarolinaPdf } = {}) {
+export async function readOfficialScRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false, extractText = extractSouthCarolinaPdf } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {

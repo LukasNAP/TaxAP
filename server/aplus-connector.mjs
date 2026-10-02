@@ -1,4 +1,8 @@
 import { createSharedPoolManager } from "./shared-sql-pool.mjs";
+import { createStateAlertManager } from "./state-alerts.mjs";
+import { createStateEvidenceStore, stateFailureReason } from "./state-evidence.mjs";
+import { dirname, resolve } from "node:path";
+import { markRetainedEvidence } from "../app/state-retention.ts";
 import { comparisonHealth } from "./comparison-health.mjs";
 import { validateShipToSelection, readFindingShipTos } from "./finding-ship-tos.mjs";
 import { readCatchAllExemptionAudit } from "./catchall-exemption-audit.mjs";
@@ -748,18 +752,41 @@ export async function readNorthCarolinaBatchComparison() {
   return { aplusSnapshot, officialSnapshot, stateDetail };
 }
 
+const evidenceDirectory = () => process.env.TAXAP_EVIDENCE_DIR || resolve(dirname(process.env.TAXAP_REVIEW_DB || resolve(".data", "taxap-reviews.sqlite")), "state-evidence");
+const stateAlerts = createStateAlertManager({ filename: resolve(evidenceDirectory(), "alerts.json"), enabled: process.env.TAXAP_ALERT_EMAIL_ENABLED === "true" });
+
 export async function readAllWiredStateFindings({
   readNc = readNorthCarolinaBatchComparison, readGa = readGeorgiaBoundaryReconciliation,
   readNj = readNewJerseyAplusComparison, readFlat = readFlatStateAplusComparison,
   readDirect = readDirectMappingAplusComparison,
+  evidenceStore = null,
 } = {}) {
+  const failures = new Map();
+  const retainedStates = [];
+  const evidenceWarnings = [];
+  async function resilientRead(stateCode, read) {
+    const startedAt = new Date().toISOString();
+    try {
+      const value = await read();
+      try { evidenceStore?.put(stateCode, value, startedAt); }
+      catch { evidenceWarnings.push(stateCode); }
+      return value;
+    } catch (error) {
+      failures.set(stateCode, stateFailureReason(error));
+      let previous; try { previous = evidenceStore?.get(stateCode); } catch { evidenceWarnings.push(stateCode); }
+      if (!previous) throw error;
+      retainedStates.push({ stateCode, validatedAt: previous.validatedAt,
+        sourceRetrievedAt: previous.value.officialSnapshot?.retrievedAt ?? previous.value.rateRetrievedAt ?? previous.validatedAt });
+      return previous.value;
+    }
+  }
   const flatStateCodes = Object.keys(FLAT_STATE_APLUS_ADAPTERS);
   const directMappingCodes = Object.keys(DIRECT_MAPPING_APLUS_READERS);
   const [njResult, flatResults, directResults, dedicatedResults] = await Promise.all([
-    readNj().then((value) => ({ status: "fulfilled", value })).catch((error) => ({ status: "rejected", reason: error })),
-    Promise.allSettled(flatStateCodes.map((code) => readFlat(code))),
-    Promise.allSettled(directMappingCodes.map((code) => readDirect(code))),
-    Promise.allSettled([readNc(), readGa()]),
+    resilientRead("NJ", readNj).then((value) => ({ status: "fulfilled", value })).catch((error) => ({ status: "rejected", reason: error })),
+    Promise.allSettled(flatStateCodes.map((code) => resilientRead(code, () => readFlat(code)))),
+    Promise.allSettled(directMappingCodes.map((code) => resilientRead(code, () => readDirect(code)))),
+    Promise.allSettled([resilientRead("NC", readNc), resilientRead("GA", readGa)]),
   ]);
 
   const findings = [];
@@ -782,21 +809,25 @@ export async function readAllWiredStateFindings({
   const [ncResult, gaResult] = dedicatedResults;
   const nc = ncResult.status === "fulfilled" ? ncResult.value : null;
   const ga = gaResult.status === "fulfilled" ? gaResult.value : null;
-  if (nc) {
+  if (nc && !failures.has("NC")) {
     const officialByCode = new Map(nc.officialSnapshot.rates.map((row) => [row.taxBody, row.officialRate]));
     const configuredByCode = new Map(nc.aplusSnapshot.standardRows.map((row) => [row.taxBody, row.currentRate]));
     stateChecks.push(comparisonHealth({ stateCode: "NC", totals: { activeShipTos: nc.stateDetail.activeShipTos },
       findings: nc.stateDetail.taxBodies.map((row) => ({ activeShipTos: row.activeShipTos,
         matched: officialByCode.has(row.taxBody), officialRate: officialByCode.get(row.taxBody), aplusRate: configuredByCode.get(row.taxBody) })) }));
   } else failedStates.push("NC");
-  if (ga) {
+  if (ga && !failures.has("GA")) {
     stateChecks.push(comparisonHealth({ stateCode: "GA", totals: ga.totals,
       findings: ga.taxBodyFindings.map((row) => ({ ...row, activeShipTos: row.matchedShipTos, matched: row.jurisdictionAssignmentConsistent })) }));
   } else failedStates.push("GA");
-  stateChecks.sort((a, b) => a.stateCode.localeCompare(b.stateCode));
-  failedStates.sort();
+  const currentChecks = stateChecks.filter(check => !failures.has(check.stateCode));
+  currentChecks.sort((a, b) => a.stateCode.localeCompare(b.stateCode));
+  const stateFailures = [...failures].map(([stateCode, reason]) => ({ stateCode, reason })).sort((a, b) => a.stateCode.localeCompare(b.stateCode));
+  for (const failure of stateFailures) console.warn(JSON.stringify({ event: "state_check_unavailable", ...failure, retained: retainedStates.some(state => state.stateCode === failure.stateCode) }));
   // NC and GA retain their existing comparison payloads for county/future-change and boundary views.
-  return { findings, nc, ga, failedStates, stateChecks, retrievedAt: new Date().toISOString() };
+  return { findings: markRetainedEvidence(findings, retainedStates), nc, ga, failedStates: [...new Set([...failedStates, ...failures.keys()])].sort(), stateChecks: currentChecks,
+    retainedStates: retainedStates.sort((a, b) => a.stateCode.localeCompare(b.stateCode)), stateFailures,
+    evidenceWarnings: [...new Set(evidenceWarnings)].sort(), retrievedAt: new Date().toISOString() };
 }
 
 export function buildGeorgiaAddressQuery() {
@@ -868,6 +899,7 @@ export async function readGeorgiaBoundaryReconciliation() {
     boundarySourceHash: boundaryFile.sourceHash,
     rateFileUrl: rateSnapshot.machineReadableSourceUrl,
     rateSourceHash: rateSnapshot.sourceHash,
+    rateRetrievedAt: rateSnapshot.retrievedAt,
     recordTypeCounts: boundaryDataset.recordTypeCounts,
     ...reconciliation,
   };
@@ -1186,7 +1218,9 @@ export function createConnectorServer({ reviews, readShipTos = selection => read
       try {
         const batchStarted = performance.now();
         const sqlBefore = { ...sqlTimingStats };
-        const result = await readAllWiredStateFindings();
+        const result = await readAllWiredStateFindings({ evidenceStore: createStateEvidenceStore(evidenceDirectory()) });
+        try { result.emailAlertStatus = await stateAlerts.publish(result); }
+        catch { result.emailAlertStatus = "error"; console.warn(JSON.stringify({ event: "state_email_alert_failed" })); }
         const sqlDelta = (key) => Math.round(sqlTimingStats[key] - sqlBefore[key]);
         // Overlapping requests share these counters, so treat the SQL figures as approximate.
         console.info(JSON.stringify({ event: "all_wired_state_findings", ok: true, findings: result.findings.length, failedStates: result.failedStates, retrievedAt: result.retrievedAt,

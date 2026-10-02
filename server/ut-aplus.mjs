@@ -1,3 +1,4 @@
+import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readXlsxRows } from "./xlsx-utils.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -24,19 +25,25 @@ export function parseUtahCombinedRows(rows, { minimumRows = 300 } = {}) {
   return rates;
 }
 
-export async function readUtahCombinedRates({ fetchImpl = fetch, now = new Date() } = {}) {
+export async function readUtahCombinedRates({ fetchImpl = fetchOfficial, now = new Date() } = {}) {
   const year = now.getUTCFullYear();
   const quarter = Math.floor(now.getUTCMonth() / 3) + 1;
   const url = `https://files.tax.utah.gov/tax/salestax/rate/${String(year).slice(-2)}q${quarter}combined.xlsx`;
   const options = { signal: AbortSignal.timeout(20000) };
-  const page = await fetchImpl(UTAH_RATE_PAGE, options);
-  if (!page.ok) throw new Error("Utah rate directory is unavailable.");
-  const html = await page.text();
-  if (!html.includes(`href="${url}"`)) throw new Error("Utah current-quarter combined workbook is not published.");
+  let page = null;
+  try { page = await fetchImpl(UTAH_RATE_PAGE, options); } catch { /* Validate the official workbook directly below. */ }
+  if (page?.ok) {
+    const html = await page.text();
+    if (!html.includes(`href="${url}"`) && !html.includes(`href='${url}'`)) throw new Error("Utah current-quarter combined workbook is not published.");
+  }
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(20000) });
   if (!response.ok) throw new Error("Utah combined workbook is unavailable.");
   const buffer = Buffer.from(await response.arrayBuffer());
-  const rates = parseUtahCombinedRows(readXlsxRows(buffer));
+  const rows = readXlsxRows(buffer);
+  const expectedDate = new Date(Date.UTC(year, (quarter - 1) * 3, 1)).toLocaleDateString("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" });
+  const periods = rows.flatMap(row => Object.values(row)).filter(value => /rates in effect as of/i.test(String(value)));
+  if (!periods.length || periods.some(value => String(value).replace(/\s+/g, " ").trim().toLowerCase() !== `rates in effect as of ${expectedDate}`.toLowerCase())) throw new Error("Utah workbook effective date does not match the current quarter.");
+  const rates = parseUtahCombinedRows(rows);
   return { stateCode: "UT", rates, sourceUrl: UTAH_RATE_PAGE, machineReadableSourceUrl: url, asOfDate: now.toISOString().slice(0, 10), retrievedAt: now.toISOString(), effectivePeriod: `${year} Q${quarter}`, sourceHash: createHash("sha256").update(buffer).digest("hex") };
 }
 

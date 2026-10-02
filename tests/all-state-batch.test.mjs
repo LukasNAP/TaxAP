@@ -55,3 +55,24 @@ test("other-state failures preserve both NC and GA batch payloads", async () => 
   assert.ok(batch.ga);
   assert.equal(batch.stateChecks.length, 46);
 });
+
+import { createStateEvidenceStore } from "../server/state-evidence.mjs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+test("batch restart retains findings without counting stale states as successful", async t => {
+  const dir = mkdtempSync(join(tmpdir(), "taxap-batch-")); t.after(() => rmSync(dir, { recursive: true }));
+  const base = fixtures();
+  base.readDirect = async stateCode => ({ stateCode, totals: { activeShipTos: 2 }, findings: [{ taxBody: `${stateCode}001`, jurisdictionLabel: "Synthetic", activeShipTos: 2, officialRate: 7.5, aplusRate: 7, rateDifference: 0.5, matched: true, hasDifference: true }] });
+  await readAllWiredStateFindings({ ...base, evidenceStore: createStateEvidenceStore(dir) });
+  const failing = { ...base, readNc: async () => { throw new Error("unavailable"); }, readGa: async () => { throw new Error("unavailable"); }, readDirect: async code => { if (code === "FL") throw new Error("unavailable"); return base.readDirect(code); }, evidenceStore: createStateEvidenceStore(dir) };
+  const stale = await readAllWiredStateFindings(failing);
+  assert.equal(stale.stateChecks.length, 44); assert.deepEqual(stale.failedStates, ["FL", "GA", "NC"]);
+  assert.equal(stale.retainedStates.length, 3); assert.ok(stale.nc.officialSnapshot); assert.ok(stale.ga.taxBodyFindings);
+  assert.equal(stale.findings.find(f => f.stateCode === "FL").confidence, "unverified");
+  const recovered = await readAllWiredStateFindings({ ...base, evidenceStore: createStateEvidenceStore(dir) });
+  assert.equal(recovered.stateChecks.length, 47); assert.deepEqual(recovered.retainedStates, []);
+  writeFileSync(join(dir, "FL.json"), "broken");
+  const corrupt = await readAllWiredStateFindings(failing);
+  assert.ok(corrupt.evidenceWarnings.includes("FL")); assert.ok(!corrupt.retainedStates.some(s => s.stateCode === "FL"));
+});

@@ -106,3 +106,7 @@ The connector reuses a pool with up to five connections per process. Existing qu
 - `TAXAP_SQL_TIMING_LOG=true`: optional query timing logs with known table labels and row counts only, never SQL text or parameters. Batch timing counters are approximate when requests overlap; longest-query timing is process-lifetime.
 
 Invalid sharing/max settings fail explicitly. Entra expiry replacement has synthetic lifecycle coverage; the hosted deployment uses the SQL-login path.
+
+## Official-source resilience and optional email
+
+See [source-resilience.md](../../docs/source-resilience.md) for persistent aggregate evidence, backup/restore scope and disabled-by-default Outlook alerts. Evidence defaults to /data/state-evidence on the existing named volume. SQLite-only backups omit this directory. The optional docker-compose.email-alerts.yml mounts a separately provisioned Graph credential; do not add it until IT supplies the mail app and approved sender mailbox. This preparation has not been deployed or tested with a real mailbox.
