@@ -110,3 +110,5 @@ Invalid sharing/max settings fail explicitly. Entra expiry replacement has synth
 ## Official-source resilience and optional email
 
 See [source-resilience.md](../../docs/source-resilience.md) for persistent aggregate evidence, backup/restore scope and disabled-by-default Outlook alerts. Evidence defaults to /data/state-evidence on the existing named volume. SQLite-only backups omit this directory. The optional docker-compose.email-alerts.yml mounts a separately provisioned Graph credential; do not add it until IT supplies the mail app and approved sender mailbox. This preparation has not been deployed or tested with a real mailbox.
+
+October 2 update: resilience code is deployed and hosted aggregate evidence persistence passed verification (47/47 checks, 47 evidence files). The optional Outlook sender remains disabled and unprovisioned; no email was sent.
