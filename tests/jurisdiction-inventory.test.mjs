@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inventoryRows, inventoryCsv } from "../app/jurisdiction-inventory.ts";
+import { applyInventoryReviews, inventoryRows, inventoryCsv } from "../app/jurisdiction-inventory.ts";
+import { directMappingFindingsFromReconciliation, flatStateFindingsFromReconciliation, gaFindingsFromReconciliation } from "../app/dashboard-findings.ts";
+import { findingReviewEvidence } from "../app/finding-review.ts";
+import { createReviewStore } from "../server/review-store.mjs";
 import { matchesJurisdictionFilters } from "../app/jurisdiction-filters.ts";
 
 const today = "2026-09-22";
@@ -18,7 +21,7 @@ test("published components never become combined totals or inferred A+ matches",
 test("explicit direct comparison and unknown assignments remain distinct", () => {
   const rows = inventoryRows("FL", null, { findings: [match], stateDetail: { taxBodies: [assignment, { ...assignment, taxBody: "UNKNOWN" }] } }, today);
   assert.equal(rows[0].comparisonStatus, "mismatch");
-  assert.equal(rows[0].reviewKey, "FL-TEST-current");
+  assert.equal(rows[0].reviewKey, "FL-TEST-current:a6:o7");
   assert.equal(rows[1].comparisonStatus, "not-checked");
   assert.equal(rows[1].officialRate, null);
 });
@@ -55,4 +58,49 @@ test("CSV retains state and missing values and neutralizes formulas", () => {
   assert.match(csv, /"TX"/);
   assert.match(csv, /"'=TEST\(""x""\)"/);
   assert.match(csv, /"not-checked"/);
+});
+
+test("saved direct, flat and Georgia reviews drive inventory status filters and CSV", () => {
+  const scenarios = [
+    { state: "FL", payload: { findings: [match] }, adapt: directMappingFindingsFromReconciliation },
+    { state: "NJ", payload: { expectedTaxBody: "TEST", officialRate: 7, aplusRate: 6, rateDifference: 1, hasDifference: true, comparisonStatus: "difference", totals: { comparedShipTos: 12 }, stateDetail: { taxBodies: [assignment] } }, adapt: flatStateFindingsFromReconciliation },
+    { state: "GA", payload: { taxBodyFindings: [{ ...match, description: "Test County", jurisdictionAssignmentConsistent: true }] }, adapt: payload => gaFindingsFromReconciliation(payload.taxBodyFindings) },
+    { state: "GA", payload: { taxBodyFindings: [{ ...match, description: "Test County", jurisdictionAssignmentConsistent: false }] }, adapt: payload => gaFindingsFromReconciliation(payload.taxBodyFindings) },
+  ];
+  const store = createReviewStore({ filename: ":memory:" });
+  const filters = { query: "", state: "all", jurisdictionType: "all", comparison: "all", effective: "all", source: "all", review: "all" };
+  try {
+    for (const { state, payload, adapt } of scenarios) {
+      const [finding] = adapt({ ...payload, stateCode: state });
+      for (const status of ["in_review", "approved", "resolved", "not_applicable"]) {
+        const saved = store.saveDecision({ ...findingReviewEvidence(finding), status, actor: "Liv", note: "Synthetic review evidence." });
+        const reviews = new Map([[saved.findingKey, saved]]);
+        const [row] = applyInventoryReviews(inventoryRows(state, null, payload, today), reviews);
+        assert.equal(row.reviewStatus, status, `${state} ${status}`);
+        assert.equal(matchesJurisdictionFilters(row, { ...filters, review: status }), true);
+        assert.equal(matchesJurisdictionFilters(row, { ...filters, review: "unreviewed" }), false);
+        assert.ok(inventoryCsv([row]).endsWith(`"${status}"`));
+      }
+    }
+  } finally { store.close(); }
+});
+
+test("changed rates and absent evidence do not inherit an older inventory review", () => {
+  const [finding] = directMappingFindingsFromReconciliation({ stateCode: "FL", findings: [match] });
+  const old = findingReviewEvidence(finding);
+  const reviews = new Map([[old.findingKey, { status: "resolved" }]]);
+  for (const changed of [
+    { ...match, aplusRate: 6.625 },
+    { ...match, officialRate: 7.125 },
+    { ...match, officialRate: null, matched: false, rateDifference: null },
+  ]) {
+    const [row] = applyInventoryReviews(inventoryRows("FL", null, { findings: [changed] }, today), reviews);
+    assert.equal(row.reviewStatus, null);
+    assert.notEqual(row.reviewKey, old.findingKey);
+  }
+  const [zero] = inventoryRows("FL", null, { findings: [{ ...match, officialRate: 0, aplusRate: 0, rateDifference: 0, hasDifference: false }] }, today);
+  assert.equal(zero.reviewKey, "FL-TEST-current:a0:o0");
+  const [source] = applyInventoryReviews(inventoryRows("FL", { rates: [{ name: "Test County", jurisdictionType: "county", jurisdictionCode: "TEST" }] }, null, today), reviews);
+  assert.equal(source.reviewStatus, null);
+  assert.equal(source.reviewKey, null);
 });

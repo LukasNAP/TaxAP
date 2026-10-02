@@ -2,7 +2,7 @@
 
 import { formatRate, formatRateText } from "./rate-format";
 import { useEffect, useMemo, useState } from "react";
-import { inventoryCsv, inventoryRows, type InventoryPayload, type InventoryRow } from "./jurisdiction-inventory";
+import { applyInventoryReviews, inventoryCsv, inventoryRows, type InventoryPayload, type InventoryRow } from "./jurisdiction-inventory";
 import { matchesJurisdictionFilters, type JurisdictionFilters } from "./jurisdiction-filters";
 import { STATE_NAME_BY_CODE } from "./tax-body-policy";
 
@@ -56,7 +56,7 @@ export function JurisdictionInventoryView({ ncRows, apiBase, offline, comparison
     void Promise.all([worker(), worker(), worker()]);
     return () => controller.abort();
   }, [apiBase, offline, comparisonStates, refresh]);
-  const rows = useMemo(() => [...ncRows, ...Object.values(loaded).flatMap(value => value.rows)].map(row => ({ ...row, reviewStatus: row.reviewKey ? reviews.get(row.reviewKey)?.status ?? null : null })), [ncRows, loaded, reviews]);
+  const rows = useMemo(() => applyInventoryReviews([...ncRows, ...Object.values(loaded).flatMap(value => value.rows)], reviews), [ncRows, loaded, reviews]);
   const filtered = useMemo(() => rows.filter(row => matchesJurisdictionFilters(row, filters)).sort((a, b) => sort === "ship-tos"
     ? (b.shipTos ?? -1) - (a.shipTos ?? -1) || a.jurisdictionName.localeCompare(b.jurisdictionName)
     : sort === "effective" ? (a.effectiveDate ?? "9999").localeCompare(b.effectiveDate ?? "9999")

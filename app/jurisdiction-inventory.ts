@@ -1,4 +1,5 @@
 import { formatRateValue, formatRateText } from "./rate-format.ts";
+import { findingDecisionKey } from "./finding-review.ts";
 import type { JurisdictionFilterRow } from "./jurisdiction-filters";
 
 export type InventoryRow = JurisdictionFilterRow & {
@@ -47,10 +48,16 @@ export function inventoryRows(state: string, official: InventoryPayload | null, 
     rows.push({ ...base, id: `${state}-assignment-${i}`, jurisdictionType: "assignment", jurisdictionName: match?.jurisdictionLabel ?? assignment.description ?? assignment.taxBody ?? "Unassigned tax body",
       taxBody: assignment.taxBody ?? "", officialRate: verified ? officialRate : null, aplusRate, shipTos: assignment.activeShipTos,
       comparisonStatus: verified ? (flat ? comparison?.comparisonStatus === "difference" : match?.hasDifference) ? "mismatch" : "matched" : "not-checked",
-      sourceStatus: verified ? "validated" : "unavailable", reviewKey: assignment.taxBody ? `${state}-${assignment.taxBody}-current` : null,
+      sourceStatus: verified ? "validated" : "unavailable", reviewKey: assignment.taxBody ? findingDecisionKey({
+        stateCode: state, reviewFindingKey: `${state}-${assignment.taxBody}-current`, aplusRate, officialRate,
+      }) : null,
     });
   }
   return rows;
+}
+
+export function applyInventoryReviews(rows: InventoryRow[], reviews: Map<string, { status: InventoryRow["reviewStatus"] }>): InventoryRow[] {
+  return rows.map(row => ({ ...row, reviewStatus: row.reviewKey ? reviews.get(row.reviewKey)?.status ?? null : null }));
 }
 
 export function inventoryCsv(rows: InventoryRow[]): string {

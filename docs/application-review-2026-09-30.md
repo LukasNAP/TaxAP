@@ -1,0 +1,32 @@
+# Application review — September 30, 2026
+
+Reviewed local main at deec2df. Production build and all 305 tests passed; lint and TypeScript passed. Synthetic probes used no customer data or external connections. This is a repository review, not a new verification of the hosted installation or every state's official source. No application code, SQL, commit, push or deployment changed.
+
+## Priority findings
+
+October 2 follow-up: finding 4 (inventory review keys) is fixed locally and covered by saved-review/filter/CSV regression tests. Build, all 307 tests, lint and TypeScript passed. The fix is not yet committed or deployed; the other findings remain open.
+
+1. **High: inconsistent mismatch precision.** `server/direct-mapping-aplus.mjs:43`, `server/flat-state-aplus.mjs:49`, `server/nj-aplus.mjs:50` and `server/ga-boundary.mjs:407` require a difference of at least 0.01 percentage points. NC uses 0.001 (`app/page.tsx:365`). A synthetic direct comparison of 6.625 against 6.630 produced difference 0.005 and `hasDifference: false`. Three-decimal display alone does not fix detection. Agree the business tolerance and centralize comparison precision, with meaningful boundary tests across comparison paths.
+
+2. **High: review approval is enforced only by the UI.** `server/aplus-connector.mjs:930` sends browser-provided evidence directly to `saveDecision`; the store validates shape but does not check a current confirmed comparison. Synthetic storage accepted an approved record without comparison evidence. Manual reviewer selection can attribute an action to Ana or Liv regardless of signed-in identity. Move current-evidence/freshness/approval validation to the server and capture verified sign-in identity separately from assigned owner. Preserve investigation and historical outcome recording as distinct actions.
+
+3. **High: failed treatment refresh can leave stale exclusion counts active.** In `app/page.tsx`, a failed treatment fetch sets an error status without clearing the old snapshot; `treatmentByTaxBody` and `rateRiskFindings` still use it. A previously zero-risk tax body can remain outside the rate-risk queue even if current assignments changed. Treat failed/stale treatment data as unknown, retain findings visibly, and label the evidence timestamp rather than allowing stale zero counts to suppress them.
+
+4. **Medium: All jurisdictions review filters do not match saved reviews.** `app/jurisdiction-inventory.ts:50` produces keys such as FL-FL050-current, but `app/finding-review.ts:6` saves FL-FL050-current:a7:o6.5. Synthetic comparison confirmed unequal keys. Non-NC assignment rows therefore appear unreviewed even after a decision. Reuse the canonical evidence-aware key in both paths; test the complete save-to-inventory status/filter flow.
+
+5. **Medium: audit events do not preserve the evidence for each decision.** `server/review-store.mjs:119` stores statuses, actors, notes and timestamps in events, while the case upsert overwrites rates and source metadata. Synthetic re-save changed the case rates; the preceding event contained no original rates. Source hashes, retrieval times and comparison scope are not part of saved review evidence. Store immutable evidence per decision, validate key consistency and retain enough aggregate source evidence to reproduce an approval. The append-only status history is useful but is not a full evidence archive.
+
+6. **Medium: competing state drawer requests can mix state evidence.** `app/page.tsx:702` starts reads and later assigns shared drawer state without cancellation or a request-generation check. Closing a slow state and opening another allows the first read to overwrite the new panel. Cancel obsolete reads, guard every state update/cache result and test out-of-order completion with synthetic states.
+
+## Improvements after those fixes
+
+- **Make freshness consistent.** State drawers cache for six hours, separate from dashboard/inventory reads. Several official adapters also cache for six hours; e.g. Florida returns cached data unless bypassCache is supplied. The API's normal state read does not expose that bypass. Distinguish comparison time from source retrieval time; define what Refresh actually refreshes and invalidate related views together.
+- **Turn assignment gaps into owned work.** State-level unchecked/excluded totals are visible, but they are not a reviewable backlog with reason, owner, due date and documented outcome. Prioritize high-volume unresolved assignments before building speculative address matching. Keep deliberate no-tax policies distinct from unresolved setup and official matches.
+- **Preserve effective-period information.** The shared GA/flat/direct finding adapters set effectiveDate to null. Show dates and scope where authoritative evidence provides them; keep unknown dates explicit. Expand upcoming-change monitoring beyond the existing NC workflow only where the source supports it.
+- **Establish unattended monitoring and recovery.** The browser refresh timer is six hours; it does not guarantee checks while nobody has TaxAP open. Add a server-owned schedule, bounded/shared batch execution, durable aggregate run history and actionable failure/change notifications if the team wants unattended monitoring. Backup tooling exists, but a maintained schedule, off-host retention, owner and documented restore drill still need operational evidence.
+- **Add browser workflow regression tests and CI.** Current build/tests passed despite the inventory-key defect. Add synthetic end-to-end review/filter, stale-data, session-expiry and rapid-state-switch scenarios. No .github workflow directory exists in this checkout; establish required automated checks through the chosen CI provider.
+- **Reconcile deployment documentation.** README's sample deployment still uses the base Compose file alone, although the SQL-login deployment requires both files. Historical prepared/not-deployed language remains in deployment/pilot documents. Publish one current runbook and identify historical notes clearly.
+
+## Suggested sequence
+
+Fix comparison tolerance and stale-treatment suppression first. Then unify review keys, add server-enforced evidence checks and authenticated attribution, and strengthen immutable decision evidence. Follow with drawer/freshness corrections, stakeholder acceptance, assignment-gap ownership and unattended monitoring/recovery.

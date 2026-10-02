@@ -1,6 +1,16 @@
 # TaxAP project handoff
 
-Last updated September 24, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+Last updated October 2, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+
+## All jurisdictions review filters fixed locally (October 2)
+
+Non-NC assignment inventory rows now use the shared findingDecisionKey function with the same A+/official rate pair as saved decisions. Saved in-review, approved, resolved and not-applicable statuses now attach to the correct rows and filters/CSV. Changed rates receive distinct keys; no migration or fallback to an older rate pair. Published source rows remain separate, and uncertain comparisons retain their existing not-checked status. NC's existing key construction is unchanged. Extracted the existing review-status attachment into applyInventoryReviews so regression tests exercise the production lookup/filter path with synthetic saved review records for direct mapping, statewide and Georgia (including uncertain) findings.
+
+Production build, all 307 tests, lint, TypeScript and diff checks passed. No hosted/browser acceptance performed. SQL, A+ comparison behavior and stored review records are unchanged. Preserved the prior uncommitted assessment and handoff updates. Not committed, pushed or deployed.
+
+## Repository assessment (September 30)
+
+Reviewed main at deec2df; build, all 305 tests, lint and TypeScript passed. Synthetic probes confirmed that most comparison paths ignore differences below 0.01 percentage points (NC uses 0.001), non-NC inventory review keys differ from saved decision keys, and review storage accepts approval without server comparison validation and overwrites case evidence without preserving rates in events. Code review also identified stale treatment counts remaining active after refresh failure and unguarded competing state-drawer requests. Prioritized findings, evidence and proposed next tasks are in `docs/application-review-2026-09-30.md`. No application/SQL changes or commit/push/deployment performed. Hosted behavior and current official sources were not revalidated in this assessment.
 
 
 ## Three-decimal percentage display (deployed September 24)
