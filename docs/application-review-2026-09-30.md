@@ -4,7 +4,7 @@ Reviewed local main at deec2df. Production build and all 305 tests passed; lint 
 
 ## Priority findings
 
-October 2 follow-up: finding 4 (inventory review keys) is fixed locally and covered by saved-review/filter/CSV regression tests. Build, all 307 tests, lint and TypeScript passed. The fix is not yet committed or deployed; the other findings remain open.
+October 2 follow-up: finding 4 (inventory review keys) is fixed and covered by saved-review/filter/CSV regression tests. Build, all 307 tests, lint and TypeScript passed. User authorized release: committed/pushed as e344d44 and deployed to apdock01. Deployed synthetic filter behavior, served bundle, review integrity and anonymous access protection verified. Signed-in browser acceptance remains pending; the other findings remain open.
 
 1. **High: inconsistent mismatch precision.** `server/direct-mapping-aplus.mjs:43`, `server/flat-state-aplus.mjs:49`, `server/nj-aplus.mjs:50` and `server/ga-boundary.mjs:407` require a difference of at least 0.01 percentage points. NC uses 0.001 (`app/page.tsx:365`). A synthetic direct comparison of 6.625 against 6.630 produced difference 0.005 and `hasDifference: false`. Three-decimal display alone does not fix detection. Agree the business tolerance and centralize comparison precision, with meaningful boundary tests across comparison paths.
 

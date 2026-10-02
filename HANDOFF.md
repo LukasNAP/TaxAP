@@ -2,11 +2,11 @@
 
 Last updated October 2, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
-## All jurisdictions review filters fixed locally (October 2)
+## All jurisdictions review filters deployed (October 2)
 
 Non-NC assignment inventory rows now use the shared findingDecisionKey function with the same A+/official rate pair as saved decisions. Saved in-review, approved, resolved and not-applicable statuses now attach to the correct rows and filters/CSV. Changed rates receive distinct keys; no migration or fallback to an older rate pair. Published source rows remain separate, and uncertain comparisons retain their existing not-checked status. NC's existing key construction is unchanged. Extracted the existing review-status attachment into applyInventoryReviews so regression tests exercise the production lookup/filter path with synthetic saved review records for direct mapping, statewide and Georgia (including uncertain) findings.
 
-Production build, all 307 tests, lint, TypeScript and diff checks passed. No hosted/browser acceptance performed. SQL, A+ comparison behavior and stored review records are unchanged. Preserved the prior uncommitted assessment and handoff updates. Not committed, pushed or deployed.
+Production build, all 307 tests, lint, TypeScript and diff checks passed. SQL, A+ comparison behavior and stored review records are unchanged. Preserved the prior assessment and handoff updates. User authorized commit/push/deploy: implementation and assessment committed/pushed as e344d44. Host baseline matched the prior commit, uploaded file hashes verified. Protected source/configuration and consistent review backup: /var/atlanticapps/taxap-backups/inventory-reviews-20261002; rollback image: taxap-rollback:before-inventory-reviews. Built with both Compose files and replaced only taxap-app. Deployed source passed a synthetic approved-review/filter check; hosted page and served page asset returned 200 with rate-aware keys in the bundle. Review SQLite integrity passed, public root302/API401, all four containers running with zero restarts. No production reviews created or customer details queried. Signed-in browser acceptance remains pending.
 
 ## Repository assessment (September 30)
 
