@@ -2,13 +2,15 @@
 
 Last updated October 2, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
-## Rate precision and stale treatment fixes (October 2; local only)
+## Rate precision and stale treatment fixes (deployed October 2)
 
 User selected assessment-response items 1 and 2: small differences missed and stale treatment counts suppressing findings. Consulted aplus-erp and explained the comparison change before editing. All rate-comparison paths (NC, direct mapping, flat states, NJ and GA) now share hasRateDifference, using the existing four-decimal difference calculation and a 0.001 percentage-point threshold. Differences such as 6.625 versus 6.630 now flag for human review. Missing/nonfinite differences remain unavailable. No SQL, matching rules, official rate values or A+ writes changed.
 
 Treatment snapshots clear on refresh and failure; applyFindingTreatments only uses counts from a ready read. Failed/pending reads cannot suppress findings using a prior zero-risk count. Unknown treatment counts preserve comparison assignment counts with visible unknown labels; the dashboard affected rate-risk total stays unknown instead of treating assignment counts as verified risk counts. Successful current treatment exclusions still work.
 
-Build, all 311 tests, lint, TypeScript and diff checks passed. Synthetic regressions cover positive/negative 0.001 and 0.005 differences across all comparison families, below-threshold/equal/missing cases, failed refresh after zero-risk evidence and recovery. Existing Arizona test updated to flag its 0.002-point difference. Hosted/browser acceptance not performed. Not committed, pushed or deployed.
+Build, all 311 tests, lint, TypeScript and diff checks passed. Synthetic regressions cover positive/negative 0.001 and 0.005 differences across all comparison families, below-threshold/equal/missing cases, failed refresh after zero-risk evidence and recovery. Existing Arizona test updated to flag its 0.002-point difference. User authorized release: committed/pushed as e67348a and deployed to apdock01. Prior host baseline and all seven uploaded SHA-256 hashes verified. Protected source/configuration and consistent SQLite backup: /var/atlanticapps/taxap-backups/precision-treatment-20261002; rollback image: taxap-rollback:before-precision-treatment. Built with both Compose files and replaced only taxap-app. All four precision/treatment regression tests passed against deployed modules. Hosted page/asset200, served bundle includes threshold and unknown-treatment labels, SQLite integrity passed, public root302/API401, four containers running with zero restarts. No customer details output or production review records created. Signed-in visual acceptance remains pending.
+
+Release batch returned 44 successful state checks and three failures (MO, NM, UT), with 309 non-NC/GA shared findings. NM comparison subsequently returned200 on an isolated retry. Independent official-source diagnostics reproduced Missouri's changed workbook columns and Utah's unavailable rate directory before comparison logic; they remain source issues requiring follow-up. Do not describe this release batch as 47/47 success. Rates/jurisdictions were not guessed to bypass these failures.
 
 ## All jurisdictions review filters deployed (October 2)
 
