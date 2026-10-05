@@ -15,7 +15,7 @@ export function assignmentGaps(result, health) {
   }
   for (const row of result.findings ?? []) {
     if (excluded.has(row.taxBody) || (row.matched && Number.isFinite(row.aplusRate) && Number.isFinite(row.officialRate))) continue;
-    add(row, row.definitionStatus === 'missing' ? 'missing_definition' : row.jurisdictionAssignmentConsistent === false ? 'ambiguous_jurisdiction' : !row.matched ? 'unresolved_jurisdiction' : 'missing_rate');
+    add(row, row.definitionStatus === 'missing' ? 'missing_definition' : row.identityStatus === 'ambiguous' || row.jurisdictionAssignmentConsistent === false ? 'ambiguous_jurisdiction' : !row.matched ? 'unresolved_jurisdiction' : 'missing_rate');
   }
   const unresolved = result.totals?.unmatched;
   const ambiguous = result.totals?.ambiguous;

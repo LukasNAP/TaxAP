@@ -1,8 +1,9 @@
 import { formatRateValue, formatRateText } from "./rate-format.ts";
 import { findingDecisionKey } from "./finding-review.ts";
 import type { JurisdictionFilterRow } from "./jurisdiction-filters";
+import type { JurisdictionVerification } from "./jurisdiction-verification.ts";
 
-export type InventoryRow = JurisdictionFilterRow & {
+export type InventoryRow = JurisdictionFilterRow & JurisdictionVerification & {
   id: string;
   officialRate: number | null;
   componentRate: number | null;
@@ -13,7 +14,7 @@ export type InventoryRow = JurisdictionFilterRow & {
 };
 type Rate = { jurisdictionType: string; jurisdictionCode: string; name: string; totalGeneralRate?: number | null; componentRate?: number | null; beginDate?: string | null; endDate?: string | null };
 type Assignment = { taxBody: string | null; description?: string | null; activeShipTos: number; currentRate: number | null };
-type Comparison = { taxBody: string; jurisdictionLabel?: string; description?: string | null; activeShipTos: number; officialRate: number | null; aplusRate: number | null; rateDifference: number | null; hasDifference: boolean; matched?: boolean; jurisdictionAssignmentConsistent?: boolean };
+type Comparison = JurisdictionVerification & { taxBody: string; jurisdictionLabel?: string; description?: string | null; activeShipTos: number; officialRate: number | null; aplusRate: number | null; rateDifference: number | null; hasDifference: boolean; matched?: boolean; jurisdictionAssignmentConsistent?: boolean };
 export type InventoryPayload = {
   rates?: Rate[];
   findings?: Comparison[];
@@ -33,6 +34,7 @@ export function inventoryRows(state: string, official: InventoryPayload | null, 
   const rows: InventoryRow[] = (official?.rates ?? []).filter(rate => !rate.endDate || rate.endDate >= today).map((rate, i) => ({
     ...base, id: `${state}-source-${i}`, jurisdictionName: rate.name, jurisdictionType: rate.jurisdictionType,
     officialRate: numeric(rate.totalGeneralRate), componentRate: numeric(rate.componentRate), sourceStatus: "validated",
+    identityStatus: "confirmed", locationStatus: "not_checked",
     effectiveDate: rate.beginDate ?? null, effectiveState: rate.beginDate ? rate.beginDate > today ? "upcoming" : "current" : "undated",
   }));
   const comparisons = comparison?.findings ?? comparison?.taxBodyFindings ?? [];
@@ -47,6 +49,8 @@ export function inventoryRows(state: string, official: InventoryPayload | null, 
       : !!match && match.matched !== false && match.jurisdictionAssignmentConsistent !== false && numeric(match.rateDifference) !== null);
     rows.push({ ...base, id: `${state}-assignment-${i}`, jurisdictionType: "assignment", jurisdictionName: match?.jurisdictionLabel ?? assignment.description ?? assignment.taxBody ?? "Unassigned tax body",
       taxBody: assignment.taxBody ?? "", officialRate: verified ? officialRate : null, aplusRate, shipTos: assignment.activeShipTos,
+      identityStatus: match?.identityStatus ?? (match?.jurisdictionAssignmentConsistent === false ? "ambiguous" : verified ? "confirmed" : "not_checked"),
+      locationStatus: match?.locationStatus ?? "not_checked",
       comparisonStatus: verified ? (flat ? comparison?.comparisonStatus === "difference" : match?.hasDifference) ? "mismatch" : "matched" : "not-checked",
       sourceStatus: verified ? "validated" : "unavailable", reviewKey: assignment.taxBody ? findingDecisionKey({
         stateCode: state, reviewFindingKey: `${state}-${assignment.taxBody}-current`, aplusRate, officialRate,
@@ -66,6 +70,6 @@ export function inventoryCsv(rows: InventoryRow[]): string {
     if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
     return `"${text.replaceAll('"', '""')}"`;
   }).join(",");
-  return [cells(["State", "Jurisdiction", "Type", "Tax body", "Official total %", "Official component %", "A+ %", "Ship-tos", "Comparison", "Effective date", "Source", "Review"]),
-    ...rows.map(row => cells([row.stateCode, formatRateText(row.jurisdictionName), row.jurisdictionType, row.taxBody, row.officialRate === null ? "" : formatRateValue(row.officialRate), row.componentRate === null ? "" : formatRateValue(row.componentRate), row.aplusRate === null ? "" : formatRateValue(row.aplusRate), row.shipTos, row.comparisonStatus, row.effectiveDate, row.sourceStatus, row.reviewStatus]))].join("\n");
+  return [cells(["State", "Jurisdiction", "Type", "Tax body", "Official total %", "Official component %", "A+ %", "Ship-tos", "Comparison", "Effective date", "Source", "Jurisdiction identity", "Ship-to location", "Review"]),
+    ...rows.map(row => cells([row.stateCode, formatRateText(row.jurisdictionName), row.jurisdictionType, row.taxBody, row.officialRate === null ? "" : formatRateValue(row.officialRate), row.componentRate === null ? "" : formatRateValue(row.componentRate), row.aplusRate === null ? "" : formatRateValue(row.aplusRate), row.shipTos, row.comparisonStatus, row.effectiveDate, row.sourceStatus, row.identityStatus ?? "not_checked", row.locationStatus ?? "not_checked", row.reviewStatus]))].join("\n");
 }

@@ -29,6 +29,7 @@ An HTTP 200 response from the proxy proves that the interface is available; it d
 - Displays human-readable county or jurisdiction names instead of raw tax-body codes where a validated mapping exists.
 - Preserves source URL, retrieval time, effective period, and a SHA-256 evidence fingerprint.
 - Flags mismatches, unavailable sources, and ambiguous jurisdiction matches without guessing.
+- Shows jurisdiction identity separately from ship-to location verification. A matched tax-body rate does not verify customer addresses. Georgia distinguishes complete street-address boundary matches from partial/ZIP-based evidence; other comparison paths leave ship-to location not checked. Ambiguous jurisdiction findings require review before maintenance approval.
 - Stores local review decisions and audit events separately from A+.
 - Supports an administrator CSV import as a temporary, session-only fallback.
 - Never writes tax rates or assignments back to A+.

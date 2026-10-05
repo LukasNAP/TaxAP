@@ -3,7 +3,7 @@ export const gapLabels = {
   missing_definition: 'Missing A+ tax-body definition',
   missing_rate: 'Configured rate unavailable',
   unresolved_jurisdiction: 'No unique supported official jurisdiction match',
-  ambiguous_jurisdiction: 'Assignments span inconsistent official jurisdictions',
+  ambiguous_jurisdiction: 'Multiple or inconsistent official jurisdiction candidates',
   excluded_tax_body: 'Excluded or unsupported tax body',
   cross_state: 'Tax body identifies a different state or country',
   unknown: 'Reason unavailable from the returned comparison',

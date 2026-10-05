@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { applyInventoryReviews, inventoryCsv, inventoryRows, type InventoryPayload, type InventoryRow } from "./jurisdiction-inventory";
 import { matchesJurisdictionFilters, type JurisdictionFilters } from "./jurisdiction-filters";
 import { STATE_NAME_BY_CODE } from "./tax-body-policy";
+import { identityLabels, locationLabels } from "./jurisdiction-verification";
 
 const initialFilters: JurisdictionFilters = { query: "", state: "all", jurisdictionType: "all", comparison: "all", effective: "all", source: "all", review: "all" };
 const noGeneralTax = new Set(["DE", "MT", "NH", "OR"]);
@@ -93,10 +94,12 @@ export function JurisdictionInventoryView({ ncRows, apiBase, offline, comparison
         <button className="secondary-button" type="button" disabled={offline} onClick={() => { setLoaded({}); setRefresh(value => value + 1); }}>Refresh inventories</button>{" "}
         <button className="secondary-button" type="button" disabled={!filtered.length} onClick={download}>Export filtered rows CSV</button>
       </div>
-      <div className="table-scroll"><table className="coverage-table jurisdiction-table"><thead><tr>{["State", "Jurisdiction", "Type", "A+ tax body", "Official total", "Official component", "A+ rate", "Ship-tos", "Effective", "Source", "Review", "Comparison"].map(title => <th key={title}>{title}</th>)}</tr></thead>
+      <p className="result-count">Jurisdiction identity describes the official locality or assigned tax-body match. Ship-to location is checked separately. A rate match does not verify an address; partial or ZIP-based evidence does not verify every street address.</p>
+      <div className="table-scroll"><table className="coverage-table jurisdiction-table"><thead><tr>{["State", "Jurisdiction", "Type", "A+ tax body", "Official total", "Official component", "A+ rate", "Ship-tos", "Effective", "Source", "Review", "Comparison", "Jurisdiction identity", "Ship-to location"].map(title => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{filtered.slice(currentPage * 100, (currentPage + 1) * 100).map(row => <tr key={row.id}>
           <td>{row.stateCode}</td><td><button className="table-link" type="button" onClick={() => onOpen(row)}>{formatRateText(row.jurisdictionName)}</button></td><td>{labels[row.jurisdictionType] ?? row.jurisdictionType}</td><td>{row.taxBody || "—"}</td><td>{rate(row.officialRate)}</td><td>{rate(row.componentRate)}</td><td>{rate(row.aplusRate)}</td><td>{row.shipTos?.toLocaleString() ?? "—"}</td><td>{row.effectiveDate ?? labels[row.effectiveState]}</td><td>{labels[row.sourceStatus]}</td><td>{labels[row.reviewStatus ?? "unreviewed"]}</td><td>{labels[row.comparisonStatus]}</td>
-        </tr>)}{!filtered.length && <tr><td colSpan={12}>No loaded rows match these filters. Check loading or unavailable states above, or clear filters.</td></tr>}</tbody>
+          <td>{identityLabels[row.identityStatus ?? "not_checked"]}</td><td>{locationLabels[row.locationStatus ?? "not_checked"]}</td>
+        </tr>)}{!filtered.length && <tr><td colSpan={14}>No loaded rows match these filters. Check loading or unavailable states above, or clear filters.</td></tr>}</tbody>
       </table></div>
       <div className="result-count"><button className="secondary-button" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>{" "}<button className="secondary-button" type="button" disabled={(currentPage + 1) * 100 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next</button></div>
     </div>

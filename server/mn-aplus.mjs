@@ -94,7 +94,7 @@ export async function readMinnesotaAplusComparison(stateDetail, { readOfficial =
     const name = normalize(row.description).replace(/^minnesota[ -]+/, "").replace(/ co\.?$/, " county");
     const candidates = byName.get(name) ?? [];
     if (!candidates.length || candidates.some((r) => r.ambiguousArea || !Number.isFinite(r.totalGeneralRate)) || new Set(candidates.map((r) => r.totalGeneralRate)).size !== 1) return null;
-    return candidates[0];
+    return { ...candidates[0], identityStatus: candidates.length === 1 ? "confirmed" : "ambiguous" };
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot };

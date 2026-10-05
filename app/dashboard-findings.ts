@@ -5,11 +5,12 @@
 // inventory — see docs/roadmap-50-states.md. Georgia is the only other state that qualifies today.
 
 import { STATE_NAME_BY_CODE } from "./tax-body-policy.ts";
+import type { JurisdictionVerification } from "./jurisdiction-verification.ts";
 
 export type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcoming" | "not-checked";
 export type FindingConfidence = "confirmed" | "unverified";
 
-export type JurisdictionFinding = {
+export type JurisdictionFinding = JurisdictionVerification & {
   evidenceStatus?: "stale";
   evidenceRetrievedAt?: string;
   id: string;
@@ -28,7 +29,7 @@ export type JurisdictionFinding = {
   sourceUrl: string | null;
 };
 
-export type GaTaxBodyFindingInput = {
+export type GaTaxBodyFindingInput = JurisdictionVerification & {
   taxBody: string;
   description: string | null;
   activeShipTos: number;
@@ -81,6 +82,8 @@ export function gaFindingsFromReconciliation(
       comparisonStatus: "mismatch",
       confidence: row.jurisdictionAssignmentConsistent ? "confirmed" : "unverified",
       confidenceNote: row.jurisdictionAssignmentConsistent ? null : UNVERIFIED_JURISDICTION_NOTE,
+      identityStatus: row.identityStatus ?? (row.jurisdictionAssignmentConsistent ? "confirmed" : "ambiguous"),
+      locationStatus: row.locationStatus ?? "not_checked",
       effectiveDate: null,
       sourceUrl: null,
     }));
@@ -119,12 +122,14 @@ export function flatStateFindingsFromReconciliation(
     comparisonStatus: "mismatch",
     confidence: "confirmed",
     confidenceNote: null,
+    identityStatus: "confirmed",
+    locationStatus: "not_checked",
     effectiveDate: null,
     sourceUrl: reconciliation.officialSnapshot?.sourceUrl ?? null,
   }];
 }
 
-export type DirectMappingFindingInput = {
+export type DirectMappingFindingInput = JurisdictionVerification & {
   taxBody: string;
   description: string | null;
   jurisdictionLabel: string;
@@ -167,8 +172,10 @@ export function directMappingFindingsFromReconciliation(
       rateDifference: finding.rateDifference,
       activeShipTos: finding.activeShipTos,
       comparisonStatus: "mismatch",
-      confidence: "confirmed",
-      confidenceNote: null,
+      confidence: finding.identityStatus === "ambiguous" || finding.identityStatus === "unresolved" ? "unverified" : "confirmed",
+      confidenceNote: finding.identityStatus === "ambiguous" || finding.identityStatus === "unresolved" ? "The published rate evidence does not resolve a unique assigned jurisdiction. Verify the jurisdiction before approving maintenance." : null,
+      identityStatus: finding.identityStatus ?? "confirmed",
+      locationStatus: finding.locationStatus ?? "not_checked",
       effectiveDate: null,
       sourceUrl: reconciliation.officialSnapshot?.sourceUrl ?? null,
     }));

@@ -44,6 +44,8 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
       rateDifference,
       hasDifference: hasRateDifference(rateDifference),
       matched: hasResolvedRate,
+      identityStatus: official?.identityStatus ?? (official ? "confirmed" : "unresolved"),
+      locationStatus: "not_checked",
     };
   });
 

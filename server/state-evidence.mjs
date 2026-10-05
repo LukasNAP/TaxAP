@@ -8,7 +8,7 @@ const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key]
 // Explicit aggregate allowlist. Do not persist ship-to/customer or credential data.
 export function aggregateEvidence(stateCode, value) {
   const result = pick(value, ["stateCode", "expectedTaxBody", "officialRate", "aplusRate", "rateDifference", "hasDifference", "comparisonStatus", "totals", "findings", "taxBodyFindings", "comparisonScope", "noTaxPolicy", "boundaryFileUrl", "boundaryRetrievedAt", "boundarySourceHash", "rateFileUrl", "rateSourceHash", "rateRetrievedAt"]);
-  for (const key of ["findings", "taxBodyFindings"]) if (Array.isArray(result[key])) result[key] = result[key].map(row => pick(row, ["taxBody", "description", "activeShipTos", "jurisdictionLabel", "officialRate", "aplusRate", "rateDifference", "hasDifference", "matched", "matchedShipTos", "jurisdictionAssignmentConsistent"]));
+  for (const key of ["findings", "taxBodyFindings"]) if (Array.isArray(result[key])) result[key] = result[key].map(row => pick(row, ["taxBody", "description", "activeShipTos", "jurisdictionLabel", "officialRate", "aplusRate", "rateDifference", "hasDifference", "matched", "matchedShipTos", "jurisdictionAssignmentConsistent", "identityStatus", "locationStatus"]));
   const official = value.officialSnapshot;
   if (official) result.officialSnapshot = pick(official, ["stateCode", "source", "sourceUrl", "machineReadableSourceUrl", "retrievedAt", "asOfDate", "sourceHash", "effectivePeriod", "rates", "futureChanges", "stateRate"]);
   if (stateCode === "NC") result.aplusSnapshot = pick(value.aplusSnapshot, ["source", "retrievedAt", "standardRows", "specialRows", "scheduledRows", "rateDistribution"]);

@@ -22,7 +22,7 @@ function extractAlCode(taxBody) {
 // place A+ says it does (see readArizonaAplusComparison-style safety net below).
 function alExpectedNameToken(description) {
   const withoutPrefix = String(description || "").replace(/^Alabama\s+/i, "").trim();
-  const withoutParen = withoutPrefix.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  const withoutParen = withoutPrefix.replace(/\s*\([^)]*\)?\s*$/, "").trim();
   const withoutQualifiers = withoutParen.replace(/\s+(?:Co\.?|County|Unincorp\.?|CL)$/i, "").trim();
   return withoutQualifiers.toUpperCase();
 }
@@ -33,17 +33,27 @@ function alExpectedNameToken(description) {
 // multi-county placeholder value that doesn't correspond to any single real county (confirmed for
 // Birmingham, whose own CSV row carries county number 69 - not Jefferson's 37 or Shelby's 58).
 function alCountyHint(description) {
-  const match = String(description || "").match(/\(([^)]+)\)\s*$/);
+  const match = String(description || "").match(/\(([^)]*)\)?\s*$/);
   return match ? match[1].trim().toUpperCase() : null;
 }
 
 export async function readAlabamaAplusComparison(stateDetail, { readOfficialAlRates: readOfficial = readOfficialAlRates } = {}) {
   const officialSnapshot = await readOfficial();
-  const byCode = new Map(officialSnapshot.rates.map((rate) => [rate.localityCode ?? rate.jurisdictionCode, rate]));
+  const byCode = new Map();
+  const countyComponents = new Map();
+  for (const rate of officialSnapshot.rates) {
+    // PJ entries can share a locality code with the corporate-limits row.
+    if (!["county", "city"].includes(rate.jurisdictionType)) continue;
+    const code = rate.localityCode ?? rate.jurisdictionCode;
+    byCode.set(code, [...(byCode.get(code) ?? []), rate]);
+    if (rate.jurisdictionType === "county") {
+      const name = String(rate.name).replace(/\s+COUNTY$/i, "").toUpperCase();
+      countyComponents.set(name, [...(countyComponents.get(name) ?? []), rate.componentRate]);
+    }
+  }
   const countyRatesByName = officialSnapshot.countyRatesByName ?? Object.fromEntries(
-    officialSnapshot.rates
-      .filter((rate) => rate.jurisdictionType === "county")
-      .map((rate) => [String(rate.name).replace(/\s+COUNTY$/i, "").toUpperCase(), Number(rate.componentRate)]),
+    [...countyComponents].filter(([, components]) => components.every(value => Number.isFinite(value) && value === components[0]))
+      .map(([name, components]) => [name, components[0]]),
   );
 
   return {
@@ -54,15 +64,20 @@ export async function readAlabamaAplusComparison(stateDetail, { readOfficialAlRa
       matchOfficialRow: (row) => {
         const code = extractAlCode(row.taxBody);
         if (!code) return null;
-        const csvRow = byCode.get(code);
-        if (!csvRow) return null;
+        const codeCandidates = byCode.get(code) ?? [];
+        if (codeCandidates.length !== 1) return codeCandidates.length ? { name: row.description, totalGeneralRate: null, identityStatus: "ambiguous" } : null;
+        const csvRow = codeCandidates[0];
         const expectedToken = alExpectedNameToken(row.description);
         const nameMatches = expectedToken.length > 0 && csvRow.name.toUpperCase().includes(expectedToken.slice(0, Math.min(6, expectedToken.length)));
         if (!nameMatches) return null; // the code number was reused for something else - don't guess
         const countyHint = alCountyHint(row.description);
-        const hintedCountyName = countyHint
-          ? Object.keys(countyRatesByName).find((name) => name.startsWith(countyHint.slice(0, Math.min(4, countyHint.length))))
-          : null;
+        const countyCandidates = countyHint
+          ? Object.keys(countyRatesByName).filter((name) => name.startsWith(countyHint))
+          : [];
+        if (countyHint !== null && (!countyHint || countyCandidates.length !== 1)) {
+          return { name: row.description, totalGeneralRate: null, identityStatus: countyCandidates.length > 1 ? "ambiguous" : "unresolved" };
+        }
+        const hintedCountyName = countyCandidates[0] ?? null;
         if (hintedCountyName && csvRow.jurisdictionType === "city") {
           const total = Number((Number(csvRow.componentRate) + countyRatesByName[hintedCountyName] + AL_STATE_RATE).toFixed(4));
           return { ...csvRow, name: `${csvRow.name} (${hintedCountyName})`, totalGeneralRate: total };

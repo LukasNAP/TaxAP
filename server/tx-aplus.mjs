@@ -43,13 +43,15 @@ function texasOfficialRowFor(row, officialSnapshot) {
   if (candidates.length === 0) return null;
 
   if (parsed.countyHint) {
-    return candidates.find((candidate) => normalize(candidate.county) === parsed.countyHint) ?? null;
+    const countyCandidates = candidates.filter((candidate) => normalize(candidate.county) === parsed.countyHint);
+    return countyCandidates.length === 1 ? countyCandidates[0]
+      : { name: row.description, totalGeneralRate: null, identityStatus: countyCandidates.length > 1 ? "ambiguous" : "unresolved" };
   }
   if (candidates.length === 1) return candidates[0];
 
   const rates = rateValues(candidates);
   if (rates.length === 1) {
-    return { ...candidates[0], name: `${candidates[0].name} (${candidates.length} official variants; same rate)` };
+    return { ...candidates[0], identityStatus: "ambiguous", name: `${candidates[0].name} (${candidates.length} official variants; same rate)` };
   }
 
   // A bare official locality is a directly named candidate. If A+'s rate matches no candidate,
@@ -59,9 +61,9 @@ function texasOfficialRowFor(row, officialSnapshot) {
   const aplusRate = Number(row.currentRate);
   if (!rates.includes(aplusRate)) {
     const bareOfficial = candidates.find((candidate) => normalize(candidate.name) === parsed.locality);
-    return bareOfficial ? { ...bareOfficial, name: `${bareOfficial.name} (A+ matches no official candidate)` } : null;
+    return bareOfficial ? { ...bareOfficial, identityStatus: "ambiguous", name: `${bareOfficial.name} (A+ matches no official candidate)` } : null;
   }
-  return null;
+  return { name: row.description, totalGeneralRate: null, identityStatus: "ambiguous" };
 }
 
 function isTexasMisinput(row) {

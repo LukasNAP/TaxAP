@@ -357,7 +357,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
 
   for (const address of addresses) {
     const taxBody = address.taxBody || "(unassigned)";
-    if (!perTaxBody.has(taxBody)) perTaxBody.set(taxBody, { taxBody, activeShipTos: 0, unmatched: 0, ambiguous: 0, jurisdictionCounts: new Map() });
+    if (!perTaxBody.has(taxBody)) perTaxBody.set(taxBody, { taxBody, activeShipTos: 0, unmatched: 0, ambiguous: 0, addressMatched: 0, jurisdictionCounts: new Map() });
     const bucket = perTaxBody.get(taxBody);
     bucket.activeShipTos++;
 
@@ -376,6 +376,7 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     }
     matchedCount++;
     tierCounts[result.tier]++;
+    if (result.tier === "address") bucket.addressMatched++;
     const key = jurisdictionKey(result.jurisdiction);
     if (!bucket.jurisdictionCounts.has(key)) bucket.jurisdictionCounts.set(key, { jurisdiction: result.jurisdiction, count: 0 });
     bucket.jurisdictionCounts.get(key).count++;
@@ -402,6 +403,8 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
       unmatchedShipTos: bucket.unmatched,
       ambiguousShipTos: bucket.ambiguous,
       jurisdictionAssignmentConsistent: consistent,
+      identityStatus: !majority ? "unresolved" : consistent ? "confirmed" : "ambiguous",
+      locationStatus: consistent && bucket.addressMatched === bucket.activeShipTos ? "verified" : majority ? "partial" : "not_checked",
       jurisdiction: majority ? majority.jurisdiction : null,
       officialRate,
       aplusRate,

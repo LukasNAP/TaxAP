@@ -82,7 +82,9 @@ export async function readIowaAplusComparison(stateDetail, { readOfficial = read
     const name = normalize(row.description).replace(/^iowa[ -]+/, "");
     const county = name.match(/^(.+) (?:county|co\.?)$/)?.[1];
     if (county) return uniqueTotal(counties.get(county), `${county} County`);
-    return uniqueTotal(cities.get(name), name);
+    const cityCandidates = cities.get(name);
+    const rate = uniqueTotal(cityCandidates, name);
+    return rate ? { ...rate, identityStatus: cityCandidates.length === 1 ? "confirmed" : "ambiguous" } : null;
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot, comparisonScope: "sales" };

@@ -24,6 +24,7 @@ import {
 import { validateXatxbdCsv, type APlusImportResult, type ImportedTaxBody } from "./aplus-import";
 import { JurisdictionInventoryView } from "./jurisdiction-inventory-view";
 import type { InventoryRow } from "./jurisdiction-inventory";
+import { JurisdictionVerificationFacts } from "./jurisdiction-verification-view";
 import { combineFindings, gaFindingsFromReconciliation, type JurisdictionFinding } from "./dashboard-findings";
 import { describesOtherJurisdiction, isRetiredTaxBody, STATE_NAME_BY_CODE } from "./tax-body-policy";
 import { ReviewAuditTrail, ReviewDecisionPanel, reviewStatusLabels, type ReviewCase, type ReviewStatus } from "./review-workflow";
@@ -541,6 +542,8 @@ export default function Home() {
     officialRate: county.officialRate, componentRate: null, aplusRate: county.currentRate,
     shipTos: county.activeShipTos, effectiveDate: county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? null,
     reviewKey: reviewFindingKey(county),
+    identityStatus: county.officialRate === null || batchHealth.failedStates.includes("NC") ? "not_checked" : "confirmed",
+    locationStatus: "not_checked",
   })), [activeCountyCoverage, batchHealth.failedStates]);
 
   const openFindings = useMemo(
@@ -568,6 +571,8 @@ export default function Home() {
     comparisonStatus: county.comparisonStatus,
     confidence: "confirmed",
     confidenceNote: null,
+    identityStatus: county.officialRate === null ? "not_checked" : "confirmed",
+    locationStatus: "not_checked",
     effectiveDate: county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? null,
     sourceUrl: county.officialSourceUrl,
   }), []);
@@ -1254,6 +1259,7 @@ export default function Home() {
           ) : (
             <div className="comparison-note comparison-note-match"><span aria-hidden="true">✓</span><div><strong>{selectedCounty.comparisonStatus === "matched" ? "A+ matches the current NCDOR rate" : "Official comparison unavailable"}</strong><p>{selectedCounty.activeShipTos > 0 ? `${selectedCounty.activeShipTos.toLocaleString()} active ship-tos use this tax body.` : "No active A+ ship-to address is assigned to this standard county tax body."}</p></div></div>
           )}
+          <JurisdictionVerificationFacts finding={{ identityStatus: selectedCounty.officialRate === null || batchHealth.failedStates.includes("NC") ? "not_checked" : "confirmed", locationStatus: "not_checked" }} />
           <FindingShipTos key={selectedCounty.taxBody} apiBase={apiBaseUrl()} taxBody={selectedCounty.taxBody} state="NC" scope="all" expectedCount={selectedCounty.activeShipTos} />
           {(selectedCounty.comparisonStatus === "mismatch" || selectedCounty.comparisonStatus === "upcoming") && (
             <ReviewDecisionPanel
@@ -1278,6 +1284,7 @@ export default function Home() {
           <p className="drawer-lede">Review the official evidence and record the outcome. TaxAP never updates A+.</p>
           <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
           <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
+          <JurisdictionVerificationFacts finding={{ ...selectedFinding, evidenceStatus: batchHealth.failedStates.includes(selectedFinding.stateCode) ? "stale" : selectedFinding.evidenceStatus }} />
           <FindingShipTos key={findingDecisionKey(selectedFinding)} apiBase={apiBaseUrl()} taxBody={selectedFinding.taxBody} state={selectedFinding.stateCode} scope={"rateRiskShipTos" in selectedFinding && selectedFinding.rateRiskShipTos != null ? "rate-risk" : "all"} expectedCount={selectedFinding.activeShipTos} />
           {batchHealth.failedStates.includes(selectedFinding.stateCode) && <p className="queue-storage-warning">Current state verification is unavailable. Any retained rates below are stale; maintenance approval is blocked.</p>}
           {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{formatRateText(selectedFinding.confidenceNote ?? "")} Verify a current, confirmed comparison before approving maintenance.</p>}

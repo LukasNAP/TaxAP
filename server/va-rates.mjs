@@ -92,6 +92,7 @@ export function parseVirginiaRateWorkbook(buffer, { expectedLocalities = 133, ex
   }
 
   const keys = new Set();
+  const names = new Set();
   const rates = localityRows.map(({ rowNumber, values }) => {
     const localityCode = String(values.B || "").trim();
     const name = String(values.C || "").trim();
@@ -122,6 +123,9 @@ export function parseVirginiaRateWorkbook(buffer, { expectedLocalities = 133, ex
     }
 
     const jurisdictionType = name.endsWith(" County") ? "county" : "city";
+    const identityKey = `${jurisdictionType}|${name.toUpperCase()}`;
+    if (names.has(identityKey)) throw new Error("Virginia workbook has duplicate locality names within the same jurisdiction type.");
+    names.add(identityKey);
     return {
       jurisdictionType,
       jurisdictionCode,

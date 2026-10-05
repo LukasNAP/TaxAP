@@ -21,8 +21,11 @@ export async function readVirginiaAplusComparison(stateDetail, { readOfficialVaR
   const officialSnapshot = await readOfficial();
   const byBareName = new Map();
   for (const rate of officialSnapshot.rates) {
-    if (!byBareName.has(rate.bareName)) byBareName.set(rate.bareName, {});
-    byBareName.get(rate.bareName)[rate.jurisdictionType] = rate;
+    const bareName = rate.bareName ?? String(rate.name ?? "").replace(/ (?:County|City)$/, "");
+    if (!bareName || !["county", "city"].includes(rate.jurisdictionType)) throw new Error("Virginia locality identity is invalid.");
+    if (!byBareName.has(bareName)) byBareName.set(bareName, {});
+    const group = byBareName.get(bareName);
+    group[rate.jurisdictionType] = [...(group[rate.jurisdictionType] ?? []), rate];
   }
 
   return {
@@ -37,8 +40,10 @@ export async function readVirginiaAplusComparison(stateDetail, { readOfficialVaR
         // Virginia's own workbook has both a County and a City row for the same bare name - use it
         // to pick the right one. Every other city has no County row to disambiguate against at all,
         // so its City row is the only real candidate regardless of the (absent) suffix.
-        if (isCitySuffixed) return candidates.city ?? null;
-        return candidates.county ?? candidates.city ?? null;
+        const selected = isCitySuffixed ? candidates.city : candidates.county ?? candidates.city;
+        if (!selected?.length) return null;
+        return selected.length === 1 ? selected[0]
+          : { name: row.description, totalGeneralRate: null, identityStatus: "ambiguous" };
       },
     }),
     officialSnapshot,
