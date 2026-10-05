@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { aggregateMatchDiagnostic } from './match-diagnostic.mjs';
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
@@ -9,6 +10,10 @@ const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key]
 export function aggregateEvidence(stateCode, value) {
   const result = pick(value, ["stateCode", "expectedTaxBody", "officialRate", "aplusRate", "rateDifference", "hasDifference", "comparisonStatus", "totals", "findings", "taxBodyFindings", "comparisonScope", "noTaxPolicy", "boundaryFileUrl", "boundaryRetrievedAt", "boundarySourceHash", "rateFileUrl", "rateSourceHash", "rateRetrievedAt"]);
   for (const key of ["findings", "taxBodyFindings"]) if (Array.isArray(result[key])) result[key] = result[key].map(row => pick(row, ["taxBody", "description", "activeShipTos", "jurisdictionLabel", "officialRate", "aplusRate", "rateDifference", "hasDifference", "matched", "matchedShipTos", "jurisdictionAssignmentConsistent", "identityStatus", "locationStatus"]));
+  for (const key of ['findings', 'taxBodyFindings']) if (result[key]) result[key] = result[key].map((row, index) => {
+    const diagnostic = aggregateMatchDiagnostic(value[key][index].matchDiagnostic);
+    return diagnostic && diagnostic.stateCode === stateCode ? { ...row, matchDiagnostic: diagnostic } : row;
+  });
   const official = value.officialSnapshot;
   if (official) result.officialSnapshot = pick(official, ["stateCode", "source", "sourceUrl", "machineReadableSourceUrl", "retrievedAt", "asOfDate", "sourceHash", "effectivePeriod", "rates", "futureChanges", "stateRate"]);
   if (stateCode === "NC") result.aplusSnapshot = pick(value.aplusSnapshot, ["source", "retrievedAt", "standardRows", "specialRows", "scheduledRows", "rateDistribution"]);

@@ -23,7 +23,7 @@ test('assignment review carries only the existing tax-body description and prese
   const result={stateCode:'AL',findings:[{taxBody:'AL123',description:'Alabama Example (County hint)',activeShipTos:3,matched:false,identityStatus:'ambiguous',customerName:'private customer',address:'private address'}]};
   const [gap]=assignmentGaps(result,{uncheckedShipTos:3});
   assert.equal(gap.taxBodyDescription,'Alabama Example (County hint)');
-  assert.deepEqual(Object.keys(gap).sort(),['reason','shipTos','stateCode','taxBody','taxBodyDescription'].sort());
+  assert.deepEqual(Object.keys(gap).sort(),['reason','shipTos','stateCode','taxBody','taxBodyDescription','matchDiagnostic'].sort());
   assert.equal(assignmentTitle(gap),'Alabama Example (County hint)');
   assert.equal(assignmentTitle({...gap,taxBodyDescription:undefined}),'Tax body AL123');
   assert.equal(assignmentTitle({...gap,taxBody:null,taxBodyDescription:undefined}),'State assignments without a tax-body breakdown');
@@ -35,7 +35,7 @@ test('assignment review carries only the existing tax-body description and prese
 test('deliberate no-tax and conflicting aggregates cannot inflate unresolved totals',()=>{
   const result={stateCode:'AK',totals:{activeShipTos:8,intentionalNoTaxShipTos:8},findings:[]};
   assert.deepEqual(assignmentGaps(result,comparisonHealth(result)),[]);
-  assert.deepEqual(assignmentGaps({...result,crossStateAssignments:[{taxBody:'TEST',activeShipTos:10}]},{uncheckedShipTos:3}),[{stateCode:'AK',taxBody:null,shipTos:3,reason:'unknown'}]);
+  assert.deepEqual(assignmentGaps({...result,crossStateAssignments:[{taxBody:'TEST',activeShipTos:10}]},{uncheckedShipTos:3}).map(({matchDiagnostic,...gap})=>{ assert.equal(matchDiagnostic.reason,'aggregate_unresolved'); return gap; }),[{stateCode:'AK',taxBody:null,shipTos:3,reason:'unknown'}]);
   assert.deepEqual(assignmentGaps(result,{uncheckedShipTos:null}),[]);
 });
 test('queue filters combine state, count, evidence and assignment reason',()=>{
@@ -50,7 +50,8 @@ test('shared batch gaps match unchecked totals and exclude unavailable states',a
   const zero=async stateCode=>({stateCode,totals:{activeShipTos:0},findings:[]});
   const base={readNc:async()=>({aplusSnapshot:{standardRows:[]},officialSnapshot:{rates:[]},stateDetail:{activeShipTos:3,taxBodies:[{taxBody:'NC999',definitionStatus:'missing',activeShipTos:3}]}}),readGa:async()=>({totals:{activeShipTos:0},taxBodyFindings:[]}),readNj:()=>zero('NJ'),readFlat:zero,readDirect:zero};
   const batch=await readAllWiredStateFindings(base);
-  assert.deepEqual(batch.assignmentGaps,[{stateCode:'NC',taxBody:'NC999',shipTos:3,reason:'missing_definition'}]);
+  assert.equal(batch.assignmentGaps[0].matchDiagnostic.reason,'missing_definition');
+  assert.deepEqual(batch.assignmentGaps.map(({matchDiagnostic,...gap})=>{ assert.ok(matchDiagnostic); return gap; }),[{stateCode:'NC',taxBody:'NC999',shipTos:3,reason:'missing_definition'}]);
   const failed=await readAllWiredStateFindings({...base,readNc:async()=>{throw Error('unavailable');}});
   assert.deepEqual(failed.assignmentGaps,[]);assert.ok(failed.failedStates.includes('NC'));
 });

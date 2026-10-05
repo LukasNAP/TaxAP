@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { extractPdfTableText } from "./pdf-utils.mjs";
@@ -84,16 +85,22 @@ export async function readMinnesotaMapRates({ fetchImpl = fetchOfficial, now = n
 
 export async function readMinnesotaAplusComparison(stateDetail, { readOfficial = readMinnesotaMapRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("MN", officialSnapshot);
+  const reject = diagnostics.record;
   const byName = new Map();
   for (const rate of officialSnapshot.rates) {
     const name = normalize(rate.name);
     byName.set(name, [...(byName.get(name) ?? []), rate]);
   }
-  const result = reconcileDirectMappingAplus({ stateCode: "MN", stateDetail, matchOfficialRow: (row) => {
-    if (!/^MN\d+$/.test(row.taxBody ?? "") || row.taxBody === "MN000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "MN", stateDetail, matchOfficialRow: (row) => {
+    if (!/^MN\d+$/.test(row.taxBody ?? "") || row.taxBody === "MN000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const name = normalize(row.description).replace(/^minnesota[ -]+/, "").replace(/ co\.?$/, " county");
     const candidates = byName.get(name) ?? [];
-    if (!candidates.length || candidates.some((r) => r.ambiguousArea || !Number.isFinite(r.totalGeneralRate)) || new Set(candidates.map((r) => r.totalGeneralRate)).size !== 1) return null;
+    if (!candidates.length) return reject(row, "no_candidate", [], { lookup: name });
+    if (candidates.some(r => r.ambiguousArea)) return reject(row, "inconsistent_identity", candidates, { lookup: name });
+    if (candidates.some(r => !Number.isFinite(r.totalGeneralRate))) return reject(row, "official_rate_unavailable", candidates, { lookup: name });
+    if (new Set(candidates.map(r => r.totalGeneralRate)).size !== 1) return reject(row, "conflicting_rates", candidates, { lookup: name });
+    if (candidates.length > 1) reject(row, "multiple_candidates", candidates, { lookup: name });
     return { ...candidates[0], identityStatus: candidates.length === 1 ? "confirmed" : "ambiguous" };
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);

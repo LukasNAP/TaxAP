@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { FLORIDA_COUNTIES, readOfficialFlRates } from "./fl-rates.mjs";
 
@@ -34,15 +35,17 @@ function isFloridaMisinput(row) {
 
 export async function readFloridaAplusComparison(stateDetail, { readOfficialFlRates: readOfficial = readOfficialFlRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("FL", officialSnapshot);
+  const reject = diagnostics.record;
   const byCounty = new Map(officialSnapshot.rates.map((rate) => [rate.county, rate]));
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "FL",
       stateDetail,
       isMisinput: isFloridaMisinput,
       matchOfficialRow: (row) => {
         const county = floridaCountyForTaxBody(row);
-        return county ? byCounty.get(county) ?? null : null;
+        return county ? byCounty.get(county) ?? reject(row, "no_candidate", [], { lookup: county }) : reject(row, "scope_not_supported");
       },
     }),
     officialSnapshot,

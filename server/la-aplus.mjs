@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { readOfficialLaRates } from "./la-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
@@ -34,11 +35,18 @@ export function louisianaAssignedJurisdictions(snapshot) {
 
 export async function readLouisianaAplusComparison(stateDetail, { readOfficial = readOfficialLaRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("LA", officialSnapshot);
+  const reject = diagnostics.record;
   const byName = louisianaAssignedJurisdictions(officialSnapshot);
-  const result = reconcileDirectMappingAplus({ stateCode: "LA", stateDetail, matchOfficialRow: (row) => {
-    if (!/^LA\d+$/.test(row.taxBody ?? "") || row.taxBody === "LA000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "LA", stateDetail, matchOfficialRow: (row) => {
+    if (!/^LA\d+$/.test(row.taxBody ?? "") || row.taxBody === "LA000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const candidates = byName.get(normalize(row.description).replace(/^louisiana[ -]+/, "")) ?? [];
-    return candidates.length === 1 ? candidates[0] : null;
+    if (candidates.length === 1 && candidates[0].totalGeneralRate === null) {
+      const parishName = normalize(row.description).replace(/^louisiana[ -]+/, "").replace(/ parish$/, "");
+      const parish = officialSnapshot.parishes.find(p => normalize(p.name).replace(/ parish$/, "") === parishName);
+      reject(row, "conflicting_rates", officialSnapshot.rates.filter(r => r.parishCode === parish?.code));
+    }
+    return candidates.length === 1 ? candidates[0] : reject(row, candidates.length ? "multiple_candidates" : "no_candidate", candidates);
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot, comparisonScope: "sales" };

@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialCaRates } from "./ca-rates.mjs";
 
@@ -67,26 +68,27 @@ function isCaliforniaMisinputOrSpecialCategory(row) {
   return row.definitionStatus === "missing" || /E$/i.test(String(row.taxBody || ""));
 }
 
-function californiaOfficialRowFor(row, officialSnapshot) {
+function californiaOfficialRowFor(row, officialSnapshot, diagnostics) {
   const locality = parseCaliforniaLocality(row.description);
-  if (!locality) return null;
+  if (!locality) return diagnostics.record(row, "missing_description");
   const candidates = officialSnapshot.rates.filter((candidate) => (
     candidate.jurisdictionType === locality.jurisdictionType
     && canonicalLocality(locality.jurisdictionType === "county" ? candidate.county : candidate.name) === locality.name
   ));
   // If CDTFA has more than one same-named city (in different counties), a tax-body description
   // alone does not tell us which one A+ means.  Keep it unmatched rather than choose a county.
-  return candidates.length === 1 ? candidates[0] : null;
+  return candidates.length === 1 ? candidates[0] : diagnostics.record(row, candidates.length ? "multiple_candidates" : "no_candidate", candidates, { lookup: locality.name, jurisdictionType: locality.jurisdictionType });
 }
 
 export async function readCaliforniaAplusComparison(stateDetail, { readOfficialCaRates: readOfficial = readOfficialCaRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("CA", officialSnapshot);
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "CA",
       stateDetail,
       isMisinput: isCaliforniaMisinputOrSpecialCategory,
-      matchOfficialRow: (row) => californiaOfficialRowFor(row, officialSnapshot),
+      matchOfficialRow: (row) => californiaOfficialRowFor(row, officialSnapshot, diagnostics),
     }),
     officialSnapshot,
   };

@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readXlsxRows } from "./xlsx-utils.mjs";
@@ -50,14 +51,16 @@ export async function readUtahCombinedRates({ fetchImpl = fetchOfficial, now = n
 const normalize = (text) => String(text ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 export async function readUtahAplusComparison(stateDetail, { readOfficial = readUtahCombinedRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("UT", officialSnapshot);
+  const reject = diagnostics.record;
   const byCode = new Map();
   for (const rate of officialSnapshot.rates) byCode.set(rate.jurisdictionCode, [...(byCode.get(rate.jurisdictionCode) ?? []), rate]);
-  const result = reconcileDirectMappingAplus({ stateCode: "UT", stateDetail, matchOfficialRow: (row) => {
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "UT", stateDetail, matchOfficialRow: (row) => {
       const digits = /^UT(\d{2})(\d{3})$/.exec(row.taxBody ?? "");
-      if (!digits || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+      if (!digits || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
       const name = normalize(row.description).replace(/^utah[ -]+/, "");
       const candidates = (byCode.get(`${digits[1]}-${digits[2]}`) ?? []).filter((rate) => normalize(rate.name) === name);
-      return candidates.length === 1 ? candidates[0] : null;
+      return candidates.length === 1 ? candidates[0] : reject(row, candidates.length ? "multiple_candidates" : "no_candidate", byCode.get(`${digits[1]}-${digits[2]}`) ?? [], { lookup: name });
     } });
   result.totals.comparedShipTos = result.findings.filter((row) => row.matched && Number.isFinite(row.aplusRate)).reduce((sum, row) => sum + row.activeShipTos, 0);
   return { ...result, officialSnapshot };

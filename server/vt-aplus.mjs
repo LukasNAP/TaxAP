@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
@@ -65,15 +66,17 @@ export async function readVermontSalesRates({ fetchImpl = fetchOfficial, now = n
 
 export async function readVermontAplusComparison(stateDetail, { readOfficial = readVermontSalesRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("VT", officialSnapshot);
+  const reject = diagnostics.record;
   const byName = new Map();
   for (const rate of officialSnapshot.rates) {
     const name = normalize(rate.name);
     if (!name || byName.has(name) || ![6, 7].includes(rate.totalGeneralRate)) throw new Error("Vermont comparison inventory is ambiguous or invalid.");
     byName.set(name, rate);
   }
-  const result = reconcileDirectMappingAplus({ stateCode: "VT", stateDetail, matchOfficialRow: (row) => {
-    if (!/^VT\d+$/.test(row.taxBody ?? "") || row.taxBody === "VT000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
-    return byName.get(normalize(row.description).replace(/^vermont[ -]+/, "")) ?? null;
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "VT", stateDetail, matchOfficialRow: (row) => {
+    if (!/^VT\d+$/.test(row.taxBody ?? "") || row.taxBody === "VT000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
+    return byName.get(normalize(row.description).replace(/^vermont[ -]+/, "")) ?? reject(row, "no_candidate");
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, comparisonScope: "sales", officialSnapshot };

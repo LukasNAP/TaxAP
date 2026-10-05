@@ -1,5 +1,6 @@
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialAlRates, AL_STATE_RATE } from "./al-rates.mjs";
+import { aggregateAlMatchDiagnostic } from "./al-match-diagnostic.mjs";
 
 // AL000 (no XATXBD definition) is a misinput per the project's standing default. Codes ending in
 // "E" (equipment-tax variant, e.g. AL7049E) and any description naming a Police Jurisdiction ("PJ")
@@ -55,26 +56,46 @@ export async function readAlabamaAplusComparison(stateDetail, { readOfficialAlRa
     [...countyComponents].filter(([, components]) => components.every(value => Number.isFinite(value) && value === components[0]))
       .map(([name, components]) => [name, components[0]]),
   );
+  const diagnostics = new Map();
+  const countyRows = officialSnapshot.rates.filter(rate => rate.jurisdictionType === 'county');
+  const countyName = rate => String(rate.name).replace(/\s+COUNTY$/i, '').toUpperCase();
+  function record(row, reason, candidates = [], candidateBasis = 'locality-code') {
+    const expectedName = alExpectedNameToken(row.description);
+    diagnostics.set(row.taxBody, aggregateAlMatchDiagnostic({
+      stateCode: 'AL', reason, candidateBasis, localityCode: extractAlCode(row.taxBody), expectedName,
+      nameCheckToken: expectedName.slice(0, Math.min(6, expectedName.length)), countyHint: alCountyHint(row.description),
+      source: officialSnapshot,
+      candidates: candidates.map(rate => ({ ...rate,
+        localityCode: rate.localityCode ?? rate.jurisdictionCode,
+        countyReferences: rate.countyCode ? countyRows.filter(county => (county.localityCode ?? county.jurisdictionCode) === rate.countyCode)
+          .map(county => ({ name: county.name, localityCode: county.localityCode ?? county.jurisdictionCode, componentRate: county.componentRate })) : [],
+      })).sort((a, b) => JSON.stringify([a.localityCode, a.countyCode, a.name, a.componentRate]).localeCompare(JSON.stringify([b.localityCode, b.countyCode, b.name, b.componentRate]))),
+    }));
+  }
 
-  return {
-    ...reconcileDirectMappingAplus({
+  const reconciliation = reconcileDirectMappingAplus({
       stateCode: "AL",
       stateDetail,
       isMisinput: isAlOutOfScope,
       matchOfficialRow: (row) => {
         const code = extractAlCode(row.taxBody);
-        if (!code) return null;
+        if (!code) { record(row, 'unsupported_code'); return null; }
         const codeCandidates = byCode.get(code) ?? [];
-        if (codeCandidates.length !== 1) return codeCandidates.length ? { name: row.description, totalGeneralRate: null, identityStatus: "ambiguous" } : null;
+        if (codeCandidates.length !== 1) {
+          record(row, codeCandidates.length ? 'multiple_locality_rows' : 'locality_code_not_found', codeCandidates);
+          return codeCandidates.length ? { name: row.description, totalGeneralRate: null, identityStatus: "ambiguous" } : null;
+        }
         const csvRow = codeCandidates[0];
         const expectedToken = alExpectedNameToken(row.description);
         const nameMatches = expectedToken.length > 0 && csvRow.name.toUpperCase().includes(expectedToken.slice(0, Math.min(6, expectedToken.length)));
-        if (!nameMatches) return null; // the code number was reused for something else - don't guess
+        if (!nameMatches) { record(row, 'name_mismatch', codeCandidates); return null; } // don't guess from code alone
         const countyHint = alCountyHint(row.description);
         const countyCandidates = countyHint
           ? Object.keys(countyRatesByName).filter((name) => name.startsWith(countyHint))
           : [];
         if (countyHint !== null && (!countyHint || countyCandidates.length !== 1)) {
+          record(row, !countyHint ? 'empty_county_hint' : countyCandidates.length > 1 ? 'county_hint_ambiguous' : 'county_hint_not_found',
+            countyRows.filter(rate => countyCandidates.includes(countyName(rate))), 'county-hint');
           return { name: row.description, totalGeneralRate: null, identityStatus: countyCandidates.length > 1 ? "ambiguous" : "unresolved" };
         }
         const hintedCountyName = countyCandidates[0] ?? null;
@@ -82,9 +103,15 @@ export async function readAlabamaAplusComparison(stateDetail, { readOfficialAlRa
           const total = Number((Number(csvRow.componentRate) + countyRatesByName[hintedCountyName] + AL_STATE_RATE).toFixed(4));
           return { ...csvRow, name: `${csvRow.name} (${hintedCountyName})`, totalGeneralRate: total };
         }
+        if (csvRow.totalGeneralRate == null) record(row, 'official_rate_unavailable', codeCandidates);
         return csvRow;
       },
-    }),
-    officialSnapshot,
-  };
+    });
+  // Excluded groups also get a precise scope explanation, without changing their classification.
+  for (const row of reconciliation.misinputAssignments) {
+    record(row, row.definitionStatus === 'missing' ? 'missing_definition' : row.taxBody === 'AL000' ? 'excluded_code'
+      : /E$/.test(row.taxBody) && row.taxBody !== 'ALE' ? 'equipment_scope' : /\bPJ\b/i.test(row.description || '') ? 'police_jurisdiction_scope' : 'excluded_code', [], 'scope');
+  }
+  const attach = row => diagnostics.has(row.taxBody) ? { ...row, matchDiagnostic: diagnostics.get(row.taxBody) } : row;
+  return { ...reconciliation, findings: reconciliation.findings.map(attach), misinputAssignments: reconciliation.misinputAssignments.map(attach), officialSnapshot };
 }

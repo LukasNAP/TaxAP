@@ -1,3 +1,4 @@
+import { defaultMatchDiagnostic, aggregateMatchDiagnostic } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { hasRateDifference } from "../app/rate-comparison.ts";
 import { createHash } from "node:crypto";
@@ -396,6 +397,12 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     const aplusRate = taxBodyRates.has(bucket.taxBody) ? taxBodyRates.get(bucket.taxBody) : null;
     const rateDifference = officialRate !== null && aplusRate !== null ? Number((officialRate - aplusRate).toFixed(4)) : null;
     return {
+      ...(!consistent ? { matchDiagnostic: aggregateMatchDiagnostic({ ...defaultMatchDiagnostic("GA", { taxBody: bucket.taxBody, description: taxBodyDescriptions.get(bucket.taxBody) }, "multiple_candidates", rateSnapshot),
+        candidates: jurisdictions.flatMap(({ jurisdiction }) => rateSnapshot.rates.filter(rate =>
+          (rate.jurisdictionType === "county" && rate.jurisdictionCode === jurisdiction.fipsCounty) ||
+          (rate.jurisdictionType === "city" && rate.jurisdictionCode === jurisdiction.fipsPlace) ||
+          (rate.jurisdictionType === "special" && rate.jurisdictionCode === jurisdiction.specialCode)))
+      }) } : {}),
       taxBody: bucket.taxBody,
       description: taxBodyDescriptions.get(bucket.taxBody) ?? null,
       activeShipTos: bucket.activeShipTos,

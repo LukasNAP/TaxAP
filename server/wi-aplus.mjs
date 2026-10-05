@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
@@ -5,6 +6,8 @@ import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
 const normalize = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 export async function readWisconsinAplusComparison(stateDetail, { readOfficial = () => readOfficialSstStateRates("WI") } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("WI", officialSnapshot);
+  const reject = diagnostics.record;
   const counties = new Map();
   for (const rate of officialSnapshot.rates.filter((rate) => rate.jurisdictionType === "county")) {
     const name = normalize(rate.name).replace(/ county$/, "");
@@ -15,19 +18,19 @@ export async function readWisconsinAplusComparison(stateDetail, { readOfficial =
   const milwaukeeCities = officialSnapshot.rates.filter((rate) => rate.jurisdictionType === "city" && normalize(rate.name) === "milwaukee city");
   if (milwaukeeCities.length !== 1 || !Number.isFinite(milwaukeeCities[0].componentRate)) throw new Error("Wisconsin Milwaukee city component is missing or ambiguous.");
   return {
-    ...reconcileDirectMappingAplus({ stateCode: "WI", stateDetail, matchOfficialRow: (row) => {
-      if (!/^WI\d+$/.test(row.taxBody ?? "") || row.taxBody === "WI000" || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "WI", stateDetail, matchOfficialRow: (row) => {
+      if (!/^WI\d+$/.test(row.taxBody ?? "") || row.taxBody === "WI000" || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
       const name = normalize(row.description).replace(/^wisconsin[ -]+/, "");
       if (name === "city of milwaukee" || name === "milwaukee city") {
         const county = counties.get("milwaukee");
-        if (!county) return null;
+        if (!county) return reject(row, "no_candidate");
         return { ...milwaukeeCities[0], name: "City of Milwaukee (state, county and city)", totalGeneralRate: Number((county.totalGeneralRate + milwaukeeCities[0].componentRate).toFixed(4)) };
       }
       const countyName = /^(.*) (?:county|co\.?)$/.exec(name)?.[1];
       // The saved Milwaukee County group may include deliveries inside the city.
       // Do not certify that group against the lower county-only rate.
-      if (!countyName || countyName === "milwaukee") return null;
-      return counties.get(countyName) ?? null;
+      if (!countyName || countyName === "milwaukee") return reject(row, countyName === "milwaukee" ? "address_required" : "scope_not_supported", countyName === "milwaukee" ? [counties.get("milwaukee"), ...milwaukeeCities].filter(Boolean) : []);
+      return counties.get(countyName) ?? reject(row, "no_candidate");
     } }),
     officialSnapshot,
   };

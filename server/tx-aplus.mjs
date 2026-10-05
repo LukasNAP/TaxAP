@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialTxRates } from "./tx-rates.mjs";
 
@@ -36,20 +37,22 @@ function rateValues(rows) {
   return [...new Set(rows.map((row) => Number(row.totalGeneralRate)))];
 }
 
-function texasOfficialRowFor(row, officialSnapshot) {
+function texasOfficialRowFor(row, officialSnapshot, diagnostics) {
   const parsed = parseTexasDescription(row.description);
-  if (!parsed) return null;
+  if (!parsed) return diagnostics.record(row, "missing_description");
   const candidates = officialSnapshot.rates.filter((candidate) => officialLocalityName(candidate) === parsed.locality);
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return diagnostics.record(row, "no_candidate", [], { lookup: parsed.locality });
 
   if (parsed.countyHint) {
     const countyCandidates = candidates.filter((candidate) => normalize(candidate.county) === parsed.countyHint);
+    if (countyCandidates.length !== 1) diagnostics.record(row, countyCandidates.length ? "multiple_candidates" : "county_hint_not_found", candidates, { lookup: parsed.locality, countyHint: parsed.countyHint });
     return countyCandidates.length === 1 ? countyCandidates[0]
       : { name: row.description, totalGeneralRate: null, identityStatus: countyCandidates.length > 1 ? "ambiguous" : "unresolved" };
   }
   if (candidates.length === 1) return candidates[0];
 
   const rates = rateValues(candidates);
+  diagnostics.record(row, rates.length === 1 ? "multiple_candidates" : "conflicting_rates", candidates, { lookup: parsed.locality });
   if (rates.length === 1) {
     return { ...candidates[0], identityStatus: "ambiguous", name: `${candidates[0].name} (${candidates.length} official variants; same rate)` };
   }
@@ -72,12 +75,13 @@ function isTexasMisinput(row) {
 
 export async function readTexasAplusComparison(stateDetail, { readOfficialTxRates: readOfficial = readOfficialTxRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("TX", officialSnapshot);
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "TX",
       stateDetail,
       isMisinput: isTexasMisinput,
-      matchOfficialRow: (row) => texasOfficialRowFor(row, officialSnapshot),
+      matchOfficialRow: (row) => texasOfficialRowFor(row, officialSnapshot, diagnostics),
     }),
     officialSnapshot,
   };

@@ -1,4 +1,5 @@
 "use client";
+import { MatchingEvidence } from "./match-diagnostic-view";
 import { formatRate, formatRateText } from "./rate-format";
 import { markBatchOutage, markRetainedEvidence, type RetainedState } from "./state-retention";
 import { QueueControls, QueueSummary, AssignmentGapQueue, AssignmentReviewDetail } from "./review-queue-view";
@@ -1293,6 +1294,7 @@ export default function Home() {
           <div className="rate-comparison"><div><span>A+ rate</span><strong>{selectedFinding.aplusRate === null ? "Unavailable" : formatRate(selectedFinding.aplusRate)}</strong></div><span className="compare-arrow">→</span><div className="official-rate"><span>Official rate</span><strong>{selectedFinding.officialRate === null ? "Unavailable" : formatRate(selectedFinding.officialRate)}</strong></div></div>
           <dl className="review-facts"><div><dt>A+ tax body</dt><dd>{selectedFinding.taxBody}</dd></div><div><dt>Effective date</dt><dd>{selectedFinding.effectiveDate ?? "Not supplied by this comparison; verify in the official source"}</dd></div><div><dt>Assigned ship-tos in this finding</dt><dd>{selectedFinding.activeShipTos.toLocaleString()}</dd></div></dl>
           <JurisdictionVerificationFacts finding={{ ...selectedFinding, evidenceStatus: batchHealth.failedStates.includes(selectedFinding.stateCode) ? "stale" : selectedFinding.evidenceStatus }} />
+          {selectedFinding.matchDiagnostic && <MatchingEvidence diagnostic={selectedFinding.matchDiagnostic} />}
           <FindingShipTos key={findingDecisionKey(selectedFinding)} apiBase={apiBaseUrl()} taxBody={selectedFinding.taxBody} state={selectedFinding.stateCode} scope={"rateRiskShipTos" in selectedFinding && selectedFinding.rateRiskShipTos != null ? "rate-risk" : "all"} expectedCount={selectedFinding.activeShipTos} />
           {batchHealth.failedStates.includes(selectedFinding.stateCode) && <p className="queue-storage-warning">Current state verification is unavailable. Any retained rates below are stale; maintenance approval is blocked.</p>}
           {selectedFinding.confidence === "unverified" && <p className="queue-storage-warning">{formatRateText(selectedFinding.confidenceNote ?? "")} Verify a current, confirmed comparison before approving maintenance.</p>}

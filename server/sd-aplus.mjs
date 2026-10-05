@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
@@ -6,6 +7,8 @@ const normalize = (text) => String(text ?? "").trim().toLowerCase().replace(/\s+
 
 export async function readSouthDakotaAplusComparison(stateDetail, { readOfficial = () => readOfficialSstStateRates("SD") } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("SD", officialSnapshot);
+  const reject = diagnostics.record;
   if (officialSnapshot.stateRate !== 4.2) throw new Error("South Dakota state rate changed; review comparison scope.");
   const cities = new Map();
   for (const rate of officialSnapshot.rates) {
@@ -20,10 +23,10 @@ export async function readSouthDakotaAplusComparison(stateDetail, { readOfficial
   }
   if (!cities.size) throw new Error("South Dakota municipal inventory is empty.");
   return {
-    ...reconcileDirectMappingAplus({ stateCode: "SD", stateDetail, matchOfficialRow: (row) => {
-      if (!/^SD\d+$/.test(row.taxBody ?? "") || row.taxBody === "SD000" || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "SD", stateDetail, matchOfficialRow: (row) => {
+      if (!/^SD\d+$/.test(row.taxBody ?? "") || row.taxBody === "SD000" || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
       const name = normalize(row.description).replace(/^south dakota[ -]+/, "");
-      return cities.get(name) ?? null;
+      return cities.get(name) ?? reject(row, "no_candidate", [], { lookup: name });
     } }),
     officialSnapshot,
   };

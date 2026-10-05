@@ -1,3 +1,4 @@
+import { defaultMatchDiagnostic, assignmentGuardReason } from './match-diagnostic.mjs';
 import { hasRateDifference } from "../app/rate-comparison.ts";
 import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
 
@@ -10,7 +11,7 @@ import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
  * lookup table, etc. - see docs/state-rollout.md). This function only aggregates, excludes, and
  * reports; it never decides *how* to match, and never guesses when matchOfficialRow returns null.
  */
-export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOfficialRow, isMisinput = () => false }) {
+export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOfficialRow, isMisinput = () => false, diagnostics, officialSnapshot }) {
   if (stateDetail?.stateCode !== stateCode) {
     throw new Error(`${stateCode} reconciliation requires an A+ state-detail snapshot for the same state.`);
   }
@@ -21,7 +22,7 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
   const rows = stateDetail.taxBodies ?? [];
   const crossStateAssignments = rows.filter((row) => describesOtherJurisdiction(row, stateCode));
   const nonCrossState = rows.filter((row) => !describesOtherJurisdiction(row, stateCode));
-  const misinputAssignments = nonCrossState.filter((row) => isMisinput(row));
+  const misinputAssignments = nonCrossState.filter((row) => isMisinput(row)).map(row => ({ ...row, matchDiagnostic: defaultMatchDiagnostic(stateCode, row, assignmentGuardReason(row), officialSnapshot) }));
   const comparableRows = nonCrossState.filter((row) => !isMisinput(row));
 
   const findings = comparableRows.map((row) => {
@@ -33,6 +34,9 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
     const aplusRate = row.currentRate === null || row.currentRate === undefined ? null : Number(row.currentRate);
     const officialRate = hasResolvedRate ? Number(official.totalGeneralRate) : null;
     const rateDifference = officialRate !== null && Number.isFinite(aplusRate) ? Number((officialRate - aplusRate).toFixed(4)) : null;
+    const matchDiagnostic = diagnostics?.get(row) ?? (!hasResolvedRate
+      ? defaultMatchDiagnostic(stateCode, row, row.definitionStatus === "missing" ? "missing_definition" : official ? "official_rate_unavailable" : "no_candidate", officialSnapshot)
+      : !Number.isFinite(aplusRate) ? defaultMatchDiagnostic(stateCode, row, "missing_aplus_rate", officialSnapshot) : null);
     return {
       taxBody: row.taxBody,
       definitionStatus: row.definitionStatus,
@@ -46,6 +50,7 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
       matched: hasResolvedRate,
       identityStatus: official?.identityStatus ?? (official ? "confirmed" : "unresolved"),
       locationStatus: "not_checked",
+      ...(matchDiagnostic ? { matchDiagnostic } : {}),
     };
   });
 

@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialAzRates, AZ_CITY_COUNTY } from "./az-rates.mjs";
 
@@ -44,26 +45,28 @@ function parseAzLocality(description) {
 
 export async function readArizonaAplusComparison(stateDetail, { readOfficialAzRates: readOfficial = readOfficialAzRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("AZ", officialSnapshot);
+  const reject = diagnostics.record;
   const byCounty = new Map(officialSnapshot.rates.filter((r) => r.jurisdictionType === "county").map((r) => [r.name, r]));
   const byCity = new Map(officialSnapshot.rates.filter((r) => r.jurisdictionType === "city").map((r) => [r.name, r]));
 
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "AZ",
       stateDetail,
       isMisinput: isAzMisinput,
       matchOfficialRow: (row) => {
         const parsed = parseAzLocality(row.description);
-        if (parsed.jurisdictionType === "county") return byCounty.get(parsed.countyName) ?? null;
+        if (parsed.jurisdictionType === "county") return byCounty.get(parsed.countyName) ?? reject(row, "no_candidate", [], { lookup: parsed.countyName });
         const cityRow = byCity.get(parsed.cityName);
-        if (!cityRow) return null;
+        if (!cityRow) return reject(row, "no_candidate", [], { lookup: parsed.cityName });
         // Always recompute the total fresh rather than trusting server/az-rates.mjs's own
         // precomputed total, which only used the static AZ_CITY_COUNTY crosswalk - a code whose
         // own description names its real county explicitly (e.g. "Taylor Navajo Co") takes
         // priority over that crosswalk, and may resolve a county the crosswalk doesn't have yet.
         const countyName = parsed.countyName ?? cityRow.county;
         const countyRow = countyName ? byCounty.get(countyName) : null;
-        if (!countyRow) return { ...cityRow, totalGeneralRate: null };
+        if (!countyRow) { reject(row, "county_hint_not_found", [cityRow], { countyHint: countyName ?? "" }); return { ...cityRow, totalGeneralRate: null }; }
         const total = Number((Number(countyRow.totalGeneralRate) + Number(cityRow.componentRate)).toFixed(4));
         return { ...cityRow, name: `${cityRow.name} (${countyName})`, totalGeneralRate: total };
       },

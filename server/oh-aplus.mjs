@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 
@@ -40,6 +41,8 @@ function ohioTransitSurchargeCode(taxBody) {
 
 export async function readOhioAplusComparison(stateDetail, { readOfficialSstStateRates: readOfficial = readOfficialSstStateRates } = {}) {
   const officialSnapshot = await readOfficial("OH");
+  const diagnostics = createMatchDiagnostics("OH", officialSnapshot);
+  const reject = diagnostics.record;
   const byCounty = new Map(
     officialSnapshot.rates
       .filter((rate) => rate.jurisdictionType === "county")
@@ -52,13 +55,13 @@ export async function readOhioAplusComparison(stateDetail, { readOfficialSstStat
   );
 
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "OH",
       stateDetail,
       isMisinput: isOhioMisinput,
       matchOfficialRow: (row) => {
         const county = byCounty.get(normalizeOhioCountyName(row.description));
-        if (!county) return null;
+        if (!county) return reject(row, "no_candidate");
         const surcharge = bySpecialCode.get(ohioTransitSurchargeCode(row.taxBody));
         if (!surcharge) return county;
         return {

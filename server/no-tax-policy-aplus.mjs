@@ -1,3 +1,4 @@
+import { defaultMatchDiagnostic, assignmentGuardReason } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
 
@@ -18,7 +19,11 @@ export function reconcileConfirmedNoTax(stateCode, stateDetail) {
   ).map((row) => row.taxBody));
   // Only non-cross-state rows in the reconciler's findings can qualify.
   const policyFindings = result.findings.filter((r) => approved.has(r.taxBody));
-  result.findings = result.findings.filter((r) => !approved.has(r.taxBody));
+  result.findings = result.findings.filter((r) => !approved.has(r.taxBody)).map(r => {
+    const row = stateDetail.taxBodies.find(body => body.taxBody === r.taxBody);
+    const reason = assignmentGuardReason(row);
+    return { ...r, matchDiagnostic: defaultMatchDiagnostic(stateCode, row, reason === "unsupported_assignment" ? "policy_not_met" : reason) };
+  });
   result.totals.comparedShipTos = 0;
   result.totals.unmatchedShipTos = result.findings.reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   result.totals.intentionalNoTaxShipTos = policyFindings.reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);

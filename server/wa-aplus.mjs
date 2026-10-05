@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
@@ -47,13 +48,15 @@ export async function readWashingtonGeneralRates({ fetchImpl = fetchOfficial, no
 
 export async function readWashingtonAplusComparison(stateDetail, { readOfficial = readWashingtonGeneralRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("WA", officialSnapshot);
+  const reject = diagnostics.record;
   const byCode = new Map(officialSnapshot.rates.map((rate) => [rate.jurisdictionCode, rate]));
   if (byCode.size !== officialSnapshot.rates.length) throw new Error("Washington official location codes are duplicated.");
   return {
-    ...reconcileDirectMappingAplus({ stateCode: "WA", stateDetail, matchOfficialRow: (row) => {
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "WA", stateDetail, matchOfficialRow: (row) => {
       const code = /^WA(\d{4})$/.exec(row.taxBody ?? "")?.[1];
-      if (!code || !row.description || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row) || /\b(?:motor|vehicle|lodging|hotel|rental|food|equipment|credit)\b/i.test(row.description)) return null;
-      return byCode.get(code) ?? null;
+      if (!code || !row.description || row.currentRate == null || row.definitionStatus === "missing" || isRetiredTaxBody(row) || /\b(?:motor|vehicle|lodging|hotel|rental|food|equipment|credit)\b/i.test(row.description)) return reject(row, assignmentGuardReason(row));
+      return byCode.get(code) ?? reject(row, "no_candidate", [], { lookup: code });
     } }),
     officialSnapshot,
   };

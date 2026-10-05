@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialCoRates } from "./co-rates.mjs";
 
@@ -39,17 +40,17 @@ function parseColoradoDescription(description) {
   return { name: canonicalName(raw), county: null };
 }
 
-function coloradoOfficialRowFor(row, officialSnapshot) {
+function coloradoOfficialRowFor(row, officialSnapshot, diagnostics) {
   const numericCode = String(row.taxBody || "").match(/^CO(\d{6})$/i)?.[1];
-  if (numericCode) return officialSnapshot.rates.find((rate) => rate.jurisdictionCode === numericCode) ?? null;
+  if (numericCode) return officialSnapshot.rates.find((rate) => rate.jurisdictionCode === numericCode) ?? diagnostics.record(row, "no_candidate", [], { lookup: numericCode });
 
   const parsed = parseColoradoDescription(row.description);
-  if (!parsed) return null;
+  if (!parsed) return diagnostics.record(row, "scope_not_supported");
   const candidates = officialSnapshot.rates.filter((rate) => (
     officialBaseName(rate.name) === parsed.name
     && (!parsed.county || canonicalName(rate.county) === parsed.county)
   ));
-  return candidates.length === 1 ? candidates[0] : null;
+  return candidates.length === 1 ? candidates[0] : diagnostics.record(row, candidates.length ? "multiple_candidates" : "no_candidate", candidates, { lookup: parsed.name, countyHint: parsed.county ?? "" });
 }
 
 function isColoradoMisinputOrSpecialCategory(row) {
@@ -61,12 +62,13 @@ function isColoradoMisinputOrSpecialCategory(row) {
 
 export async function readColoradoAplusComparison(stateDetail, { readOfficialCoRates: readOfficial = readOfficialCoRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("CO", officialSnapshot);
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "CO",
       stateDetail,
       isMisinput: isColoradoMisinputOrSpecialCategory,
-      matchOfficialRow: (row) => coloradoOfficialRowFor(row, officialSnapshot),
+      matchOfficialRow: (row) => coloradoOfficialRowFor(row, officialSnapshot, diagnostics),
     }),
     officialSnapshot,
   };

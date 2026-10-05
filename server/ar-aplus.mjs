@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { extractPdfTableText } from "./pdf-utils.mjs";
@@ -61,18 +62,20 @@ export async function readArkansasCombinedRates({ fetchImpl = fetchOfficial, now
 const normalize = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 export async function readArkansasAplusComparison(stateDetail, { readOfficial = readArkansasCombinedRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("AR", officialSnapshot);
+  const reject = diagnostics.record;
   const byCode = new Map();
   for (const rate of officialSnapshot.rates) {
     if (byCode.has(rate.jurisdictionCode)) throw new Error("Arkansas comparison inventory has duplicate codes.");
     byCode.set(rate.jurisdictionCode, rate);
   }
-  const result = reconcileDirectMappingAplus({ stateCode: "AR", stateDetail, matchOfficialRow: (row) => {
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "AR", stateDetail, matchOfficialRow: (row) => {
     const code = /^AR(\d{2})(\d{2})$/.exec(row.taxBody ?? "");
-    if (!code || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || isRetiredTaxBody(row) || row.definitionStatus === "missing") return null;
+    if (!code || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || isRetiredTaxBody(row) || row.definitionStatus === "missing") return reject(row, assignmentGuardReason(row));
     const rate = byCode.get(`${code[1]}-${code[2]}`);
-    if (!rate || !Number.isFinite(rate.totalGeneralRate)) return null;
+    if (!rate || !Number.isFinite(rate.totalGeneralRate)) return reject(row, rate ? "official_rate_unavailable" : "no_candidate", rate ? [rate] : []);
     const name = normalize(row.description).replace(/^arkansas[ -]+/, "").replace(/ co\.?$/, " county");
-    return name === normalize(rate.name).replace(/ \(city\)$/, "") ? rate : null;
+    return name === normalize(rate.name).replace(/ \(city\)$/, "") ? rate : reject(row, "name_mismatch", [rate]);
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot };

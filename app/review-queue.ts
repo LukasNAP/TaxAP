@@ -1,4 +1,5 @@
 import type { JurisdictionFinding } from './dashboard-findings.ts';
+import type { MatchDiagnostic } from './match-diagnostic.ts';
 export const gapLabels = {
   missing_definition: 'Tax-body definition missing',
   missing_rate: 'A+ rate unavailable',
@@ -8,7 +9,7 @@ export const gapLabels = {
   cross_state: 'State or country needs review',
   unknown: 'Comparison incomplete',
 };
-export type AssignmentGap = { stateCode: string; taxBody: string | null; taxBodyDescription?: string; shipTos: number; reason: keyof typeof gapLabels };
+export type AssignmentGap = { stateCode: string; taxBody: string | null; taxBodyDescription?: string; shipTos: number; reason: keyof typeof gapLabels; matchDiagnostic?: MatchDiagnostic };
 export const gapGuidance = {
   missing_definition: { why: 'The assigned tax body has no available A+ definition, so TaxAP cannot compare its rate.', next: 'Confirm the assigned tax body and its definition in A+ before reviewing the official rate.' },
   missing_rate: { why: 'TaxAP could not read a configured A+ rate for this assignment.', next: 'Check the tax-body definition and intended rate in A+. Then refresh the comparison.' },

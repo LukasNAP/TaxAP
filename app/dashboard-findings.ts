@@ -1,3 +1,4 @@
+import type { MatchDiagnostic } from './match-diagnostic.ts';
 // Generalizes the dashboard's rate-change inbox to accept any state's A+-vs-official comparison,
 // instead of the North Carolina-only shape it started with. NC's own comparison logic in page.tsx
 // is untouched; this module only defines the shared output shape and adapts other states into it.
@@ -11,6 +12,7 @@ export type ComparisonStatus = "matched" | "recent-match" | "mismatch" | "upcomi
 export type FindingConfidence = "confirmed" | "unverified";
 
 export type JurisdictionFinding = JurisdictionVerification & {
+  matchDiagnostic?: MatchDiagnostic;
   evidenceStatus?: "stale";
   evidenceRetrievedAt?: string;
   id: string;
@@ -30,6 +32,7 @@ export type JurisdictionFinding = JurisdictionVerification & {
 };
 
 export type GaTaxBodyFindingInput = JurisdictionVerification & {
+  matchDiagnostic?: MatchDiagnostic;
   taxBody: string;
   description: string | null;
   activeShipTos: number;
@@ -75,6 +78,7 @@ export function gaFindingsFromReconciliation(
       stateCode: "GA",
       jurisdictionLabel: georgiaJurisdictionLabel(row),
       taxBody: row.taxBody,
+      ...(row.matchDiagnostic ? { matchDiagnostic: row.matchDiagnostic } : {}),
       officialRate: row.officialRate,
       aplusRate: row.aplusRate,
       rateDifference: row.rateDifference,
@@ -130,6 +134,7 @@ export function flatStateFindingsFromReconciliation(
 }
 
 export type DirectMappingFindingInput = JurisdictionVerification & {
+  matchDiagnostic?: MatchDiagnostic;
   taxBody: string;
   description: string | null;
   jurisdictionLabel: string;
@@ -167,6 +172,7 @@ export function directMappingFindingsFromReconciliation(
       stateCode: reconciliation.stateCode,
       jurisdictionLabel: reconciliation.comparisonScope === "sales" ? `${finding.jurisdictionLabel} (sales tax)` : finding.jurisdictionLabel,
       taxBody: finding.taxBody,
+      ...(finding.matchDiagnostic ? { matchDiagnostic: finding.matchDiagnostic } : {}),
       officialRate: finding.officialRate,
       aplusRate: finding.aplusRate,
       rateDifference: finding.rateDifference,

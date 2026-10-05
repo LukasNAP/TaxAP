@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readXlsxRows } from "./xlsx-utils.mjs";
@@ -43,19 +44,21 @@ export async function readKansasCombinedRates({ fetchImpl = fetchOfficial, now =
 const normalize = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 export async function readKansasAplusComparison(stateDetail, { readOfficial = readKansasCombinedRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("KS", officialSnapshot);
+  const reject = diagnostics.record;
   const byName = new Map();
   for (const rate of officialSnapshot.rates) {
     const name = normalize(rate.name);
     byName.set(name, [...(byName.get(name) ?? []), rate]);
   }
-  const result = reconcileDirectMappingAplus({ stateCode: "KS", stateDetail, matchOfficialRow: (row) => {
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "KS", stateDetail, matchOfficialRow: (row) => {
     const code = /^KS(\d+|[A-Z0-9]{5})$/.exec(row.taxBody ?? "")?.[1];
-    if (!code || row.taxBody === "KS000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+    if (!code || row.taxBody === "KS000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const name = normalize(row.description).replace(/^kansas[ -]+/, "").replace(/ co\.?$/, " county");
     const candidates = byName.get(name) ?? [];
-    if (candidates.length !== 1) return null;
+    if (candidates.length !== 1) return reject(row, candidates.length ? "multiple_candidates" : "no_candidate", candidates);
     const rate = candidates[0];
-    if (!Number.isFinite(rate.totalGeneralRate) || (rate.specialDistrict && code !== rate.jurisdictionCode) || (/[^0-9]/.test(code) && code !== rate.jurisdictionCode)) return null;
+    if (!Number.isFinite(rate.totalGeneralRate) || (rate.specialDistrict && code !== rate.jurisdictionCode) || (/[^0-9]/.test(code) && code !== rate.jurisdictionCode)) return reject(row, !Number.isFinite(rate.totalGeneralRate) ? "official_rate_unavailable" : "scope_not_supported", [rate]);
     return rate;
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);

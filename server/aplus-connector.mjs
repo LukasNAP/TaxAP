@@ -1,3 +1,4 @@
+import { defaultMatchDiagnostic } from './match-diagnostic.mjs';
 import { createSharedPoolManager } from "./shared-sql-pool.mjs";
 import { reviewComparison, validateApproval } from "./review-validation.mjs";
 import { findingDecisionKey } from "../app/finding-review.ts";
@@ -821,12 +822,13 @@ export async function readAllWiredStateFindings({
   if (nc && !failures.has("NC")) {
     const officialByCode = new Map(nc.officialSnapshot.rates.map((row) => [row.taxBody, row.officialRate]));
     const configuredByCode = new Map(nc.aplusSnapshot.standardRows.map((row) => [row.taxBody, row.currentRate]));
-    addCheck({ stateCode: "NC", totals: { activeShipTos: nc.stateDetail.activeShipTos },
-      findings: nc.stateDetail.taxBodies.map((row) => ({ taxBody: row.taxBody, definitionStatus: row.definitionStatus, activeShipTos: row.activeShipTos,
+    addCheck({ stateCode: "NC", officialSnapshot: nc.officialSnapshot, totals: { activeShipTos: nc.stateDetail.activeShipTos },
+      findings: nc.stateDetail.taxBodies.map((row) => ({ description: row.description,
+        ...(!officialByCode.has(row.taxBody) || !Number.isFinite(configuredByCode.get(row.taxBody)) ? { matchDiagnostic: defaultMatchDiagnostic("NC", row, row.definitionStatus === "missing" ? "missing_definition" : !officialByCode.has(row.taxBody) ? "no_candidate" : "missing_aplus_rate", nc.officialSnapshot) } : {}), taxBody: row.taxBody, definitionStatus: row.definitionStatus, activeShipTos: row.activeShipTos,
         matched: officialByCode.has(row.taxBody), officialRate: officialByCode.get(row.taxBody), aplusRate: configuredByCode.get(row.taxBody) })) });
   } else failedStates.push("NC");
   if (ga && !failures.has("GA")) {
-    addCheck({ stateCode: "GA", totals: ga.totals,
+    addCheck({ stateCode: "GA", totals: ga.totals, unmatchedReasons: ga.unmatchedReasons, ambiguousReasons: ga.ambiguousReasons, officialSnapshot: { sourceUrl: ga.rateFileUrl, retrievedAt: ga.rateRetrievedAt, sourceHash: ga.rateSourceHash },
       findings: ga.taxBodyFindings.map((row) => ({ ...row, activeShipTos: row.matchedShipTos, matched: row.jurisdictionAssignmentConsistent })) });
   } else failedStates.push("GA");
   const currentChecks = stateChecks.filter(check => !failures.has(check.stateCode));

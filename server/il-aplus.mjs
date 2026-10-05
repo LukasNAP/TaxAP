@@ -1,9 +1,12 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { readOfficialIlRates } from "./il-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
 
 export async function readIllinoisAplusComparison(stateDetail, { readOfficial = readOfficialIlRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("IL", officialSnapshot);
+  const reject = diagnostics.record;
   if (!Array.isArray(officialSnapshot.addressOverrideLocationIds)) throw new Error("Illinois requires address-override identities before matching.");
   const exact = new Map();
   const prefixes = new Map();
@@ -21,13 +24,13 @@ export async function readIllinoisAplusComparison(stateDetail, { readOfficial = 
   }
   for (const id of officialSnapshot.addressOverrideLocationIds) add(id, null);
   return {
-    ...reconcileDirectMappingAplus({ stateCode: "IL", stateDetail, matchOfficialRow: (row) => {
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "IL", stateDetail, matchOfficialRow: (row) => {
       const digits = /^IL(\d{7,8})$/.exec(row.taxBody ?? "")?.[1];
-      if (!digits || row.currentRate == null || !row.description || row.definitionStatus === "missing" || isRetiredTaxBody(row) || /\b(?:equipment|grocery|food|drug|vehicle|lodging|credit)\b/i.test(row.description)) return null;
+      if (!digits || row.currentRate == null || !row.description || row.definitionStatus === "missing" || isRetiredTaxBody(row) || /\b(?:equipment|grocery|food|drug|vehicle|lodging|credit)\b/i.test(row.description)) return reject(row, assignmentGuardReason(row));
       const candidates = digits.length === 8 ? [digits] : prefixes.get(digits) ?? [];
-      if (candidates.length !== 1) return null;
+      if (candidates.length !== 1) return reject(row, candidates.length ? "multiple_candidates" : "no_candidate", candidates.map(code => exact.get(code)).filter(Boolean), { lookup: digits });
       const rate = exact.get(candidates[0]);
-      if (!rate || (rate.beginDate && rate.beginDate > officialSnapshot.asOfDate)) return null;
+      if (!rate || (rate.beginDate && rate.beginDate > officialSnapshot.asOfDate)) return reject(row, !rate ? exact.has(candidates[0]) ? "address_required" : "no_candidate" : "future_rate", rate ? [rate] : [], { lookup: digits });
       return rate;
     } }),
     officialSnapshot,

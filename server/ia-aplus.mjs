@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readXlsxRows } from "./xlsx-utils.mjs";
@@ -68,6 +69,8 @@ export async function readIowaSalesRates({ fetchImpl = fetchOfficial, now = new 
 
 export async function readIowaAplusComparison(stateDetail, { readOfficial = readIowaSalesRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("IA", officialSnapshot);
+  const reject = diagnostics.record;
   const counties = new Map(), cities = new Map();
   for (const rate of officialSnapshot.rates) {
     counties.set(rate.county, [...(counties.get(rate.county) ?? []), rate]);
@@ -77,13 +80,19 @@ export async function readIowaAplusComparison(stateDetail, { readOfficial = read
     }
   }
   const uniqueTotal = (rows, name) => rows?.length && rows.every((r) => Number.isFinite(r.totalGeneralRate) && r.totalGeneralRate === rows[0].totalGeneralRate) ? { name, totalGeneralRate: rows[0].totalGeneralRate } : null;
-  const result = reconcileDirectMappingAplus({ stateCode: "IA", stateDetail, matchOfficialRow: (row) => {
-    if (!/^IA\d+$/.test(row.taxBody ?? "") || row.taxBody === "IA000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "IA", stateDetail, matchOfficialRow: (row) => {
+    if (!/^IA\d+$/.test(row.taxBody ?? "") || row.taxBody === "IA000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const name = normalize(row.description).replace(/^iowa[ -]+/, "");
     const county = name.match(/^(.+) (?:county|co\.?)$/)?.[1];
-    if (county) return uniqueTotal(counties.get(county), `${county} County`);
+    if (county) {
+      const candidates = counties.get(county) ?? [];
+      const total = uniqueTotal(candidates, `${county} County`);
+      if (!total) reject(row, !candidates.length ? "no_candidate" : candidates.some(r => !Number.isFinite(r.totalGeneralRate)) ? "official_rate_unavailable" : "conflicting_rates", candidates, { lookup: county, jurisdictionType: "county" });
+      return total;
+    }
     const cityCandidates = cities.get(name);
     const rate = uniqueTotal(cityCandidates, name);
+    if (!rate || cityCandidates.length > 1) reject(row, !cityCandidates?.length ? "no_candidate" : cityCandidates.some(r => !Number.isFinite(r.totalGeneralRate)) ? "official_rate_unavailable" : rate ? "multiple_candidates" : "conflicting_rates", cityCandidates ?? [], { lookup: name, jurisdictionType: "city" });
     return rate ? { ...rate, identityStatus: cityCandidates.length === 1 ? "confirmed" : "ambiguous" } : null;
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);

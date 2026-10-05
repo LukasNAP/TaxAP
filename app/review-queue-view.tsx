@@ -1,6 +1,7 @@
 "use client";
 import { assignmentTitle, gapGuidance, gapLabels, initialQueueFilters, type AssignmentGap, type QueueFilters } from './review-queue';
 import { formatRate } from './rate-format';
+import { MatchingEvidence } from './match-diagnostic-view';
 import { STATE_NAME_BY_CODE } from './tax-body-policy';
 export function QueueControls({ filters, onChange }: { filters: QueueFilters; onChange: (filters: QueueFilters) => void }) {
   return <section className="review-decision" aria-label="Review queue filters"><div className="review-form-grid">
@@ -35,9 +36,11 @@ export function AssignmentReviewDetail({ gap, status, currentRow }: { gap: Assig
   return <section className="assignment-review-detail" aria-labelledby="assignment-review-detail-title">
     <span className="section-label">Selected assignment group</span><h3 id="assignment-review-detail-title">{gapLabels[gap.reason]}</h3>
     <dl className="review-facts"><div><dt>State</dt><dd>{STATE_NAME_BY_CODE.get(gap.stateCode) ?? gap.stateCode}</dd></div><div><dt>A+ tax body</dt><dd>{gap.taxBody ?? 'Not supplied for this aggregate'}</dd></div><div><dt>A+ description</dt><dd>{currentRow?.description || gap.taxBodyDescription || 'Not supplied'}</dd></div><div><dt>Affected ship-tos in the batch</dt><dd>{gap.shipTos.toLocaleString()}</dd></div>{currentRow && <div><dt>Configured A+ rate</dt><dd>{currentRow.currentRate === null ? 'Unavailable' : formatRate(currentRow.currentRate)}</dd></div>}</dl>
-    <h4>Why it needs review</h4><p>{guidance.why}</p>
-    <h4>What to check next</h4><p>{guidance.next} TaxAP does not update A+.</p>
-    {(gap.reason==='ambiguous_jurisdiction'||gap.reason==='unresolved_jurisdiction') && <p>Candidate jurisdictions were not supplied for this group. Use the official jurisdiction records and source links below; TaxAP has not selected a candidate.</p>}
+    {gap.matchDiagnostic ? <MatchingEvidence diagnostic={gap.matchDiagnostic} /> : <>
+      <h4>Why it needs review</h4><p>{guidance.why}</p>
+      <h4>What to check next</h4><p>{guidance.next} TaxAP does not update A+.</p>
+      {(gap.reason==='ambiguous_jurisdiction'||gap.reason==='unresolved_jurisdiction') && <p>Candidate jurisdictions were not supplied for this group. Use the official jurisdiction records and source links below; TaxAP has not selected a candidate. Refresh the main queue to load any newly available matching evidence.</p>}
+    </>}
     {status==='loading' && <p role="status">Loading the current tax-body definition and state evidence…</p>}
     {status==='error' && <p role="alert">Current state evidence is unavailable. This group’s reason and count come from the last returned batch.</p>}
     <p className="assignment-detail-note">The reason and affected count describe the batch that opened this review. Refresh the main queue after investigating to see whether the issue remains. State evidence below covers the whole state.</p>

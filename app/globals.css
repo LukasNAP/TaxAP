@@ -758,7 +758,16 @@ footer { display: flex; justify-content: space-between; padding: 26px 2px 0; col
 .assignment-review-detail h4 { margin: 20px 0 6px; }
 .assignment-review-detail p { color: var(--ap-dgray); font-size: 13px; line-height: 1.65; }
 .assignment-review-detail .assignment-detail-note { font-size: 12px; }
+.al-candidate-table { min-width: 560px; }
+.al-candidate-table td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+.al-candidate-table td small { display: block; margin-top: 6px; line-height: 1.55; }
+.al-match-evidence .official-source-links { flex-wrap: wrap; }
 @media (max-width: 680px) {
+  .al-candidate-table { min-width: 0; }
+  .al-candidate-table thead { display: none; }
+  .al-candidate-table tr { display: block; padding: 12px 0; border-bottom: 1px solid var(--ap-white); }
+  .al-candidate-table td { display: block; border: 0; padding: 6px; }
+  .al-candidate-table td::before { content: attr(data-label); display: block; font-weight: var(--ap-weight-bold); font-size: 11px; margin-bottom: 5px; }
   .queue-summary { grid-template-columns: 1fr; gap: 8px; }
   .queue-summary > div { display: flex; align-items: center; gap: 12px; }
   .assignment-review-card { grid-template-columns: 28px minmax(0, 1fr) 12px; gap: 10px; padding: 18px; }

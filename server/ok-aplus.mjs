@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
@@ -78,15 +79,17 @@ export async function readOklahomaCombinedRates({ fetchImpl = fetchOfficial, rea
 const normalize = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 export async function readOklahomaAplusComparison(stateDetail, { readOfficial = readOklahomaCombinedRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("OK", officialSnapshot);
+  const reject = diagnostics.record;
   const byCode = new Map(officialSnapshot.rates.map((r) => [r.jurisdictionCode, r]));
   if (byCode.size !== officialSnapshot.rates.length) throw new Error("Oklahoma comparison codes are duplicated.");
-  const result = reconcileDirectMappingAplus({ stateCode: "OK", stateDetail, matchOfficialRow: (row) => {
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "OK", stateDetail, matchOfficialRow: (row) => {
     const code = /^OK(\d{4})$/.exec(row.taxBody ?? "")?.[1];
-    if (!code || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || isRetiredTaxBody(row) || row.definitionStatus === "missing") return null;
+    if (!code || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || isRetiredTaxBody(row) || row.definitionStatus === "missing") return reject(row, assignmentGuardReason(row));
     const rate = byCode.get(code);
-    if (!rate || !Number.isFinite(rate.totalGeneralRate)) return null;
+    if (!rate || !Number.isFinite(rate.totalGeneralRate)) return reject(row, rate ? "official_rate_unavailable" : "no_candidate", rate ? [rate] : []);
     const name = normalize(row.description).replace(/^oklahoma[ -]+/, "").replace(/ co\.?$/, " county");
-    return name === normalize(rate.name) ? rate : null;
+    return name === normalize(rate.name) ? rate : reject(row, "name_mismatch", [rate]);
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot };

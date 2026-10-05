@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
@@ -46,17 +47,19 @@ export async function readTennesseeCombinedRates({ fetchImpl = fetchOfficial, re
 
 export async function readTennesseeAplusComparison(stateDetail, { readOfficial = readTennesseeCombinedRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("TN", officialSnapshot);
+  const reject = diagnostics.record;
   const byCode = new Map();
   for (const rate of officialSnapshot.rates) byCode.set(rate.jurisdictionCode, [...(byCode.get(rate.jurisdictionCode) ?? []), rate]);
-  const result = reconcileDirectMappingAplus({ stateCode: "TN", stateDetail, matchOfficialRow: (row) => {
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "TN", stateDetail, matchOfficialRow: (row) => {
     const code = /^TN(\d{4})$/.exec(row.taxBody ?? "")?.[1];
-    if (!code || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+    if (!code || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const candidates = byCode.get(code) ?? [];
-    if (candidates.length !== 1 || !Number.isFinite(candidates[0].totalGeneralRate)) return null;
+    if (candidates.length !== 1 || !Number.isFinite(candidates[0].totalGeneralRate)) return reject(row, !candidates.length ? "no_candidate" : candidates.length > 1 ? "multiple_candidates" : "official_rate_unavailable", candidates);
     const rate = candidates[0];
     const assigned = normalize(row.description).replace(/^tennessee[ -]+/, "").replace(/ co\.?$/, " county");
     const official = normalize(rate.name).replace(/ (?:city|town)$/, "");
-    return assigned === official ? rate : null;
+    return assigned === official ? rate : reject(row, "name_mismatch", [rate]);
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot };

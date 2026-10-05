@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { createHash } from "node:crypto";
 import { readOfficialIdRates, IDAHO_TAX_COMMISSION_CITY_TAX_URL } from "./id-rates.mjs";
@@ -70,16 +71,20 @@ export async function readIdahoSalesAreas({ fetchImpl = fetchOfficial, readBase 
 
 export async function readIdahoAplusComparison(stateDetail, { readOfficial = readIdahoSalesAreas } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("ID", officialSnapshot);
+  const reject = diagnostics.record;
   const byName = new Map();
   for (const rate of officialSnapshot.rates) {
     const name = normalize(rate.name);
     if (!name || byName.has(name) || ![null, 6].includes(rate.totalGeneralRate)) throw new Error("Idaho comparison inventory is ambiguous.");
     byName.set(name, rate);
   }
-  const result = reconcileDirectMappingAplus({ stateCode: "ID", stateDetail, matchOfficialRow: (row) => {
-    if (!/^ID\d+$/.test(row.taxBody ?? "") || row.taxBody === "ID000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return null;
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "ID", stateDetail, matchOfficialRow: (row) => {
+    if (!/^ID\d+$/.test(row.taxBody ?? "") || row.taxBody === "ID000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const name = normalize(row.description).replace(/^idaho[ -]+/, "").replace(/ co\.?$/, " county");
-    return byName.get(name) ?? null;
+    const rate = byName.get(name);
+    if (rate && rate.totalGeneralRate === null) reject(row, "address_required", [rate], { lookup: name });
+    return rate ?? reject(row, "no_candidate", [], { lookup: name });
   } });
   result.totals.comparedShipTos = result.findings.filter((r) => r.matched).reduce((sum, r) => sum + Number(r.activeShipTos || 0), 0);
   return { ...result, officialSnapshot, comparisonScope: "sales" };

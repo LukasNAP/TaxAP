@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialNyRates } from "./ny-rates.mjs";
 
@@ -37,24 +38,26 @@ function isNyMisinput(row) {
 
 export async function readNewYorkAplusComparison(stateDetail, { readOfficialNyRates: readOfficial = readOfficialNyRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("NY", officialSnapshot);
+  const reject = diagnostics.record;
   const byKey = new Map(officialSnapshot.rates.map((rate) => {
     const name = rate.jurisdictionType === "city" ? String(rate.name).replace(/\s+\(city\)$/i, "") : rate.name;
     return [`${rate.jurisdictionType}|${name}`, rate];
   }));
 
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "NY",
       stateDetail,
       isMisinput: isNyMisinput,
       matchOfficialRow: (row) => {
         const parsed = parseNyLocality(row.description);
-        if (!parsed) return null;
+        if (!parsed) return reject(row, "missing_description");
         const direct = byKey.get(`${parsed.jurisdictionType}|${parsed.bareName}`);
         if (direct) return direct;
         // Fallback path only fires when neither County/City/Co./Cit suffix was present at all -
         // try the county list too, in case a future no-suffix code turns out to be a county.
-        return parsed.noSuffixFallback ? byKey.get(`county|${parsed.bareName}`) ?? null : null;
+        return parsed.noSuffixFallback ? byKey.get(`county|${parsed.bareName}`) ?? reject(row, "no_candidate", [], { lookup: parsed.bareName }) : reject(row, "no_candidate", [], { lookup: parsed.bareName, jurisdictionType: parsed.jurisdictionType });
       },
     }),
     officialSnapshot,

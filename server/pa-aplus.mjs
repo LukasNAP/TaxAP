@@ -1,3 +1,4 @@
+import { createMatchDiagnostics } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialPaRates } from "./pa-rates.mjs";
 
@@ -7,26 +8,27 @@ import { readOfficialPaRates } from "./pa-rates.mjs";
 // compared against the base rate itself, not a named jurisdiction. PA001 ("Pennsylvania
 // Philadelphia") is Philadelphia specifically. No A+ code exists for Allegheny at all (a confirmed,
 // separate coverage gap - see the pending-decisions memo - not something this matcher can resolve).
-function paOfficialRowFor(row, officialSnapshot) {
+function paOfficialRowFor(row, officialSnapshot, diagnostics) {
   if (row.taxBody === "PA001") {
-    return officialSnapshot.rates.find((rate) => rate.name === "Philadelphia") ?? null;
+    return officialSnapshot.rates.find((rate) => rate.name === "Philadelphia") ?? diagnostics.record(row, "no_candidate");
   }
   if (row.taxBody === "PA000") {
     // Any non-Allegheny, non-Philadelphia county's row carries exactly the flat base rate -
     // Franklin is just a stable, alphabetically-uninteresting pick, not a real jurisdiction match.
     const baseRow = officialSnapshot.rates.find((rate) => rate.name !== "Allegheny" && rate.name !== "Philadelphia");
-    return baseRow ? { ...baseRow, name: "Pennsylvania (statewide base rate)" } : null;
+    return baseRow ? { ...baseRow, name: "Pennsylvania (statewide base rate)" } : diagnostics.record(row, "official_rate_unavailable");
   }
-  return null;
+  return diagnostics.record(row, "unsupported_assignment");
 }
 
 export async function readPennsylvaniaAplusComparison(stateDetail, { readOfficialPaRates: readOfficial = readOfficialPaRates } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("PA", officialSnapshot);
   return {
-    ...reconcileDirectMappingAplus({
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
       stateCode: "PA",
       stateDetail,
-      matchOfficialRow: (row) => paOfficialRowFor(row, officialSnapshot),
+      matchOfficialRow: (row) => paOfficialRowFor(row, officialSnapshot, diagnostics),
     }),
     officialSnapshot,
   };

@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
@@ -19,6 +20,8 @@ export async function readNevadaAplusComparison(stateDetail, {
   readOfficial = () => readOfficialSstStateRates("NV"),
 } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("NV", officialSnapshot);
+  const reject = diagnostics.record;
   const counties = new Map();
   for (const rate of officialSnapshot.rates) {
     if (rate.jurisdictionType !== "county") continue;
@@ -30,13 +33,13 @@ export async function readNevadaAplusComparison(stateDetail, {
   }
   if (counties.size !== COUNTIES.size) throw new Error("Nevada requires all 17 official county equivalents.");
   const represented = new Set();
-  const result = reconcileDirectMappingAplus({
+  const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot,
     stateCode: "NV", stateDetail,
     matchOfficialRow: (row) => {
-      if (!/^NV\d+$/.test(row.taxBody ?? "") || row.taxBody === "NV000" || isRetiredTaxBody(row)) return null;
+      if (!/^NV\d+$/.test(row.taxBody ?? "") || row.taxBody === "NV000" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
       const name = countyName(row.description);
       const rate = counties.get(name);
-      if (!rate) return null;
+      if (!rate) return reject(row, "no_candidate");
       if (Number(row.activeShipTos) > 0) represented.add(name);
       return rate;
     },

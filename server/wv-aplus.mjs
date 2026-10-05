@@ -1,3 +1,4 @@
+import { createMatchDiagnostics, assignmentGuardReason } from './match-diagnostic.mjs';
 import { readOfficialSstStateRates } from "./sst-rates.mjs";
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { isRetiredTaxBody } from "../app/tax-body-policy.ts";
@@ -6,6 +7,8 @@ const normalize = (text) => String(text ?? "").trim().toLowerCase().replace(/\s+
 
 export async function readWestVirginiaAplusComparison(stateDetail, { readOfficial = () => readOfficialSstStateRates("WV") } = {}) {
   const officialSnapshot = await readOfficial();
+  const diagnostics = createMatchDiagnostics("WV", officialSnapshot);
+  const reject = diagnostics.record;
   if (officialSnapshot.stateRate !== 6) throw new Error("West Virginia state rate changed; review municipal composition.");
   const cities = new Map();
   for (const rate of officialSnapshot.rates) {
@@ -16,11 +19,11 @@ export async function readWestVirginiaAplusComparison(stateDetail, { readOfficia
     cities.set(name, { ...rate, totalGeneralRate: Number((officialSnapshot.stateRate + rate.componentRate).toFixed(4)) });
   }
   return {
-    ...reconcileDirectMappingAplus({ stateCode: "WV", stateDetail, matchOfficialRow: (row) => {
-      if (!/^WV\d+$/.test(row.taxBody ?? "") || ["WV000", "WV961"].includes(row.taxBody) || isRetiredTaxBody(row) || row.currentRate == null || row.definitionStatus === "missing") return null;
+    ...reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "WV", stateDetail, matchOfficialRow: (row) => {
+      if (!/^WV\d+$/.test(row.taxBody ?? "") || ["WV000", "WV961"].includes(row.taxBody) || isRetiredTaxBody(row) || row.currentRate == null || row.definitionStatus === "missing") return reject(row, assignmentGuardReason(row));
       const name = normalize(row.description).replace(/^west virginia[ -]+/, "");
       if (row.taxBody === "WV0100" && /^(?:no local rt\.?|no local rate)$/.test(name)) return { name: "West Virginia — no local rate", totalGeneralRate: officialSnapshot.stateRate };
-      return cities.get(name) ?? null;
+      return cities.get(name) ?? reject(row, "no_candidate", [], { lookup: name });
     } }),
     officialSnapshot,
   };
