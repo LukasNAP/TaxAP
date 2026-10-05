@@ -5,7 +5,9 @@ export function assignmentGaps(result, health) {
   function add(row, reason) {
     const count = row.activeShipTos;
     if (!Number.isInteger(count) || count <= 0) return;
-    gaps.push({ stateCode: result.stateCode, taxBody: row.taxBody ?? null, shipTos: count, reason });
+    const description = row.description ?? result.stateDetail?.taxBodies?.find(body => body.taxBody === row.taxBody)?.description;
+    gaps.push({ stateCode: result.stateCode, taxBody: row.taxBody ?? null, shipTos: count, reason,
+      ...(typeof description === 'string' && description.trim() ? { taxBodyDescription: description.trim() } : {}) });
   }
   const excluded = new Set();
   for (const row of result.crossStateAssignments ?? []) { add(row, 'cross_state'); excluded.add(row.taxBody); }

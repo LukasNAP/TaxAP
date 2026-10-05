@@ -1,8 +1,8 @@
 "use client";
 import { formatRate, formatRateText } from "./rate-format";
 import { markBatchOutage, markRetainedEvidence, type RetainedState } from "./state-retention";
-import { QueueControls, AssignmentGapQueue } from "./review-queue-view";
-import { initialQueueFilters, matchesQueueFinding, matchesQueueGap, type AssignmentGap } from "./review-queue";
+import { QueueControls, QueueSummary, AssignmentGapQueue, AssignmentReviewDetail } from "./review-queue-view";
+import { assignmentTitle, initialQueueFilters, matchesQueueFinding, matchesQueueGap, type AssignmentGap } from "./review-queue";
 import { hasRateDifference } from "./rate-comparison";
 import { applyFindingTreatments } from "./finding-treatment";
 
@@ -379,6 +379,7 @@ export default function Home() {
   const [taxTreatmentSnapshot, setTaxTreatmentSnapshot] = useState<TaxTreatmentSnapshot | null>(null);
   const [taxTreatmentStatus, setTaxTreatmentStatus] = useState<TaxTreatmentStatus>("idle");
   const [selectedState, setSelectedState] = useState<StateSummary | null>(null);
+  const [selectedAssignmentGap, setSelectedAssignmentGap] = useState<AssignmentGap | null>(null);
   const [stateDetail, setStateDetail] = useState<StateDetail | null>(null);
   const [stateDetailStatus, setStateDetailStatus] = useState<StateDetailStatus>("idle");
   const [officialSources, setOfficialSources] = useState<OfficialSourceState[]>(FALLBACK_OFFICIAL_SOURCES);
@@ -632,9 +633,10 @@ export default function Home() {
     activeShipTos: stateSummariesByCode.get(source.stateCode)?.activeShipTos ?? 0,
   })).sort((a, b) => b.activeShipTos - a.activeShipTos || a.stateCode.localeCompare(b.stateCode)), [officialSources, stateSummariesByCode]);
 
-  const openState = async (stateCode: string, options: { forceRefresh?: boolean } = {}) => {
+  const openState = async (stateCode: string, options: { forceRefresh?: boolean; assignment?: AssignmentGap | null } = {}) => {
     const summary = stateSummariesByCode.get(stateCode);
     if (!summary) return;
+    setSelectedAssignmentGap(options.assignment ?? null);
     setSelectedState(summary);
 
     const cacheKey = stateCode.toUpperCase();
@@ -815,7 +817,7 @@ export default function Home() {
               aria-current={activeView === item.id ? "page" : undefined}
             >
               {item.label}
-              {item.id === "attention" && dashboardCountsReady && needsAttentionCount > 0 && <span className="nav-count">{needsAttentionCount}</span>}
+              {item.id === "attention" && dashboardCountsReady && needsAttentionCount > 0 && <span className="nav-count" title="Rate findings; assignment-review groups are counted separately">{needsAttentionCount} rates</span>}
               {item.id === "upcoming" && upcomingFindings.length > 0 && <span className="nav-count">{upcomingFindings.length}</span>}
             </button>
           ))}
@@ -1006,11 +1008,12 @@ export default function Home() {
             titleId="attention-title"
             eyebrow="Published changes and A+ impact"
             title="Needs attention"
-            description="Review rate findings and investigate unchecked assignments across all available states. Unknown treatment counts remain visible."
+            description="Review rate differences and assignments that still need jurisdiction or setup checks. The navigation badge counts rate findings only."
           />
           <QueueControls filters={queueFilters} onChange={setQueueFilters} />
+          {dashboardCountsReady && <QueueSummary rateFindings={filteredRateFindings.length} gaps={filteredAssignmentGaps} />}
           <section className="queue-panel attention-panel" aria-labelledby="attention-title">
-            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Rate-risk findings</h2></div><span className={`count-pill ${dashboardCountsReady && needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? filteredRateFindings.length : "…"}</span></div>
+            <div className="panel-heading"><div><span className="section-label">Rate comparison</span><h2>Rate findings</h2></div><span className={`count-pill ${dashboardCountsReady && needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? `${filteredRateFindings.length} findings` : "…"}</span></div>
             {!dashboardCountsReady ? (
               <div className="empty-queue large"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>TaxAP is waiting for the all-state comparison batch before showing the review queue.</p></div></div>
             ) : filteredRateFindings.length === 0 ? (
@@ -1027,7 +1030,7 @@ export default function Home() {
                  );
             })}
           </section>
-          {dashboardCountsReady && <AssignmentGapQueue gaps={filteredAssignmentGaps} onOpenState={state => void openState(state)} />}
+          {dashboardCountsReady && <AssignmentGapQueue gaps={filteredAssignmentGaps} onOpenGap={gap => void openState(gap.stateCode, { assignment: gap })} />}
           <div className="safety-banner"><strong>Read-only boundary</strong><span>Review decisions are TaxAP records. Changes to tax-body rates still happen through the supported A+ GUI.</span></div>
           <AppFooter />
         </section>
@@ -1157,14 +1160,19 @@ export default function Home() {
       )}
 
       {selectedState && (
-        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setFlatStateAplusDetail(null); setFlatStateAplusStatus("idle"); setDirectMappingAplusDetail(null); setDirectMappingAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
+        <Drawer titleId="state-title" className="state-drawer" onClose={() => { setSelectedAssignmentGap(null); setSelectedState(null); setStateDetail(null); setStateDetailStatus("idle"); setOfficialStateDetail(null); setOfficialStateStatus("idle"); setGaBoundaryDetail(null); setGaBoundaryStatus("idle"); setFlatStateAplusDetail(null); setFlatStateAplusStatus("idle"); setDirectMappingAplusDetail(null); setDirectMappingAplusStatus("idle"); setStateDrawerCheckedAt(null); }}>
           <div className="drawer-kicker"><span className="section-label">{connectorStatus === "live" ? "Live A+ state coverage" : "Validated A+ state snapshot"}</span><span className="status-badge">Read only</span></div>
-          <h2 id="state-title">{STATE_NAME_BY_CODE.get(selectedState.stateCode) ?? selectedState.stateCode}</h2>
-          <p className="drawer-lede">Active ship-to assignments and configured tax-body rates queried from A+. This is not yet a comparison with the state&apos;s official Department of Revenue rates.</p>
+          <h2 id="state-title">{selectedAssignmentGap ? assignmentTitle(selectedAssignmentGap) : STATE_NAME_BY_CODE.get(selectedState.stateCode) ?? selectedState.stateCode}</h2>
+          <p className="drawer-lede">{selectedAssignmentGap ? 'Review this assignment group, then use the state evidence below to confirm its jurisdiction and setup.' : 'Active ship-to assignments, configured A+ tax-body rates and available official state evidence. Unresolved assignments require human review.'}</p>
           <div className="drawer-refresh-row">
             {stateDrawerCheckedAt && <small>Checked {new Date(stateDrawerCheckedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} · reused on reopen until refreshed</small>}
-            <button className="secondary-button" type="button" disabled={stateDetailStatus === "loading"} onClick={() => void openState(selectedState.stateCode, { forceRefresh: true })}>{stateDetailStatus === "loading" ? "Refreshing…" : "Refresh this state"}</button>
+            <button className="secondary-button" type="button" disabled={stateDetailStatus === "loading"} onClick={() => void openState(selectedState.stateCode, { forceRefresh: true, assignment: selectedAssignmentGap })}>{stateDetailStatus === "loading" ? "Refreshing…" : "Refresh this state"}</button>
           </div>
+          {selectedAssignmentGap && <>
+            <AssignmentReviewDetail gap={selectedAssignmentGap} status={stateDetailStatus} currentRow={stateDetail?.taxBodies.find(row => row.taxBody === selectedAssignmentGap.taxBody)} />
+            {selectedAssignmentGap.taxBody && <FindingShipTos key={`${selectedAssignmentGap.stateCode}-${selectedAssignmentGap.taxBody}`} apiBase={apiBaseUrl()} taxBody={selectedAssignmentGap.taxBody} state={selectedAssignmentGap.stateCode} scope="all" expectedCount={selectedAssignmentGap.shipTos} />}
+            <h3>State evidence</h3>
+          </>}
           <div className="state-metrics">
             <div><span>Active ship-tos</span><strong>{selectedState.activeShipTos.toLocaleString()}</strong></div>
             <div><span>Active customers</span><strong>{selectedState.activeCustomers.toLocaleString()}</strong></div>
@@ -1663,7 +1671,7 @@ function ImportSnapshotView({
 function SummaryStats({ openCount, upcomingCount, affectedShipTos, connectedSources, lastRefresh }: { openCount: number | null; upcomingCount: number | null; affectedShipTos: number | null; connectedSources: number; lastRefresh: string | null }) {
   return (
     <section className="stats" aria-label="Tax rate monitoring summary">
-      <article><span>Needs attention</span><strong>{openCount === null ? "…" : openCount}</strong><small>{openCount === null ? "Still loading every connected state" : "Confirmed official-to-A+ differences"}</small></article>
+      <article><span>Rate findings</span><strong>{openCount === null ? "…" : openCount}</strong><small>{openCount === null ? "Still loading every connected state" : "Rate differences requiring review; assignment reviews are counted separately"}</small></article>
       <article><span>Upcoming changes</span><strong>{upcomingCount === null ? "…" : upcomingCount}</strong><small>Published future effective dates</small></article>
       <article><span>Affected ship-tos</span><strong>{affectedShipTos === null ? "…" : affectedShipTos.toLocaleString()}</strong><small>Aggregate impact across open findings</small></article>
       <article><span>Connected sources</span><strong>{connectedSources}</strong><small>Validated official-rate adapters</small></article>

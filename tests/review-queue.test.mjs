@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assignmentGaps } from '../server/assignment-gaps.mjs';
 import { comparisonHealth } from '../server/comparison-health.mjs';
-import { initialQueueFilters, matchesQueueFinding, matchesQueueGap } from '../app/review-queue.ts';
+import { assignmentTitle, gapGuidance, initialQueueFilters, matchesQueueFinding, matchesQueueGap } from '../app/review-queue.ts';
 import { readAllWiredStateFindings } from '../server/aplus-connector.mjs';
 
 test('unchecked reason groups reconcile to coverage without guessing or exposing row details',()=>{
@@ -18,6 +18,19 @@ test('unchecked reason groups reconcile to coverage without guessing or exposing
   assert.equal(gaps.find(row=>row.taxBody==='FL003').reason,'unresolved_jurisdiction');
   assert.equal(gaps.find(row=>row.taxBody==='FL004').reason,'missing_rate');
   assert.ok(!JSON.stringify(gaps).includes('synthetic private'));
+});
+test('assignment review carries only the existing tax-body description and preserves legacy fallbacks',()=>{
+  const result={stateCode:'AL',findings:[{taxBody:'AL123',description:'Alabama Example (County hint)',activeShipTos:3,matched:false,identityStatus:'ambiguous',customerName:'private customer',address:'private address'}]};
+  const [gap]=assignmentGaps(result,{uncheckedShipTos:3});
+  assert.equal(gap.taxBodyDescription,'Alabama Example (County hint)');
+  assert.deepEqual(Object.keys(gap).sort(),['reason','shipTos','stateCode','taxBody','taxBodyDescription'].sort());
+  assert.equal(assignmentTitle(gap),'Alabama Example (County hint)');
+  assert.equal(assignmentTitle({...gap,taxBodyDescription:undefined}),'Tax body AL123');
+  assert.equal(assignmentTitle({...gap,taxBody:null,taxBodyDescription:undefined}),'State assignments without a tax-body breakdown');
+  assert.ok(gapGuidance[gap.reason].next.includes('county/city'));
+  assert.equal('candidates' in gap,false);
+  const [fromDefinition]=assignmentGaps({...result,findings:[{...result.findings[0],description:null}],stateDetail:{taxBodies:[{taxBody:'AL123',description:'Existing definition'}]}},{uncheckedShipTos:3});
+  assert.equal(fromDefinition.taxBodyDescription,'Existing definition');
 });
 test('deliberate no-tax and conflicting aggregates cannot inflate unresolved totals',()=>{
   const result={stateCode:'AK',totals:{activeShipTos:8,intentionalNoTaxShipTos:8},findings:[]};

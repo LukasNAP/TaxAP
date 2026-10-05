@@ -108,6 +108,8 @@ button, a { font: inherit; }
   top: 14px;
   right: -13px;
   min-width: 17px;
+  padding: 0 5px;
+  white-space: nowrap;
   height: 17px;
   display: grid;
   place-items: center;
@@ -739,6 +741,33 @@ footer { display: flex; justify-content: space-between; padding: 26px 2px 0; col
 .history-rate { color: var(--ap-dgray); font-size: 12px; white-space: nowrap; }
 .history-rate strong { color: var(--ap-blue); }
 .queue-storage-warning { margin: 18px 22px; color: var(--ap-dgray); font-size: 12px; line-height: 1.55; }
+.queue-summary { max-width: 1040px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
+.queue-summary > div { padding: 18px 22px; border: 1px solid var(--ap-lgray); border-radius: 12px; background: var(--ap-white); display: grid; gap: 6px; }
+.queue-summary strong { color: var(--ap-navy); font-size: 24px; }
+.queue-summary span, .queue-summary p { color: var(--ap-dgray); font-size: 12px; line-height: 1.5; }
+.queue-summary p { grid-column: 1 / -1; margin: 0; }
+.assignment-queue-intro { margin: 18px 22px; color: var(--ap-dgray); font-size: 13px; line-height: 1.6; }
+.assignment-review-card .status-mark { background: var(--ap-lgray); color: var(--ap-dgray); }
+.assignment-review-card strong { overflow-wrap: anywhere; }
+.assignment-review-card small { font-size: 11px; line-height: 1.5; }
+.assignment-review-reason { color: var(--ap-dgray); font-size: 12px; margin-top: 3px; }
+.assignment-review-count { text-align: right; color: var(--ap-navy); font-weight: var(--ap-weight-bold); }
+.assignment-review-count small { display: block; font-weight: normal; }
+.assignment-review-detail { margin: 20px 0; padding: 20px; background: var(--ap-lgray); border-radius: 12px; }
+.assignment-review-detail h3 { margin: 6px 0 16px; }
+.assignment-review-detail h4 { margin: 20px 0 6px; }
+.assignment-review-detail p { color: var(--ap-dgray); font-size: 13px; line-height: 1.65; }
+.assignment-review-detail .assignment-detail-note { font-size: 12px; }
+@media (max-width: 680px) {
+  .queue-summary { grid-template-columns: 1fr; gap: 8px; }
+  .queue-summary > div { display: flex; align-items: center; gap: 12px; }
+  .assignment-review-card { grid-template-columns: 28px minmax(0, 1fr) 12px; gap: 10px; padding: 18px; }
+  .assignment-review-card .status-mark { width: 28px; height: 28px; }
+  .assignment-review-count { grid-column: 2; text-align: left; font-size: 12px; }
+  .assignment-review-count small { display: inline; margin-left: 6px; }
+  .assignment-review-card .row-arrow { grid-column: 3; grid-row: 1; }
+  .assignment-review-queue .panel-heading { gap: 12px; flex-wrap: wrap; }
+}
 
 .review-decision,
 .audit-trail { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--ap-lgray); border-radius: 12px; background: rgba(235,235,235,.36); }
