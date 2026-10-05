@@ -29,3 +29,7 @@ Example public-source evidence: locality9149 has MOBILE rows referencing7049 (MO
 ## Validation and delivery
 
 Production build,345 tests, lint, TypeScript and whitespace checks passed. Tests cover candidate retention/order, exclusion of police-jurisdiction rows, rejected-name/code evidence, county-hint outcomes, unchanged resolved rates, scope exclusions, queue propagation and nested diagnostic allowlisting across persistence/restart. Offline component inspection verified actual candidate evidence at desktop and600px widths. No production review events were created. Changes remain local; no commit, push or deployment requested for this task.
+
+## Release
+
+This evidence and the shared all-state display were deployed October5,2026 in implementation `f79415e`. All20 focused diagnostic/queue tests passed against deployed modules; the hosted batch completed47/47 with sanitized diagnostics on every assignment-review group. See [matching-evidence.md](matching-evidence.md) and HANDOFF.md for deployment checks and rollback information. Historical local-only verification above describes pre-release work.

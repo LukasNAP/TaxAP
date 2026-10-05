@@ -2,13 +2,21 @@
 
 Last updated October 5, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
-## Shared matching evidence across wired states (October 5; local changes)
+## Shared matching evidence across wired states (October 5; deployed)
 
 User authorized extending Alabama-only explanations to a shared all-state workflow, with detailed candidates starting TX, VA, MN and IA. Preserved the existing Alabama work. All direct-mapping adapters now record existing rejection branches; statewide/NC checks, GA aggregate boundary reasons and deliberate no-tax policies supply appropriate explanations. The shared assignment display shows matching inputs, reason, available official rows, next steps and original batch source metadata. Ambiguous rate findings retain candidates too, so equal rates or Texas's existing bare-row discrepancy do not hide unresolved identity. Alabama's component/county-tax-reference presentation remains intact. See docs/matching-evidence.md.
 
 Nested allowlists preserve aggregate-only diagnostics through gaps, rate findings and retained state evidence. Old diagnostic-free payloads explicitly lack specific evidence; absent candidate lists and aggregate-only GA reasons are not replaced by guessed jurisdiction searches. No SQL, ERP matching outcomes, rates, coverage counts, confidence or approval behavior changed; no customer queries or A+ writes. Official-source coverage remains separate from completed comparisons; no-general-sales-tax classifications are unchanged.
 
 Full build/354 tests passed, plus independent baseline replay of86 existing adapter tests with identical matching/rate/aggregate outcomes after excluding diagnostics and retrieval timestamps. Lint, TypeScript and whitespace checks passed. Synthetic shared-component browser inspection verified desktop and600px candidate layouts; temporary preview/replay files removed. Shared HANDOFF and dated Obsidian log updated. Changes remain uncommitted and undeployed; hosted release remains a173ecc, release documentation efe5ee9. Deployment and signed-in hosted acceptance require a later release request; a fresh main-queue batch will populate the new evidence after release.
+
+### Shared matching-evidence release deployed (October 5)
+
+User authorized commit, push and deployment. Implementation `f79415e` is pushed to origin/main and deployed on apdock01. HTTPS Git push failed through the workstation credential helper; the existing authenticated SSH credential completed the push, and origin/main was refreshed. Verified the prior application source with normalized line endings and all53 uploaded committed-file hashes. Protected source/configuration, consistent review SQLite and aggregate state-evidence backup: `/var/atlanticapps/taxap-backups/matching-f79415e-20261005T161927Z`. Rollback image: `taxap-rollback:before-matching-f79415e`. Built using both existing Compose files and recreated only taxap-app; credentials, sign-in routes, SQL settings and email activation unchanged. This release supersedes the local-only status above.
+
+All20 focused synthetic tests passed against the deployed modules. The actual served page/chunk returned200 and includes both shared and Alabama matching displays. SQLite integrity is ok; all four cases/four events preserved. Public root302/reviews API401 still enforce sign-in; all four containers running with zero restarts. Signed-in stakeholder visual acceptance remains pending. No customer-detail queries or production review decisions were performed.
+
+Hosted read-only batch completed47/47 at2026-10-05T16:22:54.413Z with no failed states or evidence-storage warnings. All664 assignment-review groups carry sanitized matching diagnostics;276 groups retain candidate rows, and one rate finding carries candidate evidence. Each state's gap counts reconcile to unchecked coverage. This is matching evidence, not resolution of those assignments or physical location verification.
 
 ## Alabama candidate evidence (October 5; local changes)
 

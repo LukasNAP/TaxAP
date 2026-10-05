@@ -1,6 +1,6 @@
 # Matching evidence across states
 
-Implemented locally October 5, 2026; not released. This extends the Alabama diagnostics described in [alabama-matching-evidence.md](alabama-matching-evidence.md).
+Released October 5, 2026 as implementation `f79415e` on apdock01. This extends the Alabama diagnostics described in [alabama-matching-evidence.md](alabama-matching-evidence.md).
 
 ## What reviewers see
 
@@ -24,3 +24,5 @@ Detailed candidate work includes Texas, Virginia, Minnesota and Iowa. Other adap
 Full build and all 354 tests passed. Regression coverage exercises TX conflicting/equal rates and county hints, VA city/county selection, MN identity/rate conflicts, IA mixed counties/cities, no-tax and statewide exclusions, GA aggregate privacy, retained diagnostic storage and source-link handling. Lint, TypeScript and whitespace checks passed.
 
 An independent temporary replay ran 86 existing adapter tests against both the prior committed matcher and the edited matcher, comparing outputs after removing only diagnostics and retrieval timestamps. All 86 passed with unchanged matching, rate, confidence and aggregate outcomes. No SQL or customer-detail queries were needed. Synthetic component browser inspection verified the shared candidate table at desktop and 600px widths; this is not signed-in hosted acceptance. Temporary preview and replay files were removed.
+
+Hosted verification: all20 focused tests passed against deployed modules; the served page/chunk includes the new display, review database integrity/counts are preserved, anonymous root/API access remains302/401, and all four containers run with zero restarts. Fresh batch47/47 returned664 explained assignment groups (276 with candidates) and one rate finding with candidates, with no failed states or evidence-storage warnings. Per-state gap totals and nested diagnostic allowlists passed checks. Signed-in stakeholder visual acceptance remains pending; see HANDOFF.md for backup and rollback details.
