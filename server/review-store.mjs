@@ -76,6 +76,7 @@ function camelCaseRow(row) {
     assignedTo: row.assigned_to,
     latestNote: row.latest_note,
     createdAt: row.created_at,
+    evidence: row.evidence_json ? JSON.parse(row.evidence_json) : null,
     updatedAt: row.updated_at,
     resolvedAt: row.resolved_at,
   };
@@ -91,6 +92,7 @@ function camelCaseEvent(row) {
     actor: row.actor,
     note: row.note,
     createdAt: row.created_at,
+    evidence: row.evidence_json ? JSON.parse(row.evidence_json) : null,
   };
 }
 
@@ -127,8 +129,13 @@ export function createReviewStore({ filename = resolve(".data", "taxap-reviews.s
     created_at TEXT NOT NULL
   )`);
   database.exec("CREATE INDEX IF NOT EXISTS idx_review_cases_status_updated ON review_cases(status, updated_at DESC)");
+  for (const table of ["review_cases", "review_events"]) {
+    if (!database.prepare(`PRAGMA table_info(${table})`).all().some(column => column.name === "evidence_json")) database.exec(`ALTER TABLE ${table} ADD COLUMN evidence_json TEXT`);
+  }
   database.exec("CREATE INDEX IF NOT EXISTS idx_review_events_finding_created ON review_events(finding_key, created_at DESC)");
   database.exec("PRAGMA optimize");
+  database.exec(`CREATE TRIGGER IF NOT EXISTS review_event_no_update BEFORE UPDATE ON review_events BEGIN SELECT RAISE(ABORT, 'Review events are immutable'); END`);
+  database.exec(`CREATE TRIGGER IF NOT EXISTS review_event_no_delete BEFORE DELETE ON review_events BEGIN SELECT RAISE(ABORT, 'Review events are immutable'); END`);
 
   const selectCase = database.prepare("SELECT * FROM review_cases WHERE finding_key = ?");
   const selectEvents = database.prepare("SELECT * FROM review_events WHERE finding_key = ? ORDER BY created_at DESC, id DESC");
@@ -144,8 +151,12 @@ export function createReviewStore({ filename = resolve(".data", "taxap-reviews.s
       .map((row) => ({ ...camelCaseRow(row), events: selectEvents.all(row.finding_key).map(camelCaseEvent) }));
   }
 
-  function saveDecision(input) {
+  function saveDecision(input, { verification = null } = {}) {
     const decision = normalizeDecision(input);
+    if (decision.status === "approved" && verification?.verified !== true) throw Object.assign(new Error("Approval requires server-verified current evidence."), { statusCode: 409 });
+    const evidence = JSON.stringify({ stateCode: decision.stateCode, findingKey: decision.findingKey, taxBody: decision.taxBody, jurisdiction: decision.jurisdiction, findingType: decision.findingType,
+      aplusRate: decision.aplusRate, officialRate: decision.officialRate, effectiveDate: decision.effectiveDate, sourceUrl: decision.sourceUrl,
+      verification: verification ?? { verified: false, reason: "Reviewer-supplied historical or investigation evidence" } });
     const now = new Date().toISOString();
     database.exec("BEGIN IMMEDIATE");
     try {
@@ -179,11 +190,12 @@ export function createReviewStore({ filename = resolve(".data", "taxap-reviews.s
         existing?.createdAt ?? now, now, decision.status === "resolved" || decision.status === "not_applicable" ? now : null,
       );
       database.prepare(`INSERT INTO review_events (
-        finding_key, action, from_status, to_status, actor, note, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        finding_key, action, from_status, to_status, actor, note, created_at, evidence_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
         decision.findingKey, decision.status, existing?.status ?? null, decision.status,
-        decision.actor, decision.note, now,
+        decision.actor, decision.note, now, evidence,
       );
+      database.prepare("UPDATE review_cases SET evidence_json = ? WHERE finding_key = ?").run(evidence, decision.findingKey);
       database.exec("COMMIT");
     } catch (error) {
       database.exec("ROLLBACK");

@@ -39,7 +39,7 @@ test("multistate decisions survive closing and reopening review storage", () => 
     for (const stateCode of ["IA", "VT", "LA", "GA"]) {
       const evidence = findingReviewEvidence({ ...finding, stateCode, reviewFindingKey: `${stateCode}-test-current` });
       store.saveDecision({ ...evidence, status: "in_review", actor: "Liv", note: "Source checked." });
-      store.saveDecision({ ...evidence, status: "approved", actor: "Ana", note: "Ready for manual maintenance." });
+      store.saveDecision({ ...evidence, status: "approved", actor: "Ana", note: "Ready for manual maintenance." }, { verification: { verified: true } });
     }
     const backupFile = join(directory, "verified-backup.sqlite");
     backupReviewDatabase(filename, backupFile);

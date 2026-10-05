@@ -1,9 +1,12 @@
 import { createSharedPoolManager } from "./shared-sql-pool.mjs";
+import { reviewComparison, validateApproval } from "./review-validation.mjs";
+import { findingDecisionKey } from "../app/finding-review.ts";
 import { createStateAlertManager } from "./state-alerts.mjs";
 import { createStateEvidenceStore, stateFailureReason } from "./state-evidence.mjs";
 import { dirname, resolve } from "node:path";
 import { markRetainedEvidence } from "../app/state-retention.ts";
 import { comparisonHealth } from "./comparison-health.mjs";
+import { assignmentGaps } from "./assignment-gaps.mjs";
 import { validateShipToSelection, readFindingShipTos } from "./finding-ship-tos.mjs";
 import { readCatchAllExemptionAudit } from "./catchall-exemption-audit.mjs";
 import { openSqlLoginPool } from "./sql-login.mjs";
@@ -792,17 +795,23 @@ export async function readAllWiredStateFindings({
   const findings = [];
   const failedStates = [];
   const stateChecks = [];
+  const gaps = [];
+  function addCheck(result) {
+    const health = comparisonHealth(result);
+    stateChecks.push(health);
+    gaps.push(...assignmentGaps(result, health));
+  }
 
-  if (njResult.status === "fulfilled") { findings.push(...flatStateFindingsFromReconciliation(njResult.value)); stateChecks.push(comparisonHealth(njResult.value)); }
+  if (njResult.status === "fulfilled") { findings.push(...flatStateFindingsFromReconciliation(njResult.value)); addCheck(njResult.value); }
   else failedStates.push("NJ");
 
   flatResults.forEach((result, index) => {
-    if (result.status === "fulfilled") { findings.push(...flatStateFindingsFromReconciliation(result.value)); stateChecks.push(comparisonHealth(result.value)); }
+    if (result.status === "fulfilled") { findings.push(...flatStateFindingsFromReconciliation(result.value)); addCheck(result.value); }
     else failedStates.push(flatStateCodes[index]);
   });
 
   directResults.forEach((result, index) => {
-    if (result.status === "fulfilled") { findings.push(...directMappingFindingsFromReconciliation(result.value)); stateChecks.push(comparisonHealth(result.value)); }
+    if (result.status === "fulfilled") { findings.push(...directMappingFindingsFromReconciliation(result.value)); addCheck(result.value); }
     else failedStates.push(directMappingCodes[index]);
   });
 
@@ -812,13 +821,13 @@ export async function readAllWiredStateFindings({
   if (nc && !failures.has("NC")) {
     const officialByCode = new Map(nc.officialSnapshot.rates.map((row) => [row.taxBody, row.officialRate]));
     const configuredByCode = new Map(nc.aplusSnapshot.standardRows.map((row) => [row.taxBody, row.currentRate]));
-    stateChecks.push(comparisonHealth({ stateCode: "NC", totals: { activeShipTos: nc.stateDetail.activeShipTos },
-      findings: nc.stateDetail.taxBodies.map((row) => ({ activeShipTos: row.activeShipTos,
-        matched: officialByCode.has(row.taxBody), officialRate: officialByCode.get(row.taxBody), aplusRate: configuredByCode.get(row.taxBody) })) }));
+    addCheck({ stateCode: "NC", totals: { activeShipTos: nc.stateDetail.activeShipTos },
+      findings: nc.stateDetail.taxBodies.map((row) => ({ taxBody: row.taxBody, definitionStatus: row.definitionStatus, activeShipTos: row.activeShipTos,
+        matched: officialByCode.has(row.taxBody), officialRate: officialByCode.get(row.taxBody), aplusRate: configuredByCode.get(row.taxBody) })) });
   } else failedStates.push("NC");
   if (ga && !failures.has("GA")) {
-    stateChecks.push(comparisonHealth({ stateCode: "GA", totals: ga.totals,
-      findings: ga.taxBodyFindings.map((row) => ({ ...row, activeShipTos: row.matchedShipTos, matched: row.jurisdictionAssignmentConsistent })) }));
+    addCheck({ stateCode: "GA", totals: ga.totals,
+      findings: ga.taxBodyFindings.map((row) => ({ ...row, activeShipTos: row.matchedShipTos, matched: row.jurisdictionAssignmentConsistent })) });
   } else failedStates.push("GA");
   const currentChecks = stateChecks.filter(check => !failures.has(check.stateCode));
   currentChecks.sort((a, b) => a.stateCode.localeCompare(b.stateCode));
@@ -826,6 +835,7 @@ export async function readAllWiredStateFindings({
   for (const failure of stateFailures) console.warn(JSON.stringify({ event: "state_check_unavailable", ...failure, retained: retainedStates.some(state => state.stateCode === failure.stateCode) }));
   // NC and GA retain their existing comparison payloads for county/future-change and boundary views.
   return { findings: markRetainedEvidence(findings, retainedStates), nc, ga, failedStates: [...new Set([...failedStates, ...failures.keys()])].sort(), stateChecks: currentChecks,
+    assignmentGaps: gaps.filter(gap => !failures.has(gap.stateCode)).sort((a, b) => b.shipTos - a.shipTos || a.stateCode.localeCompare(b.stateCode)),
     retainedStates: retainedStates.sort((a, b) => a.stateCode.localeCompare(b.stateCode)), stateFailures,
     evidenceWarnings: [...new Set(evidenceWarnings)].sort(), retrievedAt: new Date().toISOString() };
 }
@@ -917,7 +927,25 @@ function sendJson(response, status, payload, origin) {
   response.end(JSON.stringify(payload));
 }
 
-export function createConnectorServer({ reviews, readShipTos = selection => readFindingShipTos(selection, { openPool, sql }) } = {}) {
+export async function readReviewComparison(stateCode) {
+  validateStateCode(stateCode);
+  const raw = stateCode === "NC" ? await readNorthCarolinaBatchComparison() : stateCode === "GA" ? await readGeorgiaBoundaryReconciliation() : stateCode === "NJ" ? await readNewJerseyAplusComparison() : Object.hasOwn(FLAT_STATE_APLUS_ADAPTERS, stateCode) ? await readFlatStateAplusComparison(stateCode) : Object.hasOwn(DIRECT_MAPPING_APLUS_READERS, stateCode) ? await readDirectMappingAplusComparison(stateCode) : null;
+  if (!raw) throw new Error("Unsupported comparison state");
+  return reviewComparison(stateCode, raw);
+}
+
+function archivedReviewVerification(input) {
+  try {
+    const stored = createStateEvidenceStore(evidenceDirectory()).get(input.stateCode);
+    if (!stored) return null;
+    const comparison = reviewComparison(input.stateCode, stored.value, new Date(stored.validatedAt));
+    const finding = comparison.findings.find(row => findingDecisionKey(row) === input.findingKey);
+    if (!finding || finding.aplusRate !== input.aplusRate || finding.officialRate !== input.officialRate) return null;
+    return { verified: false, reason: "Prior server comparison retained for investigation", comparisonRetrievedAt: stored.validatedAt, sources: comparison.sources, scope: comparison.scope };
+  } catch { return null; }
+}
+
+export function createConnectorServer({ reviews, readComparison = readReviewComparison, readShipTos = selection => readFindingShipTos(selection, { openPool, sql }) } = {}) {
   return createServer(async (request, response) => {
     const origin = request.headers.origin;
     const responseOrigin = origin === allowedOrigin ? origin : allowedOrigin;
@@ -959,7 +987,8 @@ export function createConnectorServer({ reviews, readShipTos = selection => read
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       try {
         const payload = await readJsonBody(request);
-        const reviewCase = (reviews ?? reviewStore()).saveDecision(payload);
+        const validated = payload.status === "approved" ? await validateApproval(payload, readComparison) : null;
+        const reviewCase = (reviews ?? reviewStore()).saveDecision(validated ? { ...payload, ...validated.evidence } : payload, { verification: validated?.verification ?? archivedReviewVerification(payload) });
         console.info(JSON.stringify({ event: "review_decision", ok: true, findingKey: reviewCase.findingKey, status: reviewCase.status, actor: reviewCase.assignedTo }));
         return sendJson(response, 200, { case: reviewCase }, responseOrigin);
       } catch (error) {

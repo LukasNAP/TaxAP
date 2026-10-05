@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { formatRate } from "./rate-format";
+
+type DecisionEvidence = { aplusRate: number | null; officialRate: number | null; sourceUrl: string | null; effectiveDate: string | null; verification: { verified: boolean; comparisonRetrievedAt?: string; sources?: { url: string; hash: string; retrievedAt: string }[]; scope?: string } };
 
 export type ReviewStatus = "new" | "in_review" | "approved" | "resolved" | "not_applicable";
 
 export type ReviewEvent = {
+  evidence?: DecisionEvidence | null;
   id: number;
   findingKey: string;
   action: ReviewStatus;
@@ -107,7 +111,9 @@ export function ReviewAuditTrail({ reviewCase }: { reviewCase: ReviewCase }) {
         {reviewCase.events.map((event) => (
           <li key={event.id}>
             <span className={`audit-dot review-status-${event.toStatus}`} aria-hidden="true" />
-            <div><strong>{reviewStatusLabels[event.toStatus]}</strong><p>{event.note || "No note recorded."}</p><small>{event.actor} · {new Date(event.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</small></div>
+            <div><strong>{reviewStatusLabels[event.toStatus]}</strong><p>{event.note || "No note recorded."}</p><small>{event.actor} · {new Date(event.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</small>
+              {event.evidence ? <details><summary>Evidence at this decision</summary><p>A+ {event.evidence.aplusRate === null ? "Unavailable" : formatRate(event.evidence.aplusRate)} · Official {event.evidence.officialRate === null ? "Unavailable" : formatRate(event.evidence.officialRate)}</p><p>{event.evidence.verification.verified ? "Server verified for approval" : "Historical or investigation evidence; not verified for approval"}</p><p>Effective date: {event.evidence.effectiveDate ?? "Not supplied"}</p>{event.evidence.verification.comparisonRetrievedAt && <p>Comparison checked: {new Date(event.evidence.verification.comparisonRetrievedAt).toLocaleString()}</p>}{event.evidence.verification.sources?.map(source => <p key={source.url}><a href={source.url} target="_blank" rel="noreferrer">Official source</a> · Retrieved {new Date(source.retrievedAt).toLocaleString()} · SHA-256 {source.hash}</p>)}{event.evidence.sourceUrl && <a href={event.evidence.sourceUrl} target="_blank" rel="noreferrer">Recorded source</a>}</details> : <p>No evidence snapshot was archived for this older event.</p>}
+            </div>
           </li>
         ))}
       </ol>

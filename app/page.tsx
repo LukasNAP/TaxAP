@@ -1,10 +1,12 @@
 "use client";
 import { formatRate, formatRateText } from "./rate-format";
-import { markRetainedEvidence, type RetainedState } from "./state-retention";
+import { markBatchOutage, markRetainedEvidence, type RetainedState } from "./state-retention";
+import { QueueControls, AssignmentGapQueue } from "./review-queue-view";
+import { initialQueueFilters, matchesQueueFinding, matchesQueueGap, type AssignmentGap } from "./review-queue";
 import { hasRateDifference } from "./rate-comparison";
 import { applyFindingTreatments } from "./finding-treatment";
 
-import { findingDecisionKey, findingReviewEvidence } from "./finding-review";
+import { findingDecisionKey, findingReviewEvidence, ncReviewKey } from "./finding-review";
 import { FindingShipTos } from "./finding-ship-tos";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -295,19 +297,9 @@ const navItems: { id: View; label: string }[] = [
   { id: "import", label: "Admin import" },
 ];
 
-function reviewDateKey(county: ComparedCounty) {
-  const source = county.futureChanges[0]?.effectiveDate ?? county.recentEffectiveDate ?? county.officialEffectivePeriod ?? "current";
-  const isoDate = source.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-  if (isoDate) return isoDate;
-  const usDate = source.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usDate) return `${usDate[3]}-${usDate[1].padStart(2, "0")}-${usDate[2].padStart(2, "0")}`;
-  return source.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "current";
-}
-
 function reviewFindingKey(county: ComparedCounty) {
-  return `${county.taxBody}-${reviewDateKey(county)}:a${county.currentRate ?? "unknown"}:o${county.officialRate ?? "unknown"}`;
+  return ncReviewKey({ taxBody: county.taxBody, currentRate: county.currentRate, officialRate: county.officialRate, futureDate: county.futureChanges[0]?.effectiveDate, recentDate: county.recentEffectiveDate, effectivePeriod: county.officialEffectivePeriod });
 }
-
 function initializeComparisons(coverage: CountyCoverage[]): ComparedCounty[] {
   return coverage.map((county) => ({
     ...county,
@@ -412,7 +404,7 @@ export default function Home() {
   const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
   const [stateDrawerCheckedAt, setStateDrawerCheckedAt] = useState<number | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<JurisdictionFinding | null>(null);
-  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[]; retainedStates: RetainedState[]; stateFailures: { stateCode: string; reason: string }[]; evidenceWarnings: string[]; emailAlertStatus?: string }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [], retainedStates: [], stateFailures: [], evidenceWarnings: [] });
+  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[]; retainedStates: RetainedState[]; stateFailures: { stateCode: string; reason: string }[]; assignmentGaps: AssignmentGap[]; evidenceWarnings: string[]; emailAlertStatus?: string }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [], retainedStates: [], stateFailures: [], evidenceWarnings: [], assignmentGaps: [] });
   const [selectedCounty, setSelectedCounty] = useState<ComparedCounty | null>(null);
   const [selectedCase, setSelectedCase] = useState<ResolvedCase | null>(null);
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
@@ -497,7 +489,7 @@ export default function Home() {
     };
     try {
       const [result, coverage, treatment] = await Promise.all([
-        get<{ emailAlertStatus?: string; retainedStates?: RetainedState[]; stateFailures?: { stateCode: string; reason: string }[]; evidenceWarnings?: string[]; findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
+        get<{ assignmentGaps?: AssignmentGap[]; emailAlertStatus?: string; retainedStates?: RetainedState[]; stateFailures?: { stateCode: string; reason: string }[]; evidenceWarnings?: string[]; findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
           stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[];
           nc: { aplusSnapshot: LiveAPlusSnapshot; officialSnapshot: OfficialNcSnapshot } | null;
           ga: GaBoundaryReconciliation | null;
@@ -519,7 +511,7 @@ export default function Home() {
       } else setOfficialSnapshot(null);
       setDashboardGaBoundary(result.ga);
       setDashboardOtherFindings(result.findings);
-      setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks, retainedStates: result.retainedStates ?? [], stateFailures: result.stateFailures ?? [], evidenceWarnings: result.evidenceWarnings ?? [], emailAlertStatus: result.emailAlertStatus });
+      setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks, retainedStates: result.retainedStates ?? [], stateFailures: result.stateFailures ?? [], evidenceWarnings: result.evidenceWarnings ?? [], emailAlertStatus: result.emailAlertStatus, assignmentGaps: result.assignmentGaps ?? [] });
       setConnectorStatus(coverage ? "live" : "fallback");
       setConnectorMessage(`${result.stateChecks.length} state checks succeeded; ${result.failedStates.length} failed.${coverage ? "" : " A+ assignment inventory could not refresh; retained inventory may be stale."}`);
     } catch {
@@ -584,8 +576,8 @@ export default function Home() {
     [dashboardGaBoundary],
   );
   const inboxFindings = useMemo(
-    () => markRetainedEvidence(combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings), batchHealth.retainedStates).filter((finding) => !batchHealth.failedStates.includes(finding.stateCode) || batchHealth.retainedStates.some(state => state.stateCode === finding.stateCode)),
-    [batchHealth.failedStates, batchHealth.retainedStates, dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
+    () => markBatchOutage(markRetainedEvidence(combineFindings([...openFindings, ...upcomingFindings].map(toNcFinding), gaFindings, dashboardOtherFindings), batchHealth.retainedStates).filter((finding) => !batchHealth.failedStates.includes(finding.stateCode) || batchHealth.retainedStates.some(state => state.stateCode === finding.stateCode)), batchHealth.status === "error"),
+    [batchHealth.status, batchHealth.failedStates, batchHealth.retainedStates, dashboardOtherFindings, gaFindings, openFindings, toNcFinding, upcomingFindings],
   );
   const treatmentAwareInboxFindings = useMemo(() => applyFindingTreatments(inboxFindings, taxTreatmentSnapshot, taxTreatmentStatus), [inboxFindings, taxTreatmentSnapshot, taxTreatmentStatus]);
   const rateRiskFindings = useMemo(() => treatmentAwareInboxFindings
@@ -593,6 +585,9 @@ export default function Home() {
     .sort((left, right) => right.activeShipTos - left.activeShipTos || left.jurisdictionLabel.localeCompare(right.jurisdictionLabel)), [treatmentAwareInboxFindings]);
   const lineLevelOnlyFindings = useMemo(() => treatmentAwareInboxFindings.filter((finding) => finding.rateRiskShipTos === 0 && (finding.lineLevelReviewShipTos ?? 0) > 0), [treatmentAwareInboxFindings]);
   const neverTaxedOnlyFindings = useMemo(() => treatmentAwareInboxFindings.filter((finding) => finding.rateRiskShipTos === 0 && (finding.lineLevelReviewShipTos ?? 0) === 0 && (finding.neverTaxedShipTos ?? 0) > 0), [treatmentAwareInboxFindings]);
+  const [queueFilters, setQueueFilters] = useState(initialQueueFilters);
+  const filteredRateFindings = rateRiskFindings.filter(finding => matchesQueueFinding(finding, queueFilters));
+  const filteredAssignmentGaps = (batchHealth.status === "ready" || batchHealth.status === "partial" ? batchHealth.assignmentGaps : []).filter(gap => matchesQueueGap(gap, queueFilters));
   const needsAttentionCount = rateRiskFindings.length;
   const dashboardCountsReady = batchLoaded && taxTreatmentStatus !== "idle" && taxTreatmentStatus !== "loading";
   const openFinding = (finding: JurisdictionFinding) => {
@@ -1006,26 +1001,28 @@ export default function Home() {
             titleId="attention-title"
             eyebrow="Published changes and A+ impact"
             title="Needs attention"
-            description="This is the same all-state rate-risk inbox shown on the dashboard. It includes only findings with one or more always-taxable ship-tos."
+            description="Review rate findings and investigate unchecked assignments across all available states. Unknown treatment counts remain visible."
           />
+          <QueueControls filters={queueFilters} onChange={setQueueFilters} />
           <section className="queue-panel attention-panel" aria-labelledby="attention-title">
-            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Rate-risk findings</h2></div><span className={`count-pill ${dashboardCountsReady && needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? needsAttentionCount : "…"}</span></div>
+            <div className="panel-heading"><div><span className="section-label">Action needed</span><h2>Rate-risk findings</h2></div><span className={`count-pill ${dashboardCountsReady && needsAttentionCount === 0 ? "quiet" : ""}`}>{dashboardCountsReady ? filteredRateFindings.length : "…"}</span></div>
             {!dashboardCountsReady ? (
               <div className="empty-queue large"><span aria-hidden="true">…</span><div><strong>Loading every connected state&apos;s findings…</strong><p>TaxAP is waiting for the all-state comparison batch before showing the review queue.</p></div></div>
-            ) : rateRiskFindings.length === 0 ? (
-              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No rate-risk findings</strong><p>No findings are visible in the available checks. Failed reads and unverified assignments are excluded; check the coverage summary.</p></div></div>
-            ) : rateRiskFindings.map((finding) => {
+            ) : filteredRateFindings.length === 0 ? (
+              <div className="empty-queue large"><span aria-hidden="true">✓</span><div><strong>No rate findings match these filters</strong><p>No findings are visible in the available checks. Failed reads and unverified assignments are excluded; check the coverage summary.</p></div></div>
+            ) : filteredRateFindings.map((finding) => {
                  const reviewCase = reviewCasesByKey.get(finding.stateCode === "NC" ? finding.reviewFindingKey : findingDecisionKey(finding));
                  return (
                    <button className="history-card finding-card" type="button" key={finding.id} onClick={() => openFinding(finding)}>
                     <span className={`status-mark comparison-${finding.comparisonStatus}`}>{finding.comparisonStatus === "upcoming" ? "↗" : "!"}</span>
-                     <span><strong>{formatRateText(finding.jurisdictionLabel)}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} {finding.rateRiskShipTos === null ? "assigned ship-tos; treatment unknown" : "rate-risk ship-tos"}{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
+                     <span><strong>{formatRateText(finding.jurisdictionLabel)}</strong><small>{finding.stateCode} · {finding.activeShipTos.toLocaleString()} {finding.rateRiskShipTos === null ? "assigned ship-tos; treatment unknown" : "rate-risk ship-tos"}{reviewCase ? ` · ${reviewStatusLabels[reviewCase.status]}` : " · New"}{finding.evidenceStatus === "stale" ? " · Stale evidence" : finding.confidence === "unverified" ? " · Needs jurisdiction review" : ""}</small></span>
                      <span className="history-rate">A+ {finding.aplusRate === null ? "Pending" : formatRate(finding.aplusRate)} → <strong>{finding.officialRate === null ? "Pending" : formatRate(finding.officialRate)}</strong></span>
                      <span className="row-arrow" aria-hidden="true">›</span>
                    </button>
                  );
             })}
           </section>
+          {dashboardCountsReady && <AssignmentGapQueue gaps={filteredAssignmentGaps} onOpenState={state => void openState(state)} />}
           <div className="safety-banner"><strong>Read-only boundary</strong><span>Review decisions are TaxAP records. Changes to tax-body rates still happen through the supported A+ GUI.</span></div>
           <AppFooter />
         </section>

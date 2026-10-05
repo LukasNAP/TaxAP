@@ -73,7 +73,7 @@ test("saved direct, flat and Georgia reviews drive inventory status filters and 
     for (const { state, payload, adapt } of scenarios) {
       const [finding] = adapt({ ...payload, stateCode: state });
       for (const status of ["in_review", "approved", "resolved", "not_applicable"]) {
-        const saved = store.saveDecision({ ...findingReviewEvidence(finding), status, actor: "Liv", note: "Synthetic review evidence." });
+        const saved = store.saveDecision({ ...findingReviewEvidence(finding), status, actor: "Liv", note: "Synthetic review evidence." }, { verification: status === "approved" ? { verified: true } : null });
         const reviews = new Map([[saved.findingKey, saved]]);
         const [row] = applyInventoryReviews(inventoryRows(state, null, payload, today), reviews);
         assert.equal(row.reviewStatus, status, `${state} ${status}`);

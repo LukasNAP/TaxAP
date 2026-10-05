@@ -32,3 +32,5 @@ Later October 2 follow-up: findings 1 (precision) and 3 (stale treatment counts)
 ## Suggested sequence
 
 Fix comparison tolerance and stale-treatment suppression first. Then unify review keys, add server-enforced evidence checks and authenticated attribution, and strengthen immutable decision evidence. Follow with drawer/freshness corrections, stakeholder acceptance, assignment-gap ownership and unattended monitoring/recovery.
+
+October 5 follow-up (local, not deployed): server approval validation and immutable event evidence address the approval bypass portion of finding 2 and finding 5. The review route re-reads the selected state and rejects unavailable, unconfirmed, stale or changed evidence; retrieval timestamps must fall within the existing six-hour source cache window. Server canonical evidence is archived per event; older events retain explicit null evidence, and update/delete triggers protect event snapshots. Reviewer attribution remains manual and open. Build, all 326 tests, lint and TypeScript passed. No SQL03/A+ query or write changes, push or deployment. See HANDOFF.md for exact policy and limitations.

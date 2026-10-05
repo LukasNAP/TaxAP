@@ -35,6 +35,7 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
     const rateDifference = officialRate !== null && Number.isFinite(aplusRate) ? Number((officialRate - aplusRate).toFixed(4)) : null;
     return {
       taxBody: row.taxBody,
+      definitionStatus: row.definitionStatus,
       description: row.description,
       activeShipTos: row.activeShipTos,
       jurisdictionLabel: official?.name ?? row.description ?? row.taxBody,

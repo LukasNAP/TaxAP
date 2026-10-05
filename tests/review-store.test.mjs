@@ -27,7 +27,8 @@ test("persists review status and an append-only event history", () => {
     assert.equal(started.assignedTo, "Liv");
     assert.equal(started.events.length, 1);
 
-    const approved = store.saveDecision({ ...decision, status: "approved", actor: "Ana", note: "Approved for manual maintenance in A+." });
+    assert.throws(() => store.saveDecision({ ...decision, status: "approved" }), /server-verified/);
+    const approved = store.saveDecision({ ...decision, status: "approved", actor: "Ana", note: "Approved for manual maintenance in A+." }, { verification: { verified: true } });
     assert.equal(approved.status, "approved");
     assert.equal(approved.events.length, 2);
     assert.deepEqual(approved.events.map((event) => event.toStatus), ["approved", "in_review"]);
