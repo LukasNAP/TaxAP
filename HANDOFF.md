@@ -2,7 +2,7 @@
 
 Last updated October 5, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
 
-## Clearer assignment-review queue (October 5; local changes)
+## Clearer assignment-review queue (deployed October 5)
 
 User requested clearer presentation of unresolved assignments after the rate-finding count dropped from254 to236. Prior/current aggregate evidence confirmed19 Alabama rate-risk findings became ambiguous assignment reviews and one Virginia rate-risk finding was added; this does not mean the19 Alabama issues were fixed.
 
@@ -11,6 +11,14 @@ Queue rows now lead with the existing A+ tax-body description (explicitly identi
 Needs attention shows separate filtered counts for rate findings, assignment-review groups and ship-to assignments needing review. Section badges identify findings/groups; the navigation badge explicitly counts rates, and the dashboard card is labeled Rate findings. Opening a group retains its context in the existing state drawer, presents why/next-step guidance and the current tax-body definition, and offers the existing on-demand ship-to list scoped to all assignments for that tax body in that state. State-only aggregate groups do not invent a tax body or list. Candidate lists are not returned by current gap payloads; the detail states that limitation and links users to the existing official state records/source evidence below. Batch reason/count and separately refreshed state detail are clearly distinguished.
 
 Build and all340 tests passed, including regression coverage for the aggregate description allowlist, old payload fallback and no invented candidates. Lint, TypeScript and whitespace checks passed. Synthetic-only browser preview verified the actual queue/detail components at desktop and600px widths; this does not establish full signed-in hosted acceptance. Temporary preview stopped. HANDOFF and dated Obsidian log updated. No customer queries, production review writes, commit, push or deployment performed; hosted remains implementation929bc02 with release documentation024d8b4.
+
+### Assignment-review presentation release deployed (October 5)
+
+User authorized commit/deployment. Implementation `a173ecc` is committed, pushed to origin/main and deployed on apdock01. Verified the prior application source against `024d8b4` with normalized line endings and all seven uploaded tracked-file hashes. Protected source/configuration, consistent SQLite and aggregate evidence backup: `/var/atlanticapps/taxap-backups/queue-a173ecc-20261005T145153Z`; unchanged host secret files excluded. Rollback image: `taxap-rollback:before-queue-a173ecc`. Built with both existing Compose files and recreated only taxap-app. This supersedes the local-only status above.
+
+All six focused synthetic queue tests passed against deployed modules; full local build/340 tests, lint and TypeScript passed before release. Hosted page and actual served chunk returned200 and contained the new group/assignment counts, short reasons and next-step guidance. SQLite integrity is ok and all four cases/four events were preserved. Four containers running with zero restarts; public root302/review API401 still enforce sign-in. No production review decisions or customer-detail queries were performed.
+
+Hosted read-only batch completed47/47 at 2026-10-05T14:53:32Z with no failed states or evidence-storage warnings. Returned663 assignment-review groups,623 with existing tax-body descriptions, covering6,647 ship-to assignments. Gap fields passed the aggregate allowlist check and every state's gap counts reconciled to its unchecked coverage total. Email remains disabled. Signed-in hosted visual acceptance remains pending; synthetic desktop/narrow-screen component verification is recorded above.
 
 ## Jurisdiction ambiguity controls and separate location status (deployed October 5)
 
