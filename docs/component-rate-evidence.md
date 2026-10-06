@@ -2,6 +2,8 @@
 
 Implemented and expanded locally October 6, 2026. TaxAP can show a potential component-rate difference while the jurisdiction or combined rate remains unresolved. This evidence does not choose a destination jurisdiction, calculate customer tax, suggest a combined replacement rate, or update A+.
 
+Deployed October6 as implementation4f9e408 after explicit authorization. All33 focused deployed tests passed and all51 source capability descriptions are served. Fresh batch at2026-10-06T17:40:21.816Z refreshed46 checks; Wisconsin retained older evidence because Census returned a Request Rejected HTML page in place of its county Gazetteer.326 returned groups have component evidence across21 states, subject to the safeguards below. NC had zero qualifying component differences. These observed counts are separate from adapter capability; they do not establish all-assignment verification. Review history integrity and public sign-in protection passed; signed-in visual acceptance remains pending. Earlier local-only validation statements below are historical.
+
 ## Equivalent components only
 
 The read-only tax-body definition query now includes `TBL1DSC`–`TBL4DSC` beside `TBCLRT1`–`TBCLRT4`. These are free-form local-component labels, not fixed city/county slots. Component position is never used to infer its meaning.
