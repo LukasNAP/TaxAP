@@ -76,6 +76,16 @@ export function parseNcdorCurrentRates(html) {
   return { effectivePeriod, rates };
 }
 
+// Missing or changed base metadata disables component evidence, not total-rate checks.
+export function parseNcdorStateRate(html, asOfDate) {
+  const tables=[...html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)].map(m=>m[0]);
+  const rates=tables.filter(table=>/State Rate/i.test(decodeHtml(table))).flatMap(table=>
+    [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(m=>[...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map(cell=>decodeHtml(cell[1]))))
+    .filter(cells=>cells.length===2&&/Current/i.test(cells[0])&&parseUsDate(cells[0].split(/[–-]/)[0].trim())<=asOfDate)
+    .map(cells=>parseRate(cells[1]));
+  return rates.length===1&&Number.isFinite(rates[0])&&rates[0]>=0&&rates[0]<=12?rates[0]:null;
+}
+
 export function parseNcdorFutureChanges(html, asOfDate = new Date().toISOString().slice(0, 10)) {
   const rows = tableRows(html, "1% Additional County Tax");
   const headers = rows[0];
@@ -135,6 +145,7 @@ export async function readOfficialNcRates({ fetchImpl = fetchOfficial, now = new
       retrievedAt: now.toISOString(),
       asOfDate,
       effectivePeriod: current.effectivePeriod,
+      stateRate: parseNcdorStateRate(currentHtml, asOfDate),
       sourceHash: createHash("sha256").update(currentHtml).update(effectiveDatesHtml).digest("hex"),
       rates: current.rates,
       futureChanges: parseNcdorFutureChanges(effectiveDatesHtml, asOfDate),

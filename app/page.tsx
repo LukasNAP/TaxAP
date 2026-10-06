@@ -1,4 +1,5 @@
 "use client";
+import type { MatchDiagnostic } from './match-diagnostic';
 import { MatchingEvidence } from "./match-diagnostic-view";
 import { formatRate, formatRateText } from "./rate-format";
 import { markBatchOutage, markRetainedEvidence, type RetainedState } from "./state-retention";
@@ -84,6 +85,7 @@ type OfficialSourceState = {
   status: "connected" | "machine-readable-source" | "official-document-source" | "research-needed" | "no-general-sales-tax";
   adapter: string;
   coverage: string;
+  componentCoverage?: string;
   sourceName: string;
   sourceUrl: string | null;
 };
@@ -376,6 +378,7 @@ export default function Home() {
     : "Connecting to the read-only A+ source…");
   const [liveSnapshot, setLiveSnapshot] = useState<LiveAPlusSnapshot | null>(null);
   const [officialSnapshot, setOfficialSnapshot] = useState<OfficialNcSnapshot | null>(validatedOfficialNcFallback);
+  const [ncComponentDiagnostics,setNcComponentDiagnostics] = useState<Record<string, MatchDiagnostic>>({});
   const [stateCoverage, setStateCoverage] = useState<StateCoverageSnapshot | null>({ retrievedAt: validatedOfficialNcFallback.retrievedAt, states: validatedStateCoverageFallback, excludedShipTos: 0 });
   const [taxTreatmentSnapshot, setTaxTreatmentSnapshot] = useState<TaxTreatmentSnapshot | null>(null);
   const [taxTreatmentStatus, setTaxTreatmentStatus] = useState<TaxTreatmentStatus>("idle");
@@ -494,7 +497,7 @@ export default function Home() {
       const [result, coverage, treatment] = await Promise.all([
         get<{ assignmentGaps?: AssignmentGap[]; emailAlertStatus?: string; retainedStates?: RetainedState[]; stateFailures?: { stateCode: string; reason: string }[]; evidenceWarnings?: string[]; findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
           stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[];
-          nc: { aplusSnapshot: LiveAPlusSnapshot; officialSnapshot: OfficialNcSnapshot } | null;
+          nc: { aplusSnapshot: LiveAPlusSnapshot; officialSnapshot: OfficialNcSnapshot; componentDiagnostics?: Record<string,MatchDiagnostic> } | null;
           ga: GaBoundaryReconciliation | null;
         }>("/api/official/findings"),
         get<StateCoverageSnapshot>("/api/aplus/states"),
@@ -509,9 +512,10 @@ export default function Home() {
         setActiveCountyCoverage(mergeOfficialRates(mergeRateRows(initializeComparisons(countyCoverage), result.nc.aplusSnapshot.standardRows), result.nc.officialSnapshot));
         setLiveSnapshot(result.nc.aplusSnapshot);
         setOfficialSnapshot(result.nc.officialSnapshot);
+        setNcComponentDiagnostics(result.nc.componentDiagnostics ?? {});
         setAppliedImport(null);
         setSelectedCounty(null);
-      } else setOfficialSnapshot(null);
+      } else { setOfficialSnapshot(null); setNcComponentDiagnostics({}); }
       setDashboardGaBoundary(result.ga);
       setDashboardOtherFindings(result.findings);
       setBatchHealth({ status: result.failedStates.length ? "partial" : "ready", failedStates: result.failedStates, retrievedAt: result.retrievedAt, stateChecks: result.stateChecks, retainedStates: result.retainedStates ?? [], stateFailures: result.stateFailures ?? [], evidenceWarnings: result.evidenceWarnings ?? [], emailAlertStatus: result.emailAlertStatus, assignmentGaps: result.assignmentGaps ?? [] });
@@ -1122,7 +1126,7 @@ export default function Home() {
                       : <><strong>{source.stateCode}</strong> · {source.stateName}</>}</td>
                     <td>{source.activeShipTos.toLocaleString()}</td>
                       <td><span className={`source-rollout-status source-rollout-${source.status}`}>{source.status === "connected" ? "Connected" : source.status === "machine-readable-source" ? "Machine source identified" : source.status === "official-document-source" ? "Official document identified" : source.status === "no-general-sales-tax" ? "No general sales tax" : "Research needed"}</span></td>
-                    <td>{formatRateText(source.coverage)}</td>
+                    <td>{formatRateText(source.coverage)}{source.componentCoverage && <p>{source.componentCoverage}</p>}</td>
                     <td>{source.sourceUrl ? <a href={source.sourceUrl} target="_blank" rel="noreferrer">{source.sourceName} ↗</a> : source.sourceName}</td>
                   </tr>
                 ))}</tbody>
@@ -1268,6 +1272,7 @@ export default function Home() {
           ) : (
             <div className="comparison-note comparison-note-match"><span aria-hidden="true">✓</span><div><strong>{selectedCounty.comparisonStatus === "matched" ? "A+ matches the current NCDOR rate" : "Official comparison unavailable"}</strong><p>{selectedCounty.activeShipTos > 0 ? `${selectedCounty.activeShipTos.toLocaleString()} active ship-tos use this tax body.` : "No active A+ ship-to address is assigned to this standard county tax body."}</p></div></div>
           )}
+          {ncComponentDiagnostics[selectedCounty.taxBody] && <MatchingEvidence diagnostic={ncComponentDiagnostics[selectedCounty.taxBody]} />}
           <JurisdictionVerificationFacts finding={{ identityStatus: selectedCounty.officialRate === null || batchHealth.failedStates.includes("NC") ? "not_checked" : "confirmed", locationStatus: "not_checked" }} />
           <FindingShipTos key={selectedCounty.taxBody} apiBase={apiBaseUrl()} taxBody={selectedCounty.taxBody} state="NC" scope="all" expectedCount={selectedCounty.activeShipTos} />
           {(selectedCounty.comparisonStatus === "mismatch" || selectedCounty.comparisonStatus === "upcoming") && (

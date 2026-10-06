@@ -1,4 +1,5 @@
-import { defaultMatchDiagnostic, assignmentGuardReason } from './match-diagnostic.mjs';
+import { defaultMatchDiagnostic, assignmentGuardReason, aggregateMatchDiagnostic } from './match-diagnostic.mjs';
+import { componentEvidence } from './component-evidence.mjs';
 import { hasRateDifference } from "../app/rate-comparison.ts";
 import { describesOtherJurisdiction } from "../app/tax-body-policy.ts";
 
@@ -34,7 +35,11 @@ export function reconcileDirectMappingAplus({ stateCode, stateDetail, matchOffic
     const aplusRate = row.currentRate === null || row.currentRate === undefined ? null : Number(row.currentRate);
     const officialRate = hasResolvedRate ? Number(official.totalGeneralRate) : null;
     const rateDifference = officialRate !== null && Number.isFinite(aplusRate) ? Number((officialRate - aplusRate).toFixed(4)) : null;
-    const matchDiagnostic = diagnostics?.get(row) ?? (!hasResolvedRate
+    const supportedComponents = official ? componentEvidence(row, [official], {stateCode,source:officialSnapshot}) : null;
+    const componentDiagnostic = supportedComponents?.some(component => component.hasDifference)
+      ? aggregateMatchDiagnostic({ version: 1, stateCode, reason: 'component_difference', inputs: { taxBody: row.taxBody, description: row.description },
+        source: officialSnapshot, candidates: [official], componentEvidence: supportedComponents }) : null;
+    const matchDiagnostic = diagnostics?.get(row) ?? componentDiagnostic ?? (!hasResolvedRate
       ? defaultMatchDiagnostic(stateCode, row, row.definitionStatus === "missing" ? "missing_definition" : official ? "official_rate_unavailable" : "no_candidate", officialSnapshot)
       : !Number.isFinite(aplusRate) ? defaultMatchDiagnostic(stateCode, row, "missing_aplus_rate", officialSnapshot) : null);
     return {

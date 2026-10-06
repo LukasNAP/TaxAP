@@ -24,6 +24,7 @@ export function parseArkansasLocalTable(text, { period, stateRate, minimumCities
     seen.add(jurisdictionCode);
     let localRate = Number(component);
     let county = null;
+    let countyRate = null;
     if (countySection) {
       if (!name.endsWith(" County") || !jurisdictionCode.endsWith("-00") || tail) throw new Error("Arkansas county row changed.");
     } else {
@@ -33,12 +34,15 @@ export function parseArkansasLocalTable(text, { period, stateRate, minimumCities
         county = tail.replace(/ See Below Varies$/, "");
       } else if (combined && !combined[1].includes("/")) {
         county = combined[1];
+        countyRate = Number(combined[2]);
         localRate = Number(combined[3]);
         if (Math.abs(Number(component) + Number(combined[2]) - localRate) > 0.00001) throw new Error("Arkansas local components do not sum to the published total.");
       } else throw new Error("Arkansas city total is unresolved in an unknown format.");
     }
     if (Number(component) > 10 || (localRate !== null && (localRate < 0 || localRate > 10))) throw new Error("Arkansas local rate is invalid.");
-    rates.push({ jurisdictionCode, name, county, effectiveDate, jurisdictionType: countySection ? "county" : "city", totalGeneralRate: localRate === null ? null : Number((stateRate + localRate).toFixed(4)) });
+    rates.push({ jurisdictionCode, name, county, effectiveDate, jurisdictionType: countySection ? "county" : "city", totalGeneralRate: localRate === null ? null : Number((stateRate + localRate).toFixed(4)),
+      components: [{type:countySection?'county':'city',name:name.replace(/ \(city\)$/i,''),rate:Number(component)},
+        ...(!countySection && countyRate !== null ? [{type:'county',name:`${county} County`,rate:countyRate}] : [])] });
   }
   if (rates.filter((r) => r.jurisdictionType === "county").length !== expectedCounties || rates.filter((r) => r.jurisdictionType === "city").length < minimumCities) throw new Error("Arkansas local inventory is incomplete.");
   return rates;

@@ -1,13 +1,15 @@
 import { AlabamaMatchEvidence } from './al-match-diagnostic-view';
 import { evidenceSourceLink, matchDiagnosticCopy, type MatchDiagnostic } from './match-diagnostic';
 import { formatRate } from './rate-format';
+import { ComponentRateEvidence } from './component-evidence-view';
 
 export function MatchingEvidence({ diagnostic }: { diagnostic: MatchDiagnostic }) {
-  if (!('version' in diagnostic)) return <AlabamaMatchEvidence diagnostic={diagnostic} />;
+  if (!('version' in diagnostic)) return <><ComponentRateEvidence rows={diagnostic.componentEvidence} /><AlabamaMatchEvidence diagnostic={diagnostic} /></>;
   const [why, next] = matchDiagnosticCopy[diagnostic.reason];
   const source = evidenceSourceLink(diagnostic.source.sourceUrl);
   const data = evidenceSourceLink(diagnostic.source.machineReadableSourceUrl);
   return <section className="al-match-evidence" aria-label="Matching evidence">
+    <ComponentRateEvidence rows={diagnostic.componentEvidence} />
     <h4>Why this match needs review</h4><p>{why}</p>
     <dl className="review-facts">
       <div><dt>State of official lookup</dt><dd>{diagnostic.stateCode}</dd></div>

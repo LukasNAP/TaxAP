@@ -79,6 +79,7 @@ export function parseFloridaSurtaxWorkbook(buffer, { expectedCounties = FLORIDA_
     name: `${county.replace(/\b\w/g, (letter) => letter.toUpperCase()).replace("Miami-Dade", "Miami-Dade")} County`,
     county,
     componentRate: surtaxRate,
+    componentKind: 'county', // Explicit county discretionary surtax, not a combined local total.
     totalGeneralRate: Number((FLORIDA_STATE_RATE + surtaxRate).toFixed(4)),
     generalInterstateRate: Number((FLORIDA_STATE_RATE + surtaxRate).toFixed(4)),
     beginDate: null,

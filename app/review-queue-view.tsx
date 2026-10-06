@@ -23,10 +23,10 @@ export function QueueSummary({ rateFindings, gaps }: { rateFindings: number; gap
 export function AssignmentGapQueue({ gaps, onOpenGap }: { gaps: AssignmentGap[]; onOpenGap: (gap: AssignmentGap)=>void }) {
   return <section className="queue-panel attention-panel assignment-review-queue" aria-labelledby="assignment-gap-title">
     <div className="panel-heading"><div><span className="section-label">Jurisdiction and setup review</span><h2 id="assignment-gap-title">Assignments needing review</h2></div><span className="count-pill">{gaps.length.toLocaleString()} {gaps.length===1?'group':'groups'}</span></div>
-    <p className="assignment-queue-intro">TaxAP could not confirm the jurisdiction or tax-body setup, so it has not completed these rate comparisons. These are unresolved issues, not confirmed rate differences or deliberate no-tax assignments.</p>
+    <p className="assignment-queue-intro">TaxAP could not complete the jurisdiction or tax-body comparison. Supported component-rate differences may still be shown inside these reviews; a combined replacement rate remains unconfirmed.</p>
     {gaps.length===0?<p className="assignment-queue-intro">No assignment groups match these filters in the available checks. Unavailable state counts are unknown.</p>:gaps.map((gap,i)=><button className="history-card assignment-review-card" type="button" key={`${gap.stateCode}-${gap.taxBody}-${gap.reason}-${i}`} onClick={()=>onOpenGap(gap)}>
       <span className="status-mark comparison-not-checked" aria-hidden="true">?</span>
-      <span><strong>{assignmentTitle(gap)}</strong><small>{STATE_NAME_BY_CODE.get(gap.stateCode) ?? gap.stateCode} · {gap.taxBody ?? 'State aggregate'}{gap.taxBodyDescription && ' · A+ tax-body description'}</small><span className="assignment-review-reason">{gapLabels[gap.reason]}</span></span>
+      <span><strong>{assignmentTitle(gap)}</strong><small>{STATE_NAME_BY_CODE.get(gap.stateCode) ?? gap.stateCode} · {gap.taxBody ?? 'State aggregate'}{gap.taxBodyDescription && ' · A+ tax-body description'}</small><span className="assignment-review-reason">{gapLabels[gap.reason]}</span>{gap.matchDiagnostic?.componentEvidence?.some(row => row.hasDifference) && <small>Potential component-rate difference</small>}</span>
       <span className="assignment-review-count">{gap.shipTos.toLocaleString()}<small>affected ship-tos</small></span><span className="row-arrow" aria-hidden="true">›</span>
     </button>)}
   </section>;

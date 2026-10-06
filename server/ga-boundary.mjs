@@ -1,4 +1,5 @@
 import { defaultMatchDiagnostic, aggregateMatchDiagnostic } from './match-diagnostic.mjs';
+import { componentEvidence } from './component-evidence.mjs';
 import { fetchOfficial } from "./official-fetch.mjs";
 import { hasRateDifference } from "../app/rate-comparison.ts";
 import { createHash } from "node:crypto";
@@ -345,7 +346,7 @@ function jurisdictionKey(jurisdiction) {
  * tax body's resolved official rate against its configured XATXBD rate. Never returns ship-to-level
  * address or customer data — only aggregate counts and rate comparisons.
  */
-export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnapshot, taxBodyRates = new Map(), taxBodyDescriptions = new Map(), asOfDate }) {
+export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnapshot, taxBodyRates = new Map(), taxBodyDescriptions = new Map(), taxBodyComponents = new Map(), asOfDate }) {
   const perTaxBody = new Map();
   let matchedCount = 0;
   let unmatchedCount = 0;
@@ -396,8 +397,20 @@ export function reconcileGeorgiaBoundary({ addresses, boundaryDataset, rateSnaps
     const officialRate = majority ? officialRateForJurisdiction(majority.jurisdiction, rateSnapshot) : null;
     const aplusRate = taxBodyRates.has(bucket.taxBody) ? taxBodyRates.get(bucket.taxBody) : null;
     const rateDifference = officialRate !== null && aplusRate !== null ? Number((officialRate - aplusRate).toFixed(4)) : null;
+    const componentCandidates=jurisdictions.map(({jurisdiction})=>({
+      name:`County ${jurisdiction.fipsCounty || 'none'} / place ${jurisdiction.fipsPlace || 'none'}`,
+      components:rateSnapshot.rates.filter(rate=>(rate.jurisdictionType==='county'&&rate.jurisdictionCode===jurisdiction.fipsCounty)
+        ||(rate.jurisdictionType==='city'&&rate.jurisdictionCode===jurisdiction.fipsPlace)
+        ||(rate.jurisdictionType==='special'&&rate.jurisdictionCode===jurisdiction.specialCode))
+        .map(rate=>({type:rate.jurisdictionType,name:rate.name,rate:rate.componentRate})),
+    }));
+    const supportedComponents=!(bucket.unmatched||bucket.ambiguous)&&!describesOtherJurisdiction({taxBody:bucket.taxBody,description:taxBodyDescriptions.get(bucket.taxBody)},'GA')&&taxBodyComponents.has(bucket.taxBody)
+      ? componentEvidence(taxBodyComponents.get(bucket.taxBody),componentCandidates,{stateCode:'GA',source:rateSnapshot,allowCombined:false}) : null;
+    const componentDiagnostic=supportedComponents?.some(row=>row.hasDifference)?aggregateMatchDiagnostic({version:1,stateCode:'GA',reason:'component_difference',inputs:{taxBody:bucket.taxBody,description:taxBodyDescriptions.get(bucket.taxBody)},source:rateSnapshot,candidates:componentCandidates,componentEvidence:supportedComponents}):null;
     return {
+      ...(consistent && componentDiagnostic ? {matchDiagnostic:componentDiagnostic}:{}),
       ...(!consistent ? { matchDiagnostic: aggregateMatchDiagnostic({ ...defaultMatchDiagnostic("GA", { taxBody: bucket.taxBody, description: taxBodyDescriptions.get(bucket.taxBody) }, "multiple_candidates", rateSnapshot),
+        componentEvidence:supportedComponents,
         candidates: jurisdictions.flatMap(({ jurisdiction }) => rateSnapshot.rates.filter(rate =>
           (rate.jurisdictionType === "county" && rate.jurisdictionCode === jurisdiction.fipsCounty) ||
           (rate.jurisdictionType === "city" && rate.jurisdictionCode === jurisdiction.fipsPlace) ||

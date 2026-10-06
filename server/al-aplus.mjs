@@ -1,6 +1,7 @@
 import { reconcileDirectMappingAplus } from "./direct-mapping-aplus.mjs";
 import { readOfficialAlRates, AL_STATE_RATE } from "./al-rates.mjs";
 import { aggregateAlMatchDiagnostic } from "./al-match-diagnostic.mjs";
+import { componentEvidence } from './component-evidence.mjs';
 
 // AL000 (no XATXBD definition) is a misinput per the project's standing default. Codes ending in
 // "E" (equipment-tax variant, e.g. AL7049E) and any description naming a Police Jurisdiction ("PJ")
@@ -65,6 +66,7 @@ export async function readAlabamaAplusComparison(stateDetail, { readOfficialAlRa
       stateCode: 'AL', reason, candidateBasis, localityCode: extractAlCode(row.taxBody), expectedName,
       nameCheckToken: expectedName.slice(0, Math.min(6, expectedName.length)), countyHint: alCountyHint(row.description),
       source: officialSnapshot,
+      componentEvidence: componentEvidence(row, candidates.map(rate => ({ ...rate, componentKind: rate.jurisdictionType }))),
       candidates: candidates.map(rate => ({ ...rate,
         localityCode: rate.localityCode ?? rate.jurisdictionCode,
         countyReferences: rate.countyCode ? countyRows.filter(county => (county.localityCode ?? county.jurisdictionCode) === rate.countyCode)

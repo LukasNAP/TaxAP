@@ -59,7 +59,8 @@ export function parseOklahomaCopoCsv(text, { asOfDate = new Date().toISOString()
     const isCounty = code === countyCode;
     const values = [sales.rate, use?.rate, salesCounty?.rate, useCounty?.rate];
     const comparable = values.every(Number.isFinite) && sales.name === use?.name && sales.rate === use.rate && salesCounty.rate === useCounty.rate;
-    rates.push({ jurisdictionCode: code, name: sales.name, totalGeneralRate: comparable ? Number((4.5 + sales.rate + (isCounty ? 0 : salesCounty.rate)).toFixed(4)) : null });
+    rates.push({ jurisdictionCode: code, name: sales.name, totalGeneralRate: comparable ? Number((4.5 + sales.rate + (isCounty ? 0 : salesCounty.rate)).toFixed(4)) : null,
+      components: comparable ? [{type:isCounty?'county':'city',name:sales.name,rate:sales.rate},...(!isCounty?[{type:'county',name:salesCounty.name,rate:salesCounty.rate}]:[])] : [] });
   }
   return rates;
 }
@@ -73,7 +74,7 @@ export async function readOklahomaCombinedRates({ fetchImpl = fetchOfficial, rea
   const sstSnapshot = await readSst();
   if (sstSnapshot.stateRate !== 4.5) throw new Error("Oklahoma state rate changed.");
   const rates = parseOklahomaCopoCsv(text, { asOfDate: now.toISOString().slice(0, 10) });
-  return { stateCode: "OK", rates, sstSnapshot, sourceUrl: OKLAHOMA_COPO_PAGE, machineReadableSourceUrl: OKLAHOMA_COPO_CSV, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(text).digest("hex") };
+  return { stateCode: "OK", stateRate:sstSnapshot.stateRate,rates, sstSnapshot, sourceUrl: OKLAHOMA_COPO_PAGE, machineReadableSourceUrl: OKLAHOMA_COPO_CSV, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(text).digest("hex") };
 }
 
 const normalize = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");

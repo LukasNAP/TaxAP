@@ -67,6 +67,8 @@ export async function readOhioAplusComparison(stateDetail, { readOfficialSstStat
         return {
           ...county,
           name: `${county.name} (incl. transit-authority surcharge)`,
+          components: [{type:'county',name:county.name,rate:county.componentRate},
+            {type:'special',name:surcharge.name,rate:surcharge.componentRate}],
           totalGeneralRate: Number((Number(county.totalGeneralRate) + Number(surcharge.componentRate)).toFixed(4)),
         };
       },

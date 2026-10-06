@@ -24,7 +24,10 @@ export async function readWisconsinAplusComparison(stateDetail, { readOfficial =
       if (name === "city of milwaukee" || name === "milwaukee city") {
         const county = counties.get("milwaukee");
         if (!county) return reject(row, "no_candidate");
-        return { ...milwaukeeCities[0], name: "City of Milwaukee (state, county and city)", totalGeneralRate: Number((county.totalGeneralRate + milwaukeeCities[0].componentRate).toFixed(4)) };
+        return { ...milwaukeeCities[0], name: "City of Milwaukee (state, county and city)",
+          components: [{ type: 'city', name: milwaukeeCities[0].name, rate: milwaukeeCities[0].componentRate },
+            { type: 'county', name: county.name, rate: county.componentRate }],
+          totalGeneralRate: Number((county.totalGeneralRate + milwaukeeCities[0].componentRate).toFixed(4)) };
       }
       const countyName = /^(.*) (?:county|co\.?)$/.exec(name)?.[1];
       // The saved Milwaukee County group may include deliveries inside the city.

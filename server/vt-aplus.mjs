@@ -47,7 +47,7 @@ export function parseVermontSalesAreas(data, html, { now = new Date(), expectedA
     const hasLocal = Boolean(start && start <= today && (!end || today < end));
     if (hasLocal) active.add(name);
     if (hasLocal !== published.has(name)) throw new Error("Vermont map and published sales-tax list disagree.");
-    return { name: a.TOWNNAME, jurisdictionType: "city", jurisdictionCode: `VT:${name}`, totalGeneralRate: hasLocal ? 7 : 6, beginDate: start, endDate: end };
+    return { name: a.TOWNNAME, jurisdictionType: "city", componentKind:'city',componentRate:hasLocal?1:0,jurisdictionCode: `VT:${name}`, totalGeneralRate: hasLocal ? 7 : 6, beginDate: start, endDate: end };
   });
   if (active.size !== published.size) throw new Error("Vermont map omits a published sales-tax municipality.");
   return { rates, localSalesAreas: active.size };

@@ -42,7 +42,7 @@ export async function readTennesseeCombinedRates({ fetchImpl = fetchOfficial, re
   const text = await response.text();
   const sstSnapshot = await readSst();
   const rates = reconcileTennesseeInventory(JSON.parse(text), sstSnapshot);
-  return { stateCode: "TN", rates, sstSnapshot, sourceUrl: TENNESSEE_LOOKUP_PAGE, machineReadableSourceUrl: url, retrievedAt: new Date().toISOString(), sourceHash: createHash("sha256").update(text).digest("hex") };
+  return { stateCode: "TN", stateRate:sstSnapshot.stateRate,rates, sstSnapshot, sourceUrl: TENNESSEE_LOOKUP_PAGE, machineReadableSourceUrl: url, retrievedAt: new Date().toISOString(), sourceHash: createHash("sha256").update(text).digest("hex") };
 }
 
 export async function readTennesseeAplusComparison(stateDetail, { readOfficial = readTennesseeCombinedRates } = {}) {

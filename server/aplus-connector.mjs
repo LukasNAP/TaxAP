@@ -1,4 +1,5 @@
 import { defaultMatchDiagnostic } from './match-diagnostic.mjs';
+import { northCarolinaComponentDiagnostics } from './nc-component-evidence.mjs';
 import { createSharedPoolManager } from "./shared-sql-pool.mjs";
 import { reviewComparison, validateApproval } from "./review-validation.mjs";
 import { findingDecisionKey } from "../app/finding-review.ts";
@@ -183,6 +184,7 @@ export function buildTaxBodyDefinitionsQuery(taxBodies, { linkedServer = "SQL03"
   const db2Query = [
     "SELECT",
     "TBTXBOD AS TaxBody, TBTXNAM AS Description,",
+    "TBL1DSC AS LocalDescription1, TBL2DSC AS LocalDescription2, TBL3DSC AS LocalDescription3, TBL4DSC AS LocalDescription4,",
     "TBCBSRT AS CurrentBaseRate, TBCLRT1 AS CurrentLocalRate1, TBCLRT2 AS CurrentLocalRate2,",
     "TBCLRT3 AS CurrentLocalRate3, TBCLRT4 AS CurrentLocalRate4, TBCRATE AS CurrentTotalRate,",
     "TBNRATE AS NextTotalRate, TBTXDAT AS NextEffectiveDate",
@@ -636,6 +638,7 @@ export async function readStateDetail(value) {
         description: definition ? String(rowValue(definition, "Description") || "").trim() : null,
         baseRate,
         localRates,
+        localDescriptions: definition ? [1, 2, 3, 4].map(index => String(rowValue(definition, `LocalDescription${index}`) || "").trim()) : [],
         currentRate,
         nextRate: definition ? numericValue(rowValue(definition, "NextTotalRate")) : null,
         nextEffectiveDate: definition ? normalizedDate(rowValue(definition, "NextEffectiveDate")) : null,
@@ -753,7 +756,7 @@ export async function readNorthCarolinaBatchComparison() {
   const [aplusSnapshot, officialSnapshot, stateDetail] = await Promise.all([
     readLiveTaxBodies(), readOfficialNcRates(), readStateDetail("NC"),
   ]);
-  return { aplusSnapshot, officialSnapshot, stateDetail };
+  return { aplusSnapshot, officialSnapshot, stateDetail, componentDiagnostics:northCarolinaComponentDiagnostics(stateDetail,officialSnapshot) };
 }
 
 const evidenceDirectory = () => process.env.TAXAP_EVIDENCE_DIR || resolve(dirname(process.env.TAXAP_REVIEW_DB || resolve(".data", "taxap-reviews.sqlite")), "state-evidence");
@@ -863,6 +866,7 @@ export async function readGeorgiaBoundaryReconciliation() {
   let addressRows;
   let taxBodyRates;
   let taxBodyDescriptions;
+  const taxBodyComponents=new Map();
   try {
     const addressResult = await pool.request().query(buildGeorgiaAddressQuery());
     addressRows = addressResult.recordset.map((row) => ({
@@ -884,6 +888,8 @@ export async function readGeorgiaBoundaryReconciliation() {
         const taxBody = String(rowValue(row, "TaxBody") || "").trim();
         taxBodyRates.set(taxBody, numericValue(rowValue(row, "CurrentTotalRate")));
         taxBodyDescriptions.set(taxBody, String(rowValue(row, "Description") || "").trim());
+        taxBodyComponents.set(taxBody,{localDescriptions:[1,2,3,4].map(i=>String(rowValue(row,`LocalDescription${i}`)||'').trim()),
+          localRates:[1,2,3,4].map(i=>numericValue(rowValue(row,`CurrentLocalRate${i}`)))});
       }
     }
   } finally {
@@ -901,6 +907,7 @@ export async function readGeorgiaBoundaryReconciliation() {
     rateSnapshot,
     taxBodyRates,
     taxBodyDescriptions,
+    taxBodyComponents,
     asOfDate,
   });
 

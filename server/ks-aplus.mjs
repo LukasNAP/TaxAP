@@ -38,7 +38,7 @@ export async function readKansasCombinedRates({ fetchImpl = fetchOfficial, now =
   const period = `${["January", "April", "July", "October"][month / 3]} 1, ${year}`;
   if (!readXlsxRows(buffer).some((r) => Object.values(r).some((v) => v.includes(`effective ${period}`)))) throw new Error("Kansas workbook effective period changed.");
   const rates = parseKansasCombinedRows(readXlsxRows(buffer, { sheetFile: "sheet2.xml" }), { asOfDate: now.toISOString().slice(0, 10) });
-  return { stateCode: "KS", rates, sourceUrl: KANSAS_RATE_PAGE, machineReadableSourceUrl: url, effectivePeriod: period, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(buffer).digest("hex") };
+  return { stateCode: "KS", stateRate:6.5,rates, sourceUrl: KANSAS_RATE_PAGE, machineReadableSourceUrl: url, effectivePeriod: period, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(buffer).digest("hex") };
 }
 
 const normalize = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");

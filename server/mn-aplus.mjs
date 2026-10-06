@@ -43,7 +43,7 @@ export async function readMinnesotaCombinedRates({ fetchImpl = fetchOfficial, no
   if (!response.ok) throw new Error("Minnesota current-period PDF is unavailable.");
   const buffer = Buffer.from(await response.arrayBuffer());
   const rates = parseMinnesotaCombinedText(await extractPdfTableText(buffer), { asOfDate: now.toISOString().slice(0, 10) });
-  return { stateCode: "MN", rates, sourceUrl: MINNESOTA_RATE_PAGE, machineReadableSourceUrl: url, effectivePeriod: key, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(buffer).digest("hex") };
+  return { stateCode: "MN", rates, stateRate:6.875, sourceUrl: MINNESOTA_RATE_PAGE, machineReadableSourceUrl: url, effectivePeriod: key, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(buffer).digest("hex") };
 }
 
 const normalize = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -61,7 +61,9 @@ export function parseMinnesotaMap(data, { minimumRows = 150 } = {}) {
     if (components[0] !== 6.875 || total > 20 || Math.abs(components.reduce((x, y) => x + y, 0) - total) > .00001) throw new Error("Minnesota map components disagree with the total.");
     const label = normalize(a.NameLabel).replace(/ county$/, "");
     // Preserve inconsistent official identity records as ambiguity, rather than fixing a name.
-    return { name: a.NameLabel, county: a.CountyName, totalGeneralRate: total, ambiguousArea: label !== normalize(a.NameFrmal) };
+    return { name: a.NameLabel, county: a.CountyName, totalGeneralRate: total, ambiguousArea: label !== normalize(a.NameFrmal),
+      components:[...(a.CtyFrmal != null ? [{type:'county',name:`${a.CountyName.replace(/ county$/i,'')} County`,rate:components[2]}]:[]),
+        ...(a.CityFrmal != null ? [{type:'city',name:a.NameFrmal,rate:components[1]}]:[])] };
   });
 }
 
@@ -80,7 +82,7 @@ export async function readMinnesotaMapRates({ fetchImpl = fetchOfficial, now = n
   if (!dataResponse.ok) throw new Error("Minnesota jurisdiction map query failed.");
   const text = await dataResponse.text();
   const rates = parseMinnesotaMap(JSON.parse(text));
-  return { stateCode: "MN", rates, sourceUrl: "https://taxmaps.state.mn.us/salestax/", machineReadableSourceUrl: url, effectivePeriod: period, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(text).digest("hex") };
+  return { stateCode: "MN", stateRate:6.875,rates, sourceUrl: "https://taxmaps.state.mn.us/salestax/", machineReadableSourceUrl: url, effectivePeriod: period, retrievedAt: now.toISOString(), sourceHash: createHash("sha256").update(text).digest("hex") };
 }
 
 export async function readMinnesotaAplusComparison(stateDetail, { readOfficial = readMinnesotaMapRates } = {}) {

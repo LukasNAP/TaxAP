@@ -1,4 +1,5 @@
 import { NCDOR_CURRENT_RATES_URL } from "./ncdor-rates.mjs";
+import { componentCoverageText } from './component-policy.mjs';
 import { CALIFORNIA_DOR_OVERVIEW_URL } from "./ca-rates.mjs";
 import { CONNECTICUT_DRS_RATES_URL } from "./ct-rates.mjs";
 import { DISTRICT_OF_COLUMBIA_OTR_RATES_URL } from "./dc-rates.mjs";
@@ -355,9 +356,10 @@ export function listOfficialSourceRegistry() {
       stateCode, stateName, status: "research-needed", adapter: "state-specific",
       coverage: "official DOR source mapping pending", sourceName: "State tax authority", sourceUrl: null,
     };
-  });
+  }).map(source => ({ ...source, componentCoverage: componentCoverageText(source.stateCode) }));
 }
 
 export function officialSourceForState(stateCode) {
-  return listOfficialSourceRegistry().find((source) => source.stateCode === String(stateCode || "").toUpperCase()) ?? null;
+  const source=listOfficialSourceRegistry().find((source) => source.stateCode === String(stateCode || "").toUpperCase()) ?? null;
+  return source ? {...source,componentCoverage:componentCoverageText(source.stateCode)} : null;
 }

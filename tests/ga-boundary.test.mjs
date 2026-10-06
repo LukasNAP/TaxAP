@@ -14,6 +14,21 @@ import { readSingleFileZip, readZipEntries } from "../server/zip-utils.mjs";
 
 const COLUMN_COUNT = 89;
 
+test('Georgia compares named components only with complete boundary coverage and a GA assignment', () => {
+  const address={streetLine:'1 MAIN ST',secondaryLine:'',city:'ATHENS',zip:'30606',taxBody:'GA219'};
+  const csv=boundaryRow({type:'A',low:'1',high:'99',oddEven:'O',name:'MAIN',suffix:'ST',city:'ATHENS',zip5:'30606',fipsCounty:'219'});
+  const boundaryDataset=parseBoundaryCsv(csv,{wantedAddressKeys:buildWantedAddressKeys([address])});
+  const options={addresses:[address],boundaryDataset,rateSnapshot:{stateRate:4,rates:[{jurisdictionType:'county',jurisdictionCode:'219',name:'Example County',componentRate:3}]},
+    taxBodyRates:new Map([['GA219',6.5]]),taxBodyComponents:new Map([['GA219',{localDescriptions:['Example Co.'],localRates:[2.5]}]]),asOfDate:'20260818'};
+  const finding=reconcileGeorgiaBoundary(options).taxBodyFindings[0];
+  assert.equal(finding.matchDiagnostic.componentEvidence[0].difference,0.5);
+  assert.equal(finding.officialRate,7);
+  const incomplete=reconcileGeorgiaBoundary({...options,addresses:[address,{...address,streetLine:'999 NOWHERE LN',zip:'30001'}]}).taxBodyFindings[0];
+  assert.equal(incomplete.matchDiagnostic,undefined);
+  const excluded=reconcileGeorgiaBoundary({...options,addresses:[{...address,taxBody:'NC001'}],taxBodyRates:new Map([['NC001',6.5]]),taxBodyComponents:new Map([['NC001',{localDescriptions:['Example County'],localRates:[2.5]}]])}).crossStateAssignments.taxBodies[0];
+  assert.equal(excluded.matchDiagnostic,undefined);
+});
+
 function boundaryRow(fields) {
   const columns = new Array(COLUMN_COUNT).fill("");
   columns[0] = fields.type ?? "A";

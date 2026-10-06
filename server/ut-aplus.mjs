@@ -20,7 +20,7 @@ export function parseUtahCombinedRows(rows, { minimumRows = 300 } = {}) {
     const key = `${row.C}:${row.A}`;
     if (seen.has(key)) throw new Error("Utah location/code pair is duplicated.");
     seen.add(key);
-    rates.push({ jurisdictionCode: row.C, name: row.A, totalGeneralRate: Number((total * 100).toFixed(4)) });
+    rates.push({ jurisdictionCode: row.C, name: row.A, stateComponentRate:Number((Number(row.E)*100).toFixed(4)),totalGeneralRate: Number((total * 100).toFixed(4)) });
   }
   if (rates.length < minimumRows) throw new Error("Utah general inventory is incomplete.");
   return rates;

@@ -68,7 +68,8 @@ export async function readArizonaAplusComparison(stateDetail, { readOfficialAzRa
         const countyRow = countyName ? byCounty.get(countyName) : null;
         if (!countyRow) { reject(row, "county_hint_not_found", [cityRow], { countyHint: countyName ?? "" }); return { ...cityRow, totalGeneralRate: null }; }
         const total = Number((Number(countyRow.totalGeneralRate) + Number(cityRow.componentRate)).toFixed(4));
-        return { ...cityRow, name: `${cityRow.name} (${countyName})`, totalGeneralRate: total };
+        return { ...cityRow, name: `${cityRow.name} (${countyName})`, totalGeneralRate: total,
+          components:[{type:'city',name:cityRow.name,rate:cityRow.componentRate}] };
       },
     }),
     officialSnapshot,

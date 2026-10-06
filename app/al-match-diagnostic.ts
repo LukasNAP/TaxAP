@@ -18,6 +18,7 @@ export const alDiagnosticReasons = {
   excluded_code: { why: 'This tax body is excluded by Alabama’s existing supported-code policy.', next: 'Review the intended tax-body setup with the tax team; exclusion does not establish that the assignment is wrong.' },
 };
 export type AlabamaMatchDiagnostic = {
+  componentEvidence?: import('./component-evidence-view').ComponentEvidence[];
   stateCode: 'AL'; reason: keyof typeof alDiagnosticReasons; candidateBasis: 'locality-code'|'county-hint'|'scope';
   localityCode: string|null; expectedName: string; nameCheckToken: string; countyHint: string|null;
   source: { sourceUrl?: string; machineReadableSourceUrl?: string; retrievedAt?: string; asOfDate?: string; sourceHash?: string };

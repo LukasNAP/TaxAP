@@ -1,6 +1,7 @@
 import type { AlabamaMatchDiagnostic } from './al-match-diagnostic.ts';
 
 export const matchDiagnosticCopy = {
+  component_difference: ['A labeled A+ component differs from the identified official component.', 'Review the component definition and official scope. A component difference does not verify destination boundaries or calculate customer tax.'],
   missing_definition: ['The assigned tax-body definition is missing.', 'Confirm its definition in A+ before reviewing an official rate.'],
   missing_aplus_rate: ['The configured A+ rate is missing or invalid.', 'Check the assigned tax body and its configured rate.'],
   retired: ['This assignment is marked as retired under the existing tax-body policy.', 'Confirm whether an active ship-to should still use this tax body.'],
@@ -25,6 +26,7 @@ export const matchDiagnosticCopy = {
 } as const;
 
 export type SharedMatchDiagnostic = {
+  componentEvidence?: import('./component-evidence-view').ComponentEvidence[];
   version: 1; stateCode: string; reason: keyof typeof matchDiagnosticCopy;
   inputs: { taxBody?: string; description?: string; lookup?: string; countyHint?: string; jurisdictionType?: string };
   source: { sourceUrl?: string; machineReadableSourceUrl?: string; retrievedAt?: string; asOfDate?: string; effectivePeriod?: string; sourceHash?: string };

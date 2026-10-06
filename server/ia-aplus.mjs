@@ -47,7 +47,8 @@ export function parseIowaSalesRows(rows, { now = new Date(), expectedRows = 1136
     const endDate = r.J ? excelDate(r.J) : null;
     if (beginDate && endDate && endDate <= beginDate) throw new Error("Iowa LOST dates conflict.");
     const totalGeneralRate = (beginDate && beginDate > today) || (endDate && endDate <= today) ? null : hasLocal ? 7 : 6;
-    const rate = { jurisdictionType: unincorporated ? "county" : "city", jurisdictionCode: `IA:${key}`, name: unincorporated ? `${r.B} unincorporated` : r.C, county, countyNumber, totalGeneralRate, beginDate, endDate };
+    const rate = { jurisdictionType: unincorporated ? "county" : "city", jurisdictionCode: `IA:${key}`, name: unincorporated ? `${r.B} unincorporated` : r.C, county, countyNumber, totalGeneralRate, beginDate, endDate,
+      componentKind:unincorporated?'special':'city',componentRate:totalGeneralRate===null?null:totalGeneralRate-6 };
     const group = counties.get(county) ?? [];
     if (group.some((item) => item.countyNumber !== countyNumber)) throw new Error("Iowa county identity conflicts.");
     counties.set(county, [...group, rate]);
@@ -79,7 +80,9 @@ export async function readIowaAplusComparison(stateDetail, { readOfficial = read
       cities.set(name, [...(cities.get(name) ?? []), rate]);
     }
   }
-  const uniqueTotal = (rows, name) => rows?.length && rows.every((r) => Number.isFinite(r.totalGeneralRate) && r.totalGeneralRate === rows[0].totalGeneralRate) ? { name, totalGeneralRate: rows[0].totalGeneralRate } : null;
+  const uniqueTotal = (rows, name) => rows?.length && rows.every((r) => Number.isFinite(r.totalGeneralRate) && r.totalGeneralRate === rows[0].totalGeneralRate) ? { name, totalGeneralRate: rows[0].totalGeneralRate,
+    components: rows.every(r=>r.name===rows[0].name&&r.componentKind===rows[0].componentKind&&r.componentRate===rows[0].componentRate)
+      ? [{type:rows[0].componentKind,name:rows[0].name,rate:rows[0].componentRate}] : [] } : null;
   const result = reconcileDirectMappingAplus({ diagnostics, officialSnapshot, stateCode: "IA", stateDetail, matchOfficialRow: (row) => {
     if (!/^IA\d+$/.test(row.taxBody ?? "") || row.taxBody === "IA000" || row.currentRate == null || !Number.isFinite(Number(row.currentRate)) || row.definitionStatus === "missing" || isRetiredTaxBody(row)) return reject(row, assignmentGuardReason(row));
     const name = normalize(row.description).replace(/^iowa[ -]+/, "");

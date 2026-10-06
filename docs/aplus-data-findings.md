@@ -6,6 +6,16 @@ This file exists because written schema descriptions (in `README.md`, `HANDOFF.m
 
 ---
 
+## XATXBD local descriptions identify components; positions do not establish jurisdiction type
+
+Confirmed October6,2026 using the existing read-only exact-code definition SELECT with `TBL1DSC`–`TBL4DSC` added to its projection. A+ dictionary labels these fields “Local Tax 1 Description,” etc.; they are not a fixed city/county schema.
+
+For AL9137, local description1 is Birmingham and rate1 is3.500%; description2 is Shelby Co. and rate2 is1.000%. AL7058 supplies “9137 Birmingham” at4.000% and “7058 Shelby Co” at1.000%. AL9145 supplies “9145 Huntsville” at4.500% and “7745 Madison Co CL” at0.500%. These are tax-body aggregates, not customer records or destination-boundary verification.
+
+Implication: read descriptions alongside rates and require explicit equivalent official evidence. Do not assume local slot1 always means city or local slot2 always means county, and do not infer destination identity from a configured rate. See docs/component-rate-evidence.md.
+
+---
+
 ## `dbo.ADDR.SASUSP` — column is entirely dead
 
 **Documented as:** ship-to-level suspended flag.
