@@ -1,5 +1,8 @@
 import { fetchOfficial } from "./official-fetch.mjs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { evidenceDirectory } from "./data-paths.mjs";
 import { readZipEntries } from "./zip-utils.mjs";
 
 export const COLORADO_RATE_LOOKUP_URL = "https://tax.colorado.gov/how-to-look-up-sales-use-tax-rates";
@@ -52,18 +55,21 @@ function percentage(value, label) {
   return Number(rate.toFixed(4));
 }
 
+// Colorado names each half-year workbook by period, e.g. "July-Dec2026" or "Jan-June2026_Apr26" for a reissue.
+function coloradoPeriodFromName(periodName) {
+  const name = String(periodName).replaceAll("_", "-");
+  const year = Number(name.match(/(20\d{2})/i)?.[1]);
+  if (!year) return null;
+  const firstHalf = /Jan(?:uary)?-?Jun(?:e)?/i.test(name);
+  const secondHalf = /July?-?Dec/i.test(name);
+  if (firstHalf === secondHalf) return null;
+  return { beginDate: `${year}-${firstHalf ? "01" : "07"}-01`, endDate: `${year}-${firstHalf ? "06-30" : "12-31"}` };
+}
+
 export function findCurrentColoradoWorkbook(html, { asOfDate = new Date().toISOString().slice(0, 10) } = {}) {
   const candidates = [...String(html).matchAll(/href=["']([^"']*Colorado_Jurisdiction_Codes_Rates_([^"']+)\.xlsx)["']/gi)].map((match) => {
-    const name = match[2].replaceAll("_", "-");
-    const year = Number(name.match(/(20\d{2})/i)?.[1]);
-    if (!year) return null;
-    const firstHalf = /Jan(?:uary)?-?Jun(?:e)?/i.test(name);
-    const secondHalf = /July?-?Dec/i.test(name);
-    if (!firstHalf && !secondHalf) return null;
-    return {
-      url: new URL(match[1].replaceAll("&amp;", "&"), COLORADO_RATE_LOOKUP_URL).href,
-      beginDate: `${year}-${firstHalf ? "01" : "07"}-01`, endDate: `${year}-${firstHalf ? "06-30" : "12-31"}`,
-    };
+    const period = coloradoPeriodFromName(match[2]);
+    return period && { url: new URL(match[1].replaceAll("&amp;", "&"), COLORADO_RATE_LOOKUP_URL).href, ...period };
   }).filter(Boolean).sort((left, right) => right.beginDate.localeCompare(left.beginDate));
   const current = candidates.find((candidate) => candidate.beginDate <= asOfDate && candidate.endDate >= asOfDate);
   if (!current) throw new Error(`Colorado DOR did not link a jurisdiction workbook covering ${asOfDate}.`);
@@ -139,16 +145,85 @@ export function parseColoradoRateWorkbook(buffer, { beginDate, endDate, minimumR
   return { rates, counts, sourceRows: sourceRows.length, homeRuleRows: rates.filter((rate) => rate.selfCollectedHomeRule).length };
 }
 
+const COLORADO_BOUNDARY_STATUS = "Current jurisdiction codes, layered totals, counties, and self-collected-home-rule flags are connected. A city can have several valid county/special-district variants, so city-name matching is prohibited. Colorado's public address lookup is interactive; address-to-district and A+ reconciliation remain unresolved and are never guessed.";
+// Below the router's 2 MB request limit; the official workbook is about 120 KB.
+export const COLORADO_UPLOAD_MAX_BYTES = 2_000_000;
+const COLORADO_WORKBOOK_FILE = /^Colorado_Jurisdiction_Codes_Rates_([A-Za-z0-9_-]+)\.xlsx$/i;
+const UPLOAD_LEAD_DAYS = 62;
+
 let cachedSnapshot = null;
 let cacheExpiresAt = 0;
 let inFlightRead = null;
 
-export async function readOfficialCoRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false } = {}) {
+function assertWorkbookBytes(workbook, message) {
+  if (workbook.length < 50_000 || workbook.readUInt32LE(0) !== 0x04034b50) throw new Error(message);
+}
+
+function writeAtomically(filename, data) {
+  const temporary = `${filename}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, data, { mode: 0o600 });
+  renameSync(temporary, filename);
+}
+
+export function coloradoUploadDirectory(directory = evidenceDirectory()) {
+  return resolve(directory, "co-uploads");
+}
+
+/**
+ * Stores a browser-downloaded copy of Colorado's official workbook for use only when automatic
+ * retrieval fails. It must pass the same validation as a download and is keyed by its half-year period.
+ */
+export function saveColoradoUploadedWorkbook({ fileName, workbook, uploadedBy, now = new Date(), directory = evidenceDirectory(), minimumRows } = {}) {
+  const name = String(fileName || "").trim();
+  const periodName = name.match(COLORADO_WORKBOOK_FILE)?.[1];
+  const period = periodName && coloradoPeriodFromName(periodName);
+  if (!period) throw new Error("Upload the official Colorado_Jurisdiction_Codes_Rates_<period>.xlsx workbook without renaming it.");
+  const today = now.toISOString().slice(0, 10);
+  const latestBegin = new Date(now.getTime() + UPLOAD_LEAD_DAYS * 86_400_000).toISOString().slice(0, 10);
+  if (period.endDate < today) throw new Error(`This workbook covers ${period.beginDate} through ${period.endDate}, which has ended.`);
+  if (period.beginDate > latestBegin) throw new Error(`This workbook starts ${period.beginDate}; upload it within ${UPLOAD_LEAD_DAYS} days of that date.`);
+  const uploader = String(uploadedBy || "").replace(/\s+/g, " ").trim();
+  if (uploader.length < 2 || uploader.length > 80 || !/^[\p{L}\p{M} .,'-]+$/u.test(uploader)) throw new Error("Enter the uploader's name using letters, spaces, periods, commas, apostrophes or hyphens.");
+  if (!Buffer.isBuffer(workbook) || workbook.length > COLORADO_UPLOAD_MAX_BYTES) throw new Error("The uploaded file is missing or too large.");
+  assertWorkbookBytes(workbook, "The uploaded file is not the expected XLSX workbook.");
+  const parsed = parseColoradoRateWorkbook(workbook, { ...period, ...(minimumRows ? { minimumRows } : {}) });
+  const metadata = {
+    version: 1, fileName: name, ...period, uploadedAt: now.toISOString(), uploadedBy: uploader,
+    sha256: createHash("sha256").update(workbook).digest("hex"), rows: parsed.rates.length, counts: parsed.counts,
+  };
+  const folder = coloradoUploadDirectory(directory);
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  // Workbook first: metadata only ever points at a complete file, and its hash detects a mismatch.
+  writeAtomically(resolve(folder, `${period.beginDate}.xlsx`), workbook);
+  writeAtomically(resolve(folder, `${period.beginDate}.json`), JSON.stringify(metadata));
+  cachedSnapshot = null; cacheExpiresAt = 0;
+  return metadata;
+}
+
+/** Returns the stored upload covering today, revalidated, or null. Expired periods are never used. */
+export function readColoradoUploadedWorkbook({ now = new Date(), directory = evidenceDirectory(), minimumRows } = {}) {
+  const folder = coloradoUploadDirectory(directory);
+  if (!existsSync(folder)) return null;
+  const today = now.toISOString().slice(0, 10);
+  const metadata = readdirSync(folder).filter((file) => /^\d{4}-\d{2}-\d{2}\.json$/.test(file))
+    .map((file) => { try { return JSON.parse(readFileSync(resolve(folder, file), "utf8")); } catch { return null; } })
+    .filter((record) => record?.version === 1 && record.beginDate <= today && record.endDate >= today)
+    .sort((left, right) => right.beginDate.localeCompare(left.beginDate))[0];
+  if (!metadata) return null;
+  const workbook = readFileSync(resolve(folder, `${metadata.beginDate}.xlsx`));
+  if (createHash("sha256").update(workbook).digest("hex") !== metadata.sha256) throw new Error("The uploaded Colorado workbook failed integrity validation.");
+  assertWorkbookBytes(workbook, "The uploaded Colorado workbook failed integrity validation.");
+  const parsed = parseColoradoRateWorkbook(workbook, { beginDate: metadata.beginDate, endDate: metadata.endDate, ...(minimumRows ? { minimumRows } : {}) });
+  return { metadata, parsed };
+}
+
+export async function readOfficialCoRates({ fetchImpl = fetchOfficial, now = new Date(), bypassCache = false, uploadDirectory = evidenceDirectory(), minimumRows } = {}) {
   if (!bypassCache && cachedSnapshot && Date.now() < cacheExpiresAt) return cachedSnapshot;
   if (!bypassCache && inFlightRead) return inFlightRead;
   const read = (async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25_000);
+    let snapshot;
     try {
       const headers = { Accept: "text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36 TaxAP/0.1" };
       const pageResponse = await fetchImpl(COLORADO_RATE_LOOKUP_URL, { headers, signal: controller.signal });
@@ -158,17 +233,30 @@ export async function readOfficialCoRates({ fetchImpl = fetchOfficial, now = new
       const workbookResponse = await fetchImpl(current.url, { headers, signal: controller.signal });
       if (!workbookResponse.ok) throw new Error(`Colorado DOR workbook returned HTTP ${workbookResponse.status}.`);
       const workbook = Buffer.from(await workbookResponse.arrayBuffer());
-      if (workbook.length < 50_000 || workbook.readUInt32LE(0) !== 0x04034b50) throw new Error("Colorado DOR did not return the expected XLSX workbook.");
-      const parsed = parseColoradoRateWorkbook(workbook, current);
-      const snapshot = {
+      assertWorkbookBytes(workbook, "Colorado DOR did not return the expected XLSX workbook.");
+      const parsed = parseColoradoRateWorkbook(workbook, { ...current, ...(minimumRows ? { minimumRows } : {}) });
+      snapshot = {
         stateCode: "CO", source: "Colorado Department of Revenue", sourceUrl: COLORADO_RATE_LOOKUP_URL,
         machineReadableSourceUrl: current.url, retrievedAt: now.toISOString(), asOfDate: current.beginDate,
         stateRate: COLORADO_STATE_RATE, sourceHash: createHash("sha256").update(pageHtml).update(workbook).digest("hex"),
         rates: parsed.rates, counts: parsed.counts, effectivePeriod: `${current.beginDate} through ${current.endDate}`,
-        boundaryStatus: "Current jurisdiction codes, layered totals, counties, and self-collected-home-rule flags are connected. A city can have several valid county/special-district variants, so city-name matching is prohibited. Colorado's public address lookup is interactive; address-to-district and A+ reconciliation remain unresolved and are never guessed.",
+        boundaryStatus: COLORADO_BOUNDARY_STATUS, retrievalMethod: "automatic",
       };
-      cachedSnapshot = snapshot; cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000; return snapshot;
+    } catch (error) {
+      // Automatic retrieval failed; only a validated upload covering today may stand in.
+      const upload = readColoradoUploadedWorkbook({ now, directory: uploadDirectory, minimumRows });
+      if (!upload) throw error;
+      const { metadata, parsed } = upload;
+      snapshot = {
+        stateCode: "CO", source: "Colorado Department of Revenue (official workbook, manual upload)", sourceUrl: COLORADO_RATE_LOOKUP_URL,
+        machineReadableSourceUrl: null, retrievedAt: metadata.uploadedAt, asOfDate: metadata.beginDate,
+        stateRate: COLORADO_STATE_RATE, sourceHash: metadata.sha256,
+        rates: parsed.rates, counts: parsed.counts, effectivePeriod: `${metadata.beginDate} through ${metadata.endDate}`,
+        boundaryStatus: COLORADO_BOUNDARY_STATUS, retrievalMethod: "manual-upload",
+        manualUpload: { fileName: metadata.fileName, uploadedAt: metadata.uploadedAt, uploadedBy: metadata.uploadedBy, sha256: metadata.sha256 },
+      };
     } finally { clearTimeout(timeout); }
+    cachedSnapshot = snapshot; cacheExpiresAt = Date.now() + 6 * 60 * 60 * 1000; return snapshot;
   })();
   if (bypassCache) return read;
   inFlightRead = read;

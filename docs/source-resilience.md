@@ -42,3 +42,7 @@ Every observed change in the failed-state set prepares an aggregate outage or re
 Alerts currently run when an authenticated all-state batch is requested (including an open dashboard's refresh). This is not unattended monitoring: no browser activity means no check or email. A separately authorized scheduler/monitor is still needed for continuous coverage. No email has been sent or real mailbox credentials tested in this implementation. A whole-batch failure before state results is not covered by per-state email alerts.
 
 Deployment verification October 2: b41f6c9 is deployed, hosted batch succeeded 47/47, and /data/state-evidence contains all 47 aggregate evidence records. Email delivery remains disabled and no real mailbox test has occurred.
+
+## Colorado manual workbook upload (November 9, 2026; local)
+
+Colorado DOR now challenges automated requests with Cloudflare (HTTP 403), and TaxAP does not evade it. When the automatic read fails, the Colorado reader may use a signed-in user's unchanged browser download of the official workbook. That file is validated exactly like a download, used only for the half-year it covers, and labelled as a manual upload in the drawer, the coverage banner and retained evidence. Back up `co-uploads/` with the rest of the state-evidence directory. Details: docs/states/co.md.

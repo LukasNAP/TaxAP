@@ -5,7 +5,8 @@ import { reviewComparison, validateApproval } from "./review-validation.mjs";
 import { findingDecisionKey } from "../app/finding-review.ts";
 import { createStateAlertManager } from "./state-alerts.mjs";
 import { createStateEvidenceStore, stateFailureReason } from "./state-evidence.mjs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
+import { evidenceDirectory } from "./data-paths.mjs";
 import { markRetainedEvidence } from "../app/state-retention.ts";
 import { comparisonHealth } from "./comparison-health.mjs";
 import { assignmentGaps } from "./assignment-gaps.mjs";
@@ -66,7 +67,7 @@ import { readOfficialAlRates } from "./al-rates.mjs";
 import { readTexasAplusComparison } from "./tx-aplus.mjs";
 import { readCaliforniaAplusComparison } from "./ca-aplus.mjs";
 import { readColoradoAplusComparison } from "./co-aplus.mjs";
-import { readOfficialCoRates } from "./co-rates.mjs";
+import { COLORADO_UPLOAD_MAX_BYTES, readOfficialCoRates, saveColoradoUploadedWorkbook } from "./co-rates.mjs";
 import { readOfficialAkRates } from "./ak-rates.mjs";
 import { readOfficialDcRates } from "./dc-rates.mjs";
 import { readOfficialHiRates } from "./hi-rates.mjs";
@@ -104,6 +105,17 @@ async function readJsonBody(request) {
   } catch {
     throw new Error("Review request must be valid JSON.");
   }
+}
+
+async function readBinaryBody(request, maxBytes) {
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of request) {
+    length += chunk.length;
+    if (length > maxBytes) throw new Error("The uploaded file is too large.");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 export const US_STATE_CODES = new Set([
@@ -759,7 +771,6 @@ export async function readNorthCarolinaBatchComparison() {
   return { aplusSnapshot, officialSnapshot, stateDetail, componentDiagnostics:northCarolinaComponentDiagnostics(stateDetail,officialSnapshot) };
 }
 
-const evidenceDirectory = () => process.env.TAXAP_EVIDENCE_DIR || resolve(dirname(process.env.TAXAP_REVIEW_DB || resolve(".data", "taxap-reviews.sqlite")), "state-evidence");
 const stateAlerts = createStateAlertManager({ filename: resolve(evidenceDirectory(), "alerts.json"), enabled: process.env.TAXAP_ALERT_EMAIL_ENABLED === "true" });
 
 export async function readAllWiredStateFindings({
@@ -928,7 +939,7 @@ function sendJson(response, status, payload, origin) {
   response.writeHead(status, {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-TaxAP-File-Name, X-TaxAP-Uploaded-By",
     "Cache-Control": "no-store",
     "Content-Type": "application/json; charset=utf-8",
     "Vary": "Origin",
@@ -954,7 +965,7 @@ function archivedReviewVerification(input) {
   } catch { return null; }
 }
 
-export function createConnectorServer({ reviews, readComparison = readReviewComparison, readShipTos = selection => readFindingShipTos(selection, { openPool, sql }) } = {}) {
+export function createConnectorServer({ reviews, readComparison = readReviewComparison, readShipTos = selection => readFindingShipTos(selection, { openPool, sql }), saveCoWorkbook = saveColoradoUploadedWorkbook } = {}) {
   return createServer(async (request, response) => {
     const origin = request.headers.origin;
     const responseOrigin = origin === allowedOrigin ? origin : allowedOrigin;
@@ -1075,6 +1086,22 @@ export function createConnectorServer({ reviews, readComparison = readReviewComp
     if (url.pathname === "/api/official/sources" && request.method === "GET") {
       if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
       return sendJson(response, 200, { sources: listOfficialSourceRegistry() }, responseOrigin);
+    }
+
+    if (url.pathname === "/api/official/states/CO/workbook" && request.method === "POST") {
+      if (origin && origin !== allowedOrigin) return sendJson(response, 403, { error: "Origin not allowed." }, responseOrigin);
+      try {
+        if (!/^application\/octet-stream\b/i.test(request.headers["content-type"] || "")) throw new Error("Send the workbook as application/octet-stream.");
+        const workbook = await readBinaryBody(request, COLORADO_UPLOAD_MAX_BYTES);
+        const header = (name) => { try { return decodeURIComponent(String(request.headers[name] || "")); } catch { return ""; } };
+        const upload = saveCoWorkbook({ fileName: header("x-taxap-file-name"), uploadedBy: header("x-taxap-uploaded-by"), workbook });
+        console.info(JSON.stringify({ event: "co_workbook_upload", ok: true, beginDate: upload.beginDate, endDate: upload.endDate, rows: upload.rows, sha256: upload.sha256.slice(0, 12) }));
+        return sendJson(response, 200, { upload }, responseOrigin);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid Colorado workbook upload";
+        console.warn(JSON.stringify({ event: "co_workbook_upload", ok: false }));
+        return sendJson(response, 400, { error: message }, responseOrigin);
+      }
     }
 
     const officialStateMatch = url.pathname.match(/^\/api\/official\/states\/([^/]+)$/);

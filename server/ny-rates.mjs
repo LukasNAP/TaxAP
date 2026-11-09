@@ -100,6 +100,8 @@ function runWithInput(command, args, input, label, { env = process.env } = {}) {
       clearTimeout(timer);
       if (!settled) { settled = true; reject(error); }
     });
+    // A missing or early-exiting extractor closes stdin; the error/close handlers report that failure.
+    child.stdin.on("error", () => {});
     child.stdout.on("data", (chunk) => stdout.push(chunk));
     child.stderr.on("data", (chunk) => stderr.push(chunk));
     child.on("close", (code) => {

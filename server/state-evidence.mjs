@@ -15,7 +15,8 @@ export function aggregateEvidence(stateCode, value) {
     return diagnostic && diagnostic.stateCode === stateCode ? { ...row, matchDiagnostic: diagnostic } : row;
   });
   const official = value.officialSnapshot;
-  if (official) result.officialSnapshot = pick(official, ["stateCode", "source", "sourceUrl", "machineReadableSourceUrl", "retrievedAt", "asOfDate", "sourceHash", "effectivePeriod", "rates", "futureChanges", "stateRate"]);
+  if (official) result.officialSnapshot = pick(official, ["stateCode", "source", "sourceUrl", "machineReadableSourceUrl", "retrievedAt", "asOfDate", "sourceHash", "effectivePeriod", "rates", "futureChanges", "stateRate", "retrievalMethod"]);
+  if (official?.manualUpload) result.officialSnapshot.manualUpload = pick(official.manualUpload, ["fileName", "uploadedAt", "uploadedBy", "sha256"]);
   if (stateCode === "NC") result.aplusSnapshot = pick(value.aplusSnapshot, ["source", "retrievedAt", "standardRows", "specialRows", "scheduledRows", "rateDistribution"]);
   if (stateCode === 'NC' && value.componentDiagnostics) result.componentDiagnostics=Object.fromEntries(Object.entries(value.componentDiagnostics)
     .flatMap(([key,value])=>{const diagnostic=aggregateMatchDiagnostic(value);return /^NC\d{3}$/.test(key)&&diagnostic?.stateCode==='NC'?[[key,diagnostic]]:[];}));

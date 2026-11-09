@@ -4,7 +4,7 @@ Status: **official source connected 2026-09-03; A+ comparison remains intentiona
 
 ## Step 0 — official source
 
-Confirmed reachable directly (per project instructions, `tax.colorado.gov` blocks generic fetch tools with 403 — `curl` with a browser `User-Agent` works). Landing page `https://tax.colorado.gov/how-to-look-up-sales-use-tax-rates` links a combined **DR 1002 + DR 0800** workbook that reissues twice a year; the file live today is `Colorado_Jurisdiction_Codes_Rates_July-Dec2026.xlsx` (do not hardcode this filename — resolve it from the landing page each time, per the project's own instruction). Sheets present: `By Name`, `By Juris Codes`, `Exemption Codes`, `Tax Codes`, `Alternate City Rates`, `State Service Fee Rates`. `By Name` columns: `Location Code` (the place name, e.g. "AURORA"), `Jurisdiction Code` (a 6-digit numeric code, e.g. `100001`), `County`, `Self Collected Home Rule`, exemption-code columns, `Total Rate`, then repeating `Tax Type`/`Rate`/`Service Fee Rate` triples for each layer (State, County, City, RTD, CD, RTA, HSD, PSI, LID, etc. — however many layers apply to that specific place).
+[Updated November 9, 2026: since at least October 21, `tax.colorado.gov` answers automated requests, including TaxAP's, with a Cloudflare JavaScript challenge (HTTP 403). The browser `User-Agent` workaround below no longer works and must not be replaced with challenge evasion. See "Manual workbook upload" below.] Originally confirmed reachable directly. Landing page `https://tax.colorado.gov/how-to-look-up-sales-use-tax-rates` links a combined **DR 1002 + DR 0800** workbook that reissues twice a year; the file live today is `Colorado_Jurisdiction_Codes_Rates_July-Dec2026.xlsx` (do not hardcode this filename — resolve it from the landing page each time, per the project's own instruction). Sheets present: `By Name`, `By Juris Codes`, `Exemption Codes`, `Tax Codes`, `Alternate City Rates`, `State Service Fee Rates`. `By Name` columns: `Location Code` (the place name, e.g. "AURORA"), `Jurisdiction Code` (a 6-digit numeric code, e.g. `100001`), `County`, `Self Collected Home Rule`, exemption-code columns, `Total Rate`, then repeating `Tax Type`/`Rate`/`Service Fee Rate` triples for each layer (State, County, City, RTD, CD, RTA, HSD, PSI, LID, etc. — however many layers apply to that specific place).
 
 The connected adapter uses the project's dependency-free ZIP reader and a hardened, fail-closed OOXML parser. It validates all six expected sheets, resolves the `By Name` worksheet through workbook relationships, validates the 44-column repeating layer schema, requires one 2.9% state layer per row, and reconciles every published total to its component layers.
 
@@ -78,7 +78,7 @@ No literal `DO NOT USE` rows surfaced in this 57-row result (the standard exclus
 
 ## Step 3 — boundary/rate-detail source
 
-Confirmed live and reachable: `tax.colorado.gov` blocks generic HTTP clients with a 403 but not `curl` with a real browser `User-Agent`. The current file must be resolved from the landing page each run (`https://tax.colorado.gov/how-to-look-up-sales-use-tax-rates`) — the filename embeds the half-year (`Colorado_Jurisdiction_Codes_Rates_July-Dec2026.xlsx` today) and changes on a 6-month cycle; do not hardcode it. The file is a real `.xlsx` (verified by unzipping and reading the OOXML parts directly); no xlsx-parsing npm package exists in this repo yet.
+[Historical, superseded November 9, 2026: automated access is now challenged; see "Manual workbook upload".] Previously confirmed live: `tax.colorado.gov` blocked generic HTTP clients with a 403 but not `curl` with a real browser `User-Agent`. The current file must be resolved from the landing page each run (`https://tax.colorado.gov/how-to-look-up-sales-use-tax-rates`) — the filename embeds the half-year (`Colorado_Jurisdiction_Codes_Rates_July-Dec2026.xlsx` today) and changes on a 6-month cycle; do not hardcode it. The file is a real `.xlsx` (verified by unzipping and reading the OOXML parts directly); no xlsx-parsing npm package exists in this repo yet.
 
 ## Do instead — open items before building
 
@@ -89,3 +89,19 @@ Confirmed live and reachable: `tax.colorado.gov` blocks generic HTTP clients wit
 5. **Exclude `COSTA`, `CO CR`, and `E`-suffixed codes explicitly** in any future CO query, the same way NC/SC's connectors pre-exclude their own known-bad codes.
 
 **The official inventory is now safe to display, but `recommendComparisonBuild = false` for CO right now.** What remains is a genuinely harder matching problem than any state built so far, plus one historical material unresolved discrepancy on Atlantic's biggest CO market. Building a matcher without a decision on the multi-variant-per-city problem risks shipping a confidently wrong comparison.
+
+## Manual workbook upload (November 9, 2026)
+
+Since at least October 21, 2026, Colorado DOR has put the rate page and the workbook behind a Cloudflare JavaScript challenge. Node fetch on the workstation and the container, and curl on apdock01, all receive HTTP 403 "Just a moment… Enable JavaScript and cookies". No unchallenged official machine-readable copy was found. The GIS API needs SUTS registration, an API key and per-address submissions, which would need IT/privacy approval, so it is out of scope. The workbook also moved from `/sites/tax/files/documents/` to `/sites/default/files/documents/` (301 redirect).
+
+TaxAP still tries the automatic download first. When that fails, it may use a signed-in user's browser-downloaded copy, uploaded unchanged from the Colorado drawer's **Upload the official Colorado workbook** form (`POST /api/official/states/CO/workbook`, same-origin, `application/octet-stream`):
+
+- The filename must be the official `Colorado_Jurisdiction_Codes_Rates_<period>.xlsx`. The half-year period is taken from it and must not have ended. A file may be uploaded up to 62 days before its period starts.
+- The bytes must pass the same validation as a download: XLSX signature and size, sheet inventory, headers, unique codes, the 2.9% state layer, and layer totals.
+- Stored as `<TAXAP_EVIDENCE_DIR>/co-uploads/<beginDate>.xlsx` plus metadata (file name, period, upload time, typed uploader name, SHA-256 and counts). A later upload for the same period replaces it. The hash and parser are re-checked on every read.
+- Used only for the period it covers. It never carries into the next half-year: from January 1 without a new upload, Colorado fails and its old evidence is marked stale, exactly as before.
+- Labelled everywhere it appears: `retrievalMethod: "manual-upload"` and `manualUpload` metadata in the snapshot and retained evidence, a note in the Colorado drawer, and a coverage-banner line. `machineReadableSourceUrl` is null and `retrievedAt` is the upload time.
+- The existing six-hour approval freshness check uses `retrievedAt`, so maintenance approvals for Colorado are possible only within six hours of an upload. This is unchanged deliberately; relaxing it is a business decision.
+- Public rate data only; no customer data. Uploader identity is typed in, not taken from sign-in.
+
+Operating step: twice a year (late December and late June), and whenever DOR reissues mid-period (filenames gain a suffix such as `_Apr26`), open the landing page in a browser, download the workbook, and upload it.

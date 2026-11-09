@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   NEW_YORK_EXPECTED_RATE_ROWS,
+  extractNewYorkPublicationText,
   findNewYorkPublicationUrl,
   parseNewYorkPublicationText,
   readOfficialNyRates,
@@ -64,4 +65,17 @@ test("returns a linked New York snapshot while keeping ZIP and A+ matching unres
   assert.equal(snapshot.rates.length, NEW_YORK_EXPECTED_RATE_ROWS);
   assert.match(snapshot.boundaryStatus, /does not derive a jurisdiction from ZIP code/);
   assert.match(snapshot.boundaryStatus, /Suffolk\/Yonkers/);
+});
+
+test("a missing PDF extractor fails the New York read without crashing the connector", async () => {
+  let uncaught = null;
+  const record = (error) => { uncaught = error; };
+  process.on("uncaughtException", record);
+  try {
+    await assert.rejects(extractNewYorkPublicationText(Buffer.alloc(2_000_000, 1), { pdftotextPath: "taxap-missing-pdftotext", pythonPath: undefined }), /PDF extraction is unavailable/);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(uncaught, null);
+  } finally {
+    process.off("uncaughtException", record);
+  }
 });

@@ -1,6 +1,36 @@
 # TaxAP project handoff
 
-Last updated October 6, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+Last updated November 9, 2026. The latest dated updates supersede historical sections below. Keep this as the shared handoff for all coding assistants.
+
+## Hosted recheck and fresh batch (November 9; read-only)
+
+User authorized a read-only hosted status check and one fresh batch. Local main matched origin/main at ae400ec. All 109 app/server source files in the host checkout match 4f9e408 byte-for-byte after line-ending normalization. The app, sign-in, router and taxap-proxy containers were running with zero restarts. They had been up since the November 4 host restart.
+
+Fresh batch at 2026-11-09T15:25:44Z returned HTTP 200 in about 15 seconds: 46 current checks, 294 findings, 658 assignment-review groups covering 6,626 ship-to assignments, no evidence warnings and email disabled. SQL ran 95 queries with zero failures. Wisconsin succeeded. Census Gazetteer returns valid text from both the workstation and the container, so the October 6 rejection did not recur.
+
+**Colorado has failed every logged batch since at least October 21** (17 log entries: "Source or database connection unavailable"). tax.colorado.gov now returns HTTP 403 with a Cloudflare "Just a moment… Enable JavaScript and cookies" challenge to both the workstation and the container. The challenge must not be circumvented. Retained CO evidence is from 2026-10-06T17:39Z, covering the 2026-07-01 through 2026-12-31 period. It is marked stale and becomes out of period on January 1. Other one-off failures in the logs: AL and TX (validation) on Oct 30, and NM (connection) on Nov 6. Each passed on later batches. A legitimate CO path is needed: an alternative official file location, a Colorado DOR contact or allowlisting, or a documented manual-upload fallback. No code, SQL, configuration or deployment changes were made.
+
+Alternative-source investigation, same day. The workbook moved: `/sites/tax/files/documents/…` now returns a 301 redirect to `/sites/default/files/documents/Colorado_Jurisdiction_Codes_Rates_July-Dec2026.xlsx` (Last-Modified 2026-07-31). Windows curl on the workstation downloaded it (117,704 bytes). The existing parser validated it: 447 rows, with 65 counties, 280 cities and 102 special jurisdictions. Node fetch (on both the workstation and the container) and curl on the host all receive the 403 challenge for both the page and the workbook. The block is therefore tied to the client, not a simple outage. Switching HTTP clients to pass it would be bot-check evasion and was not attempted. No unchallenged official machine-readable alternative was found. Colorado's GIS API (tax.colorado.gov/GIS-API) requires SUTS registration plus an API key, and it looks up rates per address. Using it would mean sending ship-to addresses to the state, which needs IT and privacy approval as with SC. The DR 1002/DR 0800 PDFs are on the same Cloudflare-protected domain. `docs/states/co.md`'s claim that a browser User-Agent works is outdated (now corrected there).
+
+### Colorado manual workbook upload (November 9; local, uncommitted)
+
+User chose a manual-upload fallback; anyone signed in may upload, since the existing TaxAP-Users group already restricts sign-in. The Colorado drawer has an **Upload the official Colorado workbook** form, which posts to `POST /api/official/states/CO/workbook`. Requests must be same-origin `application/octet-stream`; the filename and the typed uploader name are sent in URI-encoded headers. The CORS allow-list now includes those two headers.
+
+`server/co-rates.mjs` validates uploads like a download: the official filename gives the half-year period, which must not have ended, and a file may be uploaded up to 62 days early. The XLSX signature, size and parser checks must all pass. Uploads are stored atomically in `<evidence dir>/co-uploads/`, and the SHA-256 and parser are re-checked on every read. `readOfficialCoRates` tries the automatic download first and uses an upload only for the period covering today. It never carries one into a new period. Snapshots carry `retrievalMethod` and `manualUpload`, and evidence allowlists and `comparisonHealth` keep the label. The drawer notice and the coverage banner state it plainly. The evidence-directory resolution moved to `server/data-paths.mjs`; its behaviour is unchanged.
+
+Unchanged: SQL, A+ reads, matching, other states, sign-in, credentials and email. The six-hour approval freshness rule also stays, so Colorado maintenance approvals work only within six hours of an upload. Relaxing that is a business decision.
+
+Validation: production build, 377 tests (8 new in `tests/co-upload.test.mjs`), lint, TypeScript and `git diff --check` passed. The user's browser-downloaded workbook (447 rows, SHA-256 prefix fb23be126e00af8c) went through save and blocked-download fallback in a temporary directory, labelled manual-upload. Local browser check (same day, `npm run dev`, headless Chrome, screenshots of the public official-source panel only):
+- Before upload, the drawer shows Colorado's source as unavailable, with the upload form beneath it.
+- A renamed copy is rejected with the filename message.
+- The real workbook uploads, and the drawer reloads with the Manual upload note (file, period, date, uploader, fingerprint fb23be126e00…) and 447 records.
+- The coverage banner reports CO as checked against a manually uploaded workbook. Locally that batch was 46/47; NY fails only because `pdftotext` is not installed on the workstation.
+- At 390px width the document is exactly 390px wide.
+- The local test upload remains under the ignored `.data/state-evidence/co-uploads/`.
+
+That check exposed an existing Windows crash, not caused by this change (the unmodified ae400ec copy crashed the same way). When `pdftotext` is missing, `server/ny-rates.mjs` writes the PDF to a child process that never started; the unhandled stdin `write EOF` error killed the whole local connector during any all-state batch. Fixed with a stdin error handler, so the existing spawn error/close handlers report a normal NY failure. A regression test was added. Hosted Linux has `pdftotext` and was unaffected. The final suite has 378 tests; build, lint, TypeScript and the diff check passed.
+
+Not yet done: commit, push and deploy. After an authorized deploy, upload the July–Dec 2026 workbook in the hosted drawer and run a fresh batch. Upload the Jan–June 2027 workbook in late December.
 
 ## Component evidence release deployed (October 6)
 

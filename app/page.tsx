@@ -10,6 +10,7 @@ import { applyFindingTreatments } from "./finding-treatment";
 
 import { findingDecisionKey, findingReviewEvidence, ncReviewKey } from "./finding-review";
 import { FindingShipTos } from "./finding-ship-tos";
+import { ColoradoWorkbookUpload, ManualUploadNotice, type ManualUpload } from "./colorado-workbook-upload";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -111,6 +112,9 @@ type OfficialStateSnapshot = {
   rates: OfficialStateRate[];
   counts: { counties: number; cities: number; specialJurisdictions: number };
   boundaryStatus: string;
+  effectivePeriod?: string;
+  retrievalMethod?: "automatic" | "manual-upload";
+  manualUpload?: ManualUpload;
 };
 type GaBoundaryJurisdiction = { fipsCounty: string | null; fipsPlace: string | null; specialCode: string | null };
 type GaBoundaryTaxBodyFinding = {
@@ -410,7 +414,7 @@ export default function Home() {
   const stateDrawerCacheRef = useRef<Map<string, StateDrawerCacheEntry>>(new Map());
   const [stateDrawerCheckedAt, setStateDrawerCheckedAt] = useState<number | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<JurisdictionFinding | null>(null);
-  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[]; retainedStates: RetainedState[]; stateFailures: { stateCode: string; reason: string }[]; assignmentGaps: AssignmentGap[]; evidenceWarnings: string[]; emailAlertStatus?: string }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [], retainedStates: [], stateFailures: [], evidenceWarnings: [], assignmentGaps: [] });
+  const [batchHealth, setBatchHealth] = useState<{ status: "loading" | "ready" | "partial" | "error"; failedStates: string[]; retrievedAt: string | null; stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number; sourceRetrieval?: "manual-upload"; sourceRetrievedAt?: string }[]; retainedStates: RetainedState[]; stateFailures: { stateCode: string; reason: string }[]; assignmentGaps: AssignmentGap[]; evidenceWarnings: string[]; emailAlertStatus?: string }>({ status: "loading", failedStates: [], retrievedAt: null, stateChecks: [], retainedStates: [], stateFailures: [], evidenceWarnings: [], assignmentGaps: [] });
   const [selectedCounty, setSelectedCounty] = useState<ComparedCounty | null>(null);
   const [selectedCase, setSelectedCase] = useState<ResolvedCase | null>(null);
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
@@ -496,7 +500,7 @@ export default function Home() {
     try {
       const [result, coverage, treatment] = await Promise.all([
         get<{ assignmentGaps?: AssignmentGap[]; emailAlertStatus?: string; retainedStates?: RetainedState[]; stateFailures?: { stateCode: string; reason: string }[]; evidenceWarnings?: string[]; findings: JurisdictionFinding[]; failedStates: string[]; retrievedAt: string;
-          stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number }[];
+          stateChecks: { stateCode: string; uncheckedShipTos: number | null; intentionalNoTaxShipTos: number; sourceRetrieval?: "manual-upload"; sourceRetrievedAt?: string }[];
           nc: { aplusSnapshot: LiveAPlusSnapshot; officialSnapshot: OfficialNcSnapshot; componentDiagnostics?: Record<string,MatchDiagnostic> } | null;
           ga: GaBoundaryReconciliation | null;
         }>("/api/official/findings"),
@@ -848,6 +852,7 @@ export default function Home() {
           <p>{batchHealth.status === "loading" ? "Refreshing all wired states…" : `${batchHealth.stateChecks.length} state checks succeeded; ${batchHealth.failedStates.length} failed.`}{batchHealth.retrievedAt ? ` Last returned batch: ${new Date(batchHealth.retrievedAt).toLocaleString()}.` : ""}</p>
           {batchHealth.failedStates.length > 0 && <p>Failed state checks: {batchHealth.failedStates.join(", ")}. Current checks are unavailable for these states. Retained evidence, where available, remains visible and cannot authorize maintenance.</p>}
           {batchHealth.status === "error" && <p>The latest batch failed. Any retained findings are from an earlier read.</p>}
+          {batchHealth.stateChecks.filter(check => check.sourceRetrieval === "manual-upload").map(check => <p key={`manual-${check.stateCode}`}>{check.stateCode}: checked against a manually uploaded official workbook{check.sourceRetrievedAt ? ` (uploaded ${new Date(check.sourceRetrievedAt).toLocaleString()})` : ""}; automatic retrieval is unavailable.</p>)}
           {batchHealth.retainedStates.map(state => <p key={state.stateCode}>{state.stateCode}: stale evidence retained; last source retrieval {new Date(state.sourceRetrievedAt).toLocaleString()}. Last validated comparison {new Date(state.validatedAt).toLocaleString()}. Current verification required.</p>)}
           {batchHealth.stateFailures.map(state => <p key={state.stateCode}>{state.stateCode}: {state.reason}.</p>)}
           {batchHealth.emailAlertStatus === "error" && <p>Email alert submission failed. Check the mail configuration; coverage warnings remain available here.</p>}
@@ -1183,7 +1188,7 @@ export default function Home() {
             <div><span>Active customers</span><strong>{selectedState.activeCustomers.toLocaleString()}</strong></div>
             <div><span>Assigned tax bodies</span><strong>{selectedState.taxBodyCount.toLocaleString()}</strong></div>
           </div>
-          <OfficialStateSourcePanel source={officialSourcesByCode.get(selectedState.stateCode) ?? null} status={officialStateStatus} snapshot={officialStateDetail} />
+          <OfficialStateSourcePanel source={officialSourcesByCode.get(selectedState.stateCode) ?? null} status={officialStateStatus} snapshot={officialStateDetail} onWorkbookUploaded={() => void openState(selectedState.stateCode, { forceRefresh: true, assignment: selectedAssignmentGap })} />
           {selectedState.stateCode === "GA" && <GeorgiaBoundaryPanel status={gaBoundaryStatus} reconciliation={gaBoundaryDetail} />}
           {FLAT_STATE_APLUS_STATES.has(selectedState.stateCode) && <FlatStateAplusPanel status={flatStateAplusStatus} reconciliation={flatStateAplusDetail} />}
           {DIRECT_MAPPING_APLUS_STATES.has(selectedState.stateCode) && <DirectMappingAplusPanel status={directMappingAplusStatus} reconciliation={directMappingAplusDetail} />}
@@ -1394,7 +1399,8 @@ function TaxTreatmentPanel({ snapshot, status, connectorStatus }: { snapshot: Ta
   );
 }
 
-function OfficialStateSourcePanel({ source, status, snapshot }: { source: OfficialSourceState | null; status: StateDetailStatus; snapshot: OfficialStateSnapshot | null }) {
+function OfficialStateSourcePanel({ source, status, snapshot, onWorkbookUploaded }: { source: OfficialSourceState | null; status: StateDetailStatus; snapshot: OfficialStateSnapshot | null; onWorkbookUploaded: () => void }) {
+  const apiBase = apiBaseUrl();
   const statusLabel = source?.status === "connected" ? "Connected"
     : source?.status === "machine-readable-source" ? "Machine source identified"
       : source?.status === "official-document-source" ? "Official document identified"
@@ -1414,6 +1420,7 @@ function OfficialStateSourcePanel({ source, status, snapshot }: { source: Offici
             <div><span>City components</span><strong>{snapshot.counts.cities}</strong></div>
             <div><span>Checked</span><strong>{new Date(snapshot.retrievedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong></div>
           </div>
+          {snapshot.retrievalMethod === "manual-upload" && snapshot.manualUpload && <ManualUploadNotice upload={snapshot.manualUpload} effectivePeriod={snapshot.effectivePeriod} />}
           <p className="official-boundary-note">{snapshot.boundaryStatus}</p>
           <details className="official-rate-details">
             <summary>View {snapshot.rates.length} official jurisdiction rate records</summary>
@@ -1426,6 +1433,7 @@ function OfficialStateSourcePanel({ source, status, snapshot }: { source: Offici
           <div className="official-source-links"><a href={snapshot.sourceUrl} target="_blank" rel="noreferrer">Open state DOR source ↗</a>{snapshot.machineReadableSourceUrl && <a href={snapshot.machineReadableSourceUrl} target="_blank" rel="noreferrer">Open machine-readable evidence ↗</a>}<span>Fingerprint {snapshot.sourceHash.slice(0, 12)}…</span></div>
         </>
       )}
+      {source?.stateCode === "CO" && status !== "loading" && apiBase && <ColoradoWorkbookUpload apiBase={apiBase} onUploaded={onWorkbookUploaded} />}
     </section>
   );
 }
